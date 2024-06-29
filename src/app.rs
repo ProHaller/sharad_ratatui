@@ -36,6 +36,23 @@ pub struct Settings {
     pub debug_mode: bool,
 }
 
+pub struct SettingsState {
+    selected_setting: usize,
+    selected_options: Vec<usize>,
+}
+
+impl SettingsState {
+    pub fn new() -> Self {
+        SettingsState {
+            selected_setting: 0,
+            selected_options: vec![0, 0, 0, 0, 0], // Default selections
+        }
+    }
+
+    pub fn selected_option(&self, setting_index: usize) -> Option<usize> {
+        self.selected_options.get(setting_index).cloned()
+    }
+}
 impl App {
     pub fn new() -> Self {
         let mut main_menu_state = ListState::default();
