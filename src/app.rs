@@ -1,4 +1,4 @@
-use async_openai::Client;
+use async_openai::{config::OpenAIConfig, Client};
 use crossterm::event::KeyEvent;
 use ratatui::widgets::ListState;
 use serde::{Deserialize, Serialize};
@@ -22,7 +22,7 @@ pub struct App {
     pub should_quit: bool,
     pub state: AppState,
     pub main_menu_state: ListState,
-    pub openai_client: Client,
+    pub openai_client: Client<OpenAIConfig>,
     pub current_game: Option<GameState>,
     pub settings: Settings,
 }

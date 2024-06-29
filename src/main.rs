@@ -1,14 +1,17 @@
+use crate::event::DisableMouseCapture;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{self, EnableMouseCapture, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use ratatui::{
-    backend::{Backend, CrosstermBackend},
-    Terminal,
+use ratatui::{backend::CrosstermBackend, Terminal};
+use std::{
+    error::Error,
+    io,
+    sync::atomic::{AtomicBool, Ordering},
+    sync::Arc,
+    time::Duration,
 };
-use std::io::Write;
-use std::{error::Error, io, panic};
 
 mod app;
 mod ui;
@@ -16,15 +19,6 @@ mod ui;
 use crate::app::App;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // Set up panic hook to restore terminal
-    panic::set_hook(Box::new(|panic_info| {
-        let mut stdout = io::stdout();
-        let _ = disable_raw_mode();
-        let _ = execute!(stdout, LeaveAlternateScreen, DisableMouseCapture);
-        let _ = stdout.flush();
-        eprintln!("{}", panic_info);
-    }));
-
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -32,9 +26,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
+    // Create a flag to track if we should quit
+    let running = Arc::new(AtomicBool::new(true));
+    let r = running.clone();
+
+    // Set up SIGINT handler
+    ctrlc::set_handler(move || {
+        r.store(false, Ordering::SeqCst);
+    })?;
+
     // Create app and run it
     let mut app = App::new();
-    let res = run_app(&mut terminal, &mut app);
+    let res = run_app(&mut terminal, &mut app, running);
 
     // Restore terminal
     disable_raw_mode()?;
@@ -52,18 +55,25 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<()> {
-    loop {
-        terminal.draw(|f| ui::draw::<B>(f, app))?;
+fn run_app(
+    terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    app: &mut App,
+    running: Arc<AtomicBool>,
+) -> io::Result<()> {
+    while running.load(Ordering::SeqCst) {
+        terminal.draw(|f| ui::draw(f, app))?;
 
-        if let Event::Key(key) = event::read()? {
-            if key.code == KeyCode::Char('q') {
-                return Ok(());
-            }
-            app.on_key(key);
-            if app.should_quit {
-                return Ok(());
+        if event::poll(Duration::from_millis(100))? {
+            if let Event::Key(key) = event::read()? {
+                if key.code == KeyCode::Char('q') {
+                    break;
+                }
+                app.on_key(key);
+                if app.should_quit {
+                    break;
+                }
             }
         }
     }
+    Ok(())
 }

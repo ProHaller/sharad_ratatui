@@ -2,9 +2,9 @@ use crate::app::{App, AppState, GameState};
 
 use ratatui::{
     backend::Backend,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
     style::{Color, Modifier, Style},
-    text::{Line, Span, Text},
+    text::{Line, Span},
     widgets::*,
     Frame,
 };
@@ -40,7 +40,7 @@ const ASCII_ART: &str = r#"
 |_____/|_| |_|\__,_|_|  \__,_|\__,_|
 "#;
 
-pub fn draw<B: Backend>(f: &mut Frame, app: &App) {
+pub fn draw(f: &mut Frame, app: &App) {
     match app.state {
         AppState::MainMenu => draw_main_menu(f, app),
         AppState::InGame => draw_in_game(f, app),
@@ -50,7 +50,23 @@ pub fn draw<B: Backend>(f: &mut Frame, app: &App) {
     }
 }
 
-fn draw_main_menu<B: Backend>(f: &mut Frame, app: &App) {
+fn draw_in_game(f: &mut Frame, app: &App) {
+    // Your code here
+}
+
+fn draw_load_game(f: &mut Frame, app: &App) {
+    // Your code here
+}
+
+fn draw_create_image(f: &mut Frame, app: &App) {
+    // Your code here
+}
+
+fn draw_settings(f: &mut Frame, app: &App) {
+    // Your code here
+}
+
+fn draw_main_menu(f: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints(
@@ -70,54 +86,17 @@ fn draw_main_menu<B: Backend>(f: &mut Frame, app: &App) {
     f.render_widget(ascii_art, chunks[0]);
 
     // Render menu
-    let menu_chunk = centered_rect(30, 40, chunks[1]);
-    f.render_widget(Clear, menu_chunk);
-
-    let menu_items = vec![
-        "Start a new game",
-        "Load a game",
-        "Create an image",
-        "Settings",
-        "Exit",
-    ];
-    let items: Vec<ListItem> = menu_items.iter().map(|i| ListItem::new(*i)).collect();
-
-    let menu = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Menu"))
-        .highlight_style(
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol("> ");
-
-    f.render_stateful_widget(menu, menu_chunk, &mut app.main_menu_state.clone());
+    render_menu(f, app, chunks[1]);
 
     // Render status bar
     let status = Paragraph::new("Press q to quit")
         .style(Style::default().fg(Color::LightCyan))
-        .block(Block::default().borders(Borders::NONE))
+        .block(Block::default().borders(Borders::ALL))
         .alignment(Alignment::Center);
     f.render_widget(status, chunks[2]);
 }
 
-fn draw_in_game<B: Backend>(f: &mut Frame, app: &App) {
-    // Implement in-game UI
-}
-
-fn draw_load_game<B: Backend>(f: &mut Frame, app: &App) {
-    // Implement load game UI
-}
-
-fn draw_create_image<B: Backend>(f: &mut Frame, app: &App) {
-    // Implement create image UI
-}
-
-fn draw_settings<B: Backend>(f: &mut Frame, app: &App) {
-    // Implement settings UI
-}
-
-fn render_menu<B: Backend>(f: &mut Frame, app: &App, area: Rect) {
+fn render_menu(f: &mut Frame, app: &App, area: Rect) {
     let menu_items = [
         "Start a new game",
         "Load a game",
@@ -130,55 +109,60 @@ fn render_menu<B: Backend>(f: &mut Frame, app: &App, area: Rect) {
         .iter()
         .enumerate()
         .map(|(i, &item)| {
-            if i == app.main_menu_state.selected_index {
+            let number = if i == menu_items.len() - 1 {
+                "0. ".to_string()
+            } else {
+                format!("{}. ", i + 1)
+            };
+            let content = format!("{}", item);
+            if i == app.main_menu_state.selected().unwrap_or(0) {
                 Line::from(vec![
+                    Span::styled(number, Style::default().fg(Color::Yellow)),
                     Span::styled(
-                        "> ",
-                        Style::default()
-                            .fg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled(
-                        item,
+                        content,
                         Style::default()
                             .fg(Color::Yellow)
                             .add_modifier(Modifier::BOLD),
                     ),
                 ])
             } else {
-                Line::from(Span::raw(format!("  {}", item)))
+                Line::from(vec![Span::raw(number), Span::raw(content)])
             }
         })
         .collect();
 
-    let menu = Paragraph::new(text)
-        .alignment(Alignment::Center)
-        .block(Block::default().borders(ratatui::widgets::Borders::NONE));
+    let outer_block = Block::default()
+        .borders(Borders::ALL)
+        .title("Menu")
+        .style(Style::default().fg(Color::White));
 
-    f.render_widget(menu, area);
-}
+    let menu_area = centered_rect(50, 40, area);
 
-fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
-    let popup_layout = Layout::default()
+    // Render the outer block
+    f.render_widget(outer_block, menu_area);
+
+    // Create an inner area with margins
+    let inner_area = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage((100 - percent_y) / 2),
-            Constraint::Percentage(percent_y),
-            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Length(1), // Top margin
+            Constraint::Min(1),    // Content
+            Constraint::Length(1), // Bottom margin
         ])
-        .split(r);
+        .split(menu_area.inner(Margin {
+            vertical: 0,
+            horizontal: 30,
+        }))[1];
 
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - percent_x) / 2),
-            Constraint::Percentage(percent_x),
-            Constraint::Percentage((100 - percent_x) / 2),
-        ])
-        .split(popup_layout[1])[1]
+    let menu = Paragraph::new(text)
+        .alignment(Alignment::Left)
+        .style(Style::default().fg(Color::White));
+
+    // Render the menu text in the inner area
+    f.render_widget(menu, inner_area);
 }
 
-fn draw_character_creation<B: Backend>(f: &mut Frame, app: &mut App) {
+fn draw_character_creation(f: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints(
@@ -226,10 +210,30 @@ fn draw_character_creation<B: Backend>(f: &mut Frame, app: &mut App) {
     f.render_widget(status, chunks[2]);
 }
 
-fn draw_game<B: Backend>(f: &mut Frame, app: &mut App) {
+fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(r);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(popup_layout[1])[1]
+}
+
+fn draw_game(f: &mut Frame, app: &mut App) {
     // To be implemented
 }
 
-fn draw_pause_menu<B: Backend>(f: &mut Frame, app: &mut App) {
+fn draw_pause_menu(f: &mut Frame, app: &mut App) {
     // To be implemented
 }
