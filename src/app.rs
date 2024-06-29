@@ -20,7 +20,8 @@ pub enum AppState {
 pub struct GameState {
     pub assistant_id: String,
     pub thread_id: String,
-    // Add other game state fields as needed
+    pub player_health: u8,
+    pub player_gold: u32,
 }
 
 pub struct App {
@@ -32,10 +33,14 @@ pub struct App {
     pub settings: Settings,
     pub settings_state: SettingsState,
     pub api_key_input: String,
-    pub clipboard: ClipboardContext,
+    pub game_content: String,
+    pub user_input: String,
+    pub cursor_position: usize,
+    pub debug_info: String,
+    clipboard: ClipboardContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Settings {
     pub language: String,
     pub openai_api_key: String,
@@ -122,7 +127,22 @@ impl App {
             settings,
             settings_state,
             api_key_input: String::new(),
+            game_content: String::new(),
+            user_input: String::new(),
+            cursor_position: 0,
+            debug_info: String::new(),
             clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
+        }
+    }
+
+    pub fn on_key(&mut self, key: KeyEvent) {
+        match self.state {
+            AppState::MainMenu => self.handle_main_menu_input(key),
+            AppState::InGame => self.handle_in_game_input(key),
+            AppState::LoadGame => self.handle_load_game_input(key),
+            AppState::CreateImage => self.handle_create_image_input(key),
+            AppState::Settings => self.handle_settings_input(key),
+            AppState::InputApiKey => self.handle_api_key_input(key),
         }
     }
 
@@ -208,19 +228,6 @@ impl App {
         }
     }
 
-    pub fn on_key(&mut self, key: KeyEvent) {
-        if key.kind == KeyEventKind::Press {
-            match self.state {
-                AppState::MainMenu => self.handle_main_menu_input(key),
-                AppState::InGame => self.handle_in_game_input(key),
-                AppState::LoadGame => self.handle_load_game_input(key),
-                AppState::CreateImage => self.handle_create_image_input(key),
-                AppState::Settings => self.handle_settings_input(key),
-                AppState::InputApiKey => self.handle_api_key_input(key),
-            }
-        }
-    }
-
     fn handle_main_menu_input(&mut self, key: KeyEvent) {
         if key.kind != KeyEventKind::Press {
             return;
@@ -262,9 +269,67 @@ impl App {
     }
 
     fn handle_in_game_input(&mut self, key: KeyEvent) {
-        // Implement in-game input handling
-        cleanup();
-        unimplemented!("handle_in_game_input");
+        match key.code {
+            KeyCode::Enter => {
+                self.submit_user_input();
+            }
+            KeyCode::Char(c) => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'v' {
+                    // Handle paste
+                    if let Ok(contents) = self.clipboard.get_contents() {
+                        self.user_input.insert_str(self.cursor_position, &contents);
+                        self.cursor_position += contents.len();
+                    }
+                } else {
+                    self.user_input.insert(self.cursor_position, c);
+                    self.cursor_position += 1;
+                }
+            }
+            KeyCode::Backspace => {
+                if self.cursor_position > 0 {
+                    self.user_input.remove(self.cursor_position - 1);
+                    self.cursor_position -= 1;
+                }
+            }
+            KeyCode::Delete => {
+                if self.cursor_position < self.user_input.len() {
+                    self.user_input.remove(self.cursor_position);
+                }
+            }
+            KeyCode::Left => {
+                if self.cursor_position > 0 {
+                    self.cursor_position -= 1;
+                }
+            }
+            KeyCode::Right => {
+                if self.cursor_position < self.user_input.len() {
+                    self.cursor_position += 1;
+                }
+            }
+            KeyCode::Home => {
+                self.cursor_position = 0;
+            }
+            KeyCode::End => {
+                self.cursor_position = self.user_input.len();
+            }
+            KeyCode::Esc => {
+                self.state = AppState::MainMenu;
+            }
+            _ => {}
+        }
+    }
+
+    fn submit_user_input(&mut self) {
+        // Here you would typically send the user input to your game logic or AI
+        // For now, we'll just append it to the game content
+        self.game_content
+            .push_str(&format!("\nYou: {}", self.user_input));
+        self.user_input.clear();
+        self.cursor_position = 0;
+
+        // Simulate a response from the game
+        self.game_content
+            .push_str("\nGame Master: What would you like to do next?");
     }
 
     fn handle_load_game_input(&mut self, key: KeyEvent) {

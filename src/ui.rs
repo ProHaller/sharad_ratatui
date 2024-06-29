@@ -50,8 +50,113 @@ pub fn draw(f: &mut Frame, app: &App) {
     }
 }
 
-fn draw_in_game(f: &mut Frame, app: &App) {
-    // Placeholder for drawing the in-game screen
+pub fn draw_in_game(f: &mut Frame, app: &App) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage(60), // Game Content
+            Constraint::Percentage(20), // User Input
+            Constraint::Percentage(10), // Status Bar
+            Constraint::Percentage(10), // Debug Info
+        ])
+        .split(f.size());
+
+    draw_game_content(f, app, chunks[0]);
+    draw_user_input(f, app, chunks[1]);
+    draw_status_bar(f, app, chunks[2]);
+    draw_debug_info(f, app, chunks[3]);
+}
+
+fn draw_game_content(f: &mut Frame, app: &App, area: Rect) {
+    let block = Block::default()
+        .title("Game Content")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan));
+
+    let content = Paragraph::new(app.game_content.clone())
+        .block(block)
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(content, area);
+}
+
+fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
+    let block = Block::default()
+        .title("Your Action")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow));
+
+    let input = Paragraph::new(app.user_input.clone())
+        .style(Style::default().fg(Color::White))
+        .block(block);
+
+    f.render_widget(input, area);
+
+    // Set cursor
+    f.set_cursor(area.x + app.cursor_position as u16 + 1, area.y + 1)
+}
+
+fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
+    let block = Block::default()
+        .title("Status")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Magenta));
+
+    let status = vec![Line::from(vec![
+        Span::raw("Audio Input: "),
+        Span::styled(
+            if app.settings.audio_input_enabled {
+                "ON"
+            } else {
+                "OFF"
+            },
+            Style::default().fg(if app.settings.audio_input_enabled {
+                Color::Green
+            } else {
+                Color::Red
+            }),
+        ),
+        Span::raw(" | "),
+        Span::raw("Audio Output: "),
+        Span::styled(
+            if app.settings.audio_output_enabled {
+                "ON"
+            } else {
+                "OFF"
+            },
+            Style::default().fg(if app.settings.audio_output_enabled {
+                Color::Green
+            } else {
+                Color::Red
+            }),
+        ),
+    ])];
+
+    let status_widget = Paragraph::new(status)
+        .block(block)
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(status_widget, area);
+}
+
+fn draw_debug_info(f: &mut Frame, app: &App, area: Rect) {
+    let block = Block::default()
+        .title("Debug Info")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::DarkGray));
+
+    let debug_info = if app.settings.debug_mode {
+        app.debug_info.clone()
+    } else {
+        "Debug mode is off".to_string()
+    };
+
+    let debug_widget = Paragraph::new(debug_info)
+        .style(Style::default().fg(Color::DarkGray))
+        .block(block)
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(debug_widget, area);
 }
 
 fn draw_load_game(f: &mut Frame, app: &App) {
