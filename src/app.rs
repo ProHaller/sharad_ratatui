@@ -1,5 +1,6 @@
+use crate::cleanup::cleanup;
 use async_openai::{config::OpenAIConfig, Client};
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use ratatui::widgets::ListState;
 use serde::{Deserialize, Serialize};
 
@@ -69,57 +70,78 @@ impl App {
     }
 
     pub fn on_key(&mut self, key: KeyEvent) {
-        match self.state {
-            AppState::MainMenu => self.handle_main_menu_input(key),
-            AppState::InGame => self.handle_in_game_input(key),
-            AppState::LoadGame => self.handle_load_game_input(key),
-            AppState::CreateImage => self.handle_create_image_input(key),
-            AppState::Settings => self.handle_settings_input(key),
+        if key.kind == KeyEventKind::Press {
+            match self.state {
+                AppState::MainMenu => self.handle_main_menu_input(key),
+                AppState::InGame => self.handle_in_game_input(key),
+                AppState::LoadGame => self.handle_load_game_input(key),
+                AppState::CreateImage => self.handle_create_image_input(key),
+                AppState::Settings => self.handle_settings_input(key),
+            }
         }
     }
 
     fn handle_main_menu_input(&mut self, key: KeyEvent) {
+        if key.kind != KeyEventKind::Press {
+            return;
+        }
+
         match key.code {
-            crossterm::event::KeyCode::Up => {
-                let i = self.main_menu_state.selected().unwrap_or(0);
-                self.main_menu_state
-                    .select(Some(if i == 0 { 4 } else { i - 1 }));
-            }
-            crossterm::event::KeyCode::Down => {
-                let i = self.main_menu_state.selected().unwrap_or(0);
-                self.main_menu_state.select(Some((i + 1) % 5));
-            }
-            crossterm::event::KeyCode::Enter => {
-                match self.main_menu_state.selected() {
-                    Some(0) => self.state = AppState::InGame, // Start new game
-                    Some(1) => self.state = AppState::LoadGame,
-                    Some(2) => self.state = AppState::CreateImage,
-                    Some(3) => self.state = AppState::Settings,
-                    Some(4) => self.should_quit = true, // Exit
-                    _ => {}
-                }
+            KeyCode::Up => self.navigate_menu(-1),
+            KeyCode::Down => self.navigate_menu(1),
+            KeyCode::Enter => self.select_menu_option(),
+            KeyCode::Char(c) if ('0'..='4').contains(&c) => self.select_menu_by_char(c),
+            KeyCode::Esc => {
+                cleanup();
+                std::process::exit(0);
             }
             _ => {}
         }
     }
 
+    fn navigate_menu(&mut self, direction: isize) {
+        let i = self.main_menu_state.selected().unwrap_or(0) as isize;
+        let new_i = (i + direction).rem_euclid(4) as usize;
+        self.main_menu_state.select(Some(new_i));
+    }
+
+    fn select_menu_option(&mut self) {
+        match self.main_menu_state.selected() {
+            Some(0) => self.state = AppState::InGame,
+            Some(1) => self.state = AppState::LoadGame,
+            Some(2) => self.state = AppState::CreateImage,
+            Some(3) => self.state = AppState::Settings,
+            _ => {}
+        }
+    }
+
+    fn select_menu_by_char(&mut self, c: char) {
+        let index = (c as usize - 1) % 4;
+        self.main_menu_state.select(Some(index));
+        self.select_menu_option();
+    }
+
     fn handle_in_game_input(&mut self, key: KeyEvent) {
         // Implement in-game input handling
+        cleanup();
         unimplemented!("handle_in_game_input");
     }
 
     fn handle_load_game_input(&mut self, key: KeyEvent) {
         // Implement load game input handling
+        cleanup();
         unimplemented!("handle_load_game_input");
     }
 
     fn handle_create_image_input(&mut self, key: KeyEvent) {
         // Implement image creation input handling
+        cleanup();
         unimplemented!("handle_create_image_input");
     }
 
     fn handle_settings_input(&mut self, key: KeyEvent) {
         // Implement settings input handling
+        cleanup();
         unimplemented!("handle_settings_input");
     }
 }

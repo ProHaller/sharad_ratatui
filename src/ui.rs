@@ -12,27 +12,26 @@ use ratatui::{
 
 // ASCII_ART constant remains unchanged
 
-const ASCII_ART: &str = r#"
+const ART: &str = r#"
+    _____   .                 A            .              .   .       .      
+    o o o\            .     _/_\_                                  |\        
+   ------\\      .       __//...\\__                .              ||\   .   
+   __ A . |\         .  <----------→     .                  .      ||||      
+ HH|\. .|||                \\\|///                 ___|_           ||||      
+ ||| | . \\\     A    .      |.|                  /|  .|    .      /||\      
+   | | .  |||   / \          |.|     .           | | ..|          /.||.\     
+ ..| | . . \\\ ||**|         |.|   _A_     ___   | | ..|         || |\ .|    
+ ..| | , ,  |||||**|         |.|  /| |   /|   |  |.| ..|         || |*|*|    
+ ..|.| . . . \\\|**|.  ____  |.| | | |  | |***|  |.| ..|  _____  || |*|\|\   
+ ..|.| . . .  |||**| /|.. .| |.| |*|*|  | |*  | ___| ..|/|  .  | || |*| |\\  
+ -----------,. \\\*|| |.. .|//|\\|*|*_____| **||| ||  .| | ..  |/|| |*| |\\  
+ Sharad game \  ||||| |..  // A \\*/| . ..| * ||| || ..| |  .  ||||,|*| | \  
+  By Roland  |\. \\\| |.. // /|\ \\ | . ..|** ||| || ..| | . . ||||.|*| |\\  
+   and the    \\  ||| |, ||.| | | ||| . ..| * ||| ||  .| | ..  ||||.|*| |||| 
+ Haller Family||  ||| |, ||.| | | ||| . ..| * ||| ||  .| | ..  ||||.|*| |||| 
+"#;
 
-
-     ----------------------------------------------------------------------------- 
-    |    _____   .                 A            .              .   .       .      |
-    |    o o o\            .     _/_\_                                  |\        |
-    |   ------\\      .       __//...\\__                .              ||\   .   |
-    |   __ A . |\         .  <----------→     .                  .      ||||      |
-    | HH|\. .|||                \\\|///                 ___|_           ||||      |
-    | ||| | . \\\     A    .      |.|                  /|  .|    .      /||\      |
-    |   | | .  |||   / \          |.|     .           | | ..|          /.||.\     |
-    | ..| | . . \\\ ||**|         |.|   _A_     ___   | | ..|         || |\ .|    |
-    | ..| | , ,  |||||**|         |.|  /| |   /|   |  |.| ..|         || |*|*|    |
-    | ..|.| . . . \\\|**|.  ____  |.| | | |  | |***|  |.| ..|  _____  || |*|\|\   |
-    | ..|.| . . .  |||**| /|.. .| |.| |*|*|  | |*  | ___| ..|/|  .  | || |*| |\\  |
-    | -----------,. \\\*|| |.. .|//|\\|*|*_____| **||| ||  .| | ..  |/|| |*| |\\  |
-    | Sharad game \  ||||| |..  // A \\*/| . ..| * ||| || ..| |  .  ||||,|*| | \  |
-    |  By Roland  |\. \\\| |.. // /|\ \\ | . ..|** ||| || ..| | . . ||||.|*| |\\  |
-    |   and the    \\  ||| |, ||.| | | ||| . ..| * ||| ||  .| | ..  ||||.|*| |||| |
-     ----------------------------------------------------------------------------- 
-
+const TITLE: &str = r#"
   _____ _                         _
  / ____| |                       | |
 | (___ | |__   __ _ _ __ __ _  __| |
@@ -70,31 +69,35 @@ fn draw_main_menu(f: &mut Frame, app: &App) {
         .direction(Direction::Vertical) // Arrange elements vertically
         .constraints(
             [
-                Constraint::Length(30), // Fixed height for ASCII art
-                Constraint::Min(10),    // Minimum height for menu
-                Constraint::Length(3),  // Fixed height for status bar
+                Constraint::Min(20), // Fixed height for ASCII art
+                Constraint::Min(10), // Fixed height for title art
+                Constraint::Min(5),  // Minimum height for console
+                Constraint::Min(6),  // Minimum height for menu
+                Constraint::Max(3),  // Fixed height for status bar
             ]
             .as_ref(),
         )
         .split(f.size());
 
-    // Render ASCII art
-    let ascii_art = Paragraph::new(ASCII_ART)
-        .style(Style::default().fg(Color::Green)) // Style the ASCII art with green color
-        .alignment(Alignment::Center); // Center align the ASCII art
-    f.render_widget(ascii_art, chunks[0]); // Render the ASCII art in the first chunk
+    render_art(f, chunks[0]);
+    render_title(f, chunks[1]);
+    // Render status bar
+    let status = Paragraph::new("Here some system messages.")
+        .style(Style::default().fg(Color::LightCyan)) // Style the status bar text with light cyan color
+        .block(Block::default().borders(Borders::ALL)) // Add borders to the status bar
+        .alignment(Alignment::Center); // Center align the status bar text
+    f.render_widget(status, chunks[2]); // Render the status bar in the third chunk
 
     // Render menu
-    render_menu(f, app, chunks[1]); // Render the menu in the second chunk
+    render_menu(f, app, chunks[3]); // Render the menu in the second chunk
 
     // Render status bar
     let status = Paragraph::new("Press q to quit")
         .style(Style::default().fg(Color::LightCyan)) // Style the status bar text with light cyan color
         .block(Block::default().borders(Borders::ALL)) // Add borders to the status bar
         .alignment(Alignment::Center); // Center align the status bar text
-    f.render_widget(status, chunks[2]); // Render the status bar in the third chunk
+    f.render_widget(status, chunks[4]); // Render the status bar in the third chunk
 }
-
 fn render_menu(f: &mut Frame, app: &App, area: Rect) {
     // Function to render the menu
     let menu_items = [
@@ -102,20 +105,16 @@ fn render_menu(f: &mut Frame, app: &App, area: Rect) {
         "Load a game",      // Second menu item
         "Create an image",  // Third menu item
         "Settings",         // Fourth menu item
-        "Exit",             // Fifth menu item
     ];
 
     let text: Vec<Line> = menu_items
         .iter()
         .enumerate()
         .map(|(i, &item)| {
-            // Map each menu item to a line of text
-            let number = if i == menu_items.len() - 1 {
-                "0. ".to_string() // Format the last item number as 0
-            } else {
+            let number = {
                 format!("{}. ", i + 1) // Format other item numbers starting from 1
             };
-            let content = format!("{}", item); // Convert the item to a string
+            let content = item; // Convert the item to a string
             if i == app.main_menu_state.selected().unwrap_or(0) {
                 Line::from(vec![
                     Span::styled(number, Style::default().fg(Color::Yellow)), // Highlight the selected item number
@@ -137,7 +136,7 @@ fn render_menu(f: &mut Frame, app: &App, area: Rect) {
         .title("Menu") // Title the outer block
         .style(Style::default().fg(Color::White)); // Style the outer block
 
-    let menu_area = centered_rect(50, 40, area); // Create a centered rectangle for the menu
+    let menu_area = centered_rect(50, 100, area); // Create a centered rectangle for the menu
 
     // Render the outer block
     f.render_widget(outer_block, menu_area);
@@ -163,14 +162,71 @@ fn render_menu(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(menu, inner_area);
 }
 
+fn render_art(f: &mut Frame, area: Rect) {
+    let outer_block = Block::default()
+        .borders(Borders::ALL) // Add borders to the outer block
+        .style(Style::default().fg(Color::Green)); // Style the outer block
+
+    let art_outer_area = centered_rect(50, 96, area); // Create a centered rectangle for the art
+    f.render_widget(&outer_block, art_outer_area);
+
+    // Create an inner area with margins for the art
+    let art_inner_area = Layout::default()
+        .direction(Direction::Vertical) // Arrange elements vertically inside the art area
+        .constraints([
+            Constraint::Length(0), // Fixed height for top margin
+            Constraint::Min(15),   // Minimum height for content
+            Constraint::Length(0), // Fixed height for bottom margin
+        ])
+        .split(art_outer_area.inner(Margin {
+            vertical: 1,   // No vertical margin
+            horizontal: 1, // Horizontal margin of 27 units
+        }))[1];
+
+    let art = Paragraph::new(ART)
+        .alignment(Alignment::Center) // Left align the art text
+        .style(Style::default().fg(Color::Green)); // Style the art text
+
+    // Render the art text in the inner area
+    f.render_widget(art, art_inner_area);
+}
+
+fn render_title(f: &mut Frame, area: Rect) {
+    let outer_block = Block::default();
+
+    let title_outer_area = centered_rect(30, 100, area); // Create a centered rectangle for the title
+    f.render_widget(&outer_block, title_outer_area);
+
+    // Create an inner area with margins for the title
+    let title_inner_area = Layout::default()
+        .direction(Direction::Vertical) // Arrange elements vertically inside the title area
+        .constraints([
+            Constraint::Length(1), // Fixed height for top margin
+            Constraint::Min(6),    // Minimum height for content
+            Constraint::Length(1), // Fixed height for bottom margin
+        ])
+        .split(title_outer_area.inner(Margin {
+            vertical: 0,   // No vertical margin
+            horizontal: 5, // Horizontal margin of 27 units
+        }))[1];
+
+    let title = Paragraph::new(TITLE)
+        .alignment(Alignment::Center) // Left align the title text
+        .style(Style::default().fg(Color::Green)); // Style the title text
+
+    // Render the title text in the inner area
+    f.render_widget(title, title_inner_area);
+}
+
 fn draw_settings(f: &mut Frame, app: &App) {
     // Function to draw the settings screen
     let chunks = Layout::default()
         .direction(Direction::Vertical) // Arrange elements vertically
         .constraints(
             [
-                Constraint::Length(28), // Fixed height for ASCII art
-                Constraint::Min(7),     // Minimum height for settings
+                Constraint::Length(14), // Fixed height for ART
+                Constraint::Length(5),  // Fixed height for TITLE
+                Constraint::Min(10),    // Minimum height for settings
                 Constraint::Length(3),  // Fixed height for status bar
             ]
             .as_ref(),
@@ -178,18 +234,23 @@ fn draw_settings(f: &mut Frame, app: &App) {
         .split(f.size());
 
     // Render ASCII art
-    let ascii_art = Paragraph::new(ASCII_ART)
+    let ascii_art = Paragraph::new(ART)
         .style(Style::default().fg(Color::Green)) // Style the ASCII art with green color
         .alignment(Alignment::Center); // Center align the ASCII art
     f.render_widget(ascii_art, chunks[0]); // Render the ASCII art in the first chunk
 
-    render_settings(f, app, chunks[1]); // Render the settings content in the second chunk
+    let title = Paragraph::new(TITLE)
+        .style(Style::default().fg(Color::Green))
+        .alignment(Alignment::Center);
+    f.render_widget(title, chunks[1]);
+
+    render_settings(f, app, chunks[2]); // Render the settings content in the second chunk
 
     let status = Paragraph::new("Press Esc to return to main menu")
         .style(Style::default().fg(Color::LightCyan)) // Style the status bar text with light cyan color
         .block(Block::default().borders(Borders::ALL)) // Add borders to the status bar
         .alignment(Alignment::Center); // Center align the status bar text
-    f.render_widget(status, chunks[2]); // Render the status bar in the third chunk
+    f.render_widget(status, chunks[3]); // Render the status bar in the third chunk
 }
 
 fn render_settings(f: &mut Frame, app: &App, area: Rect) {
@@ -276,10 +337,11 @@ fn render_settings(f: &mut Frame, app: &App, area: Rect) {
         .borders(Borders::ALL) // Add borders to the outer block
         .title("Settings") // Title the outer block
         .style(Style::default().fg(Color::White)); // Style the outer block
+                                                   //
+                                                   // Create an inner area with margins
 
     let settings_area = centered_rect(50, 40, area); // Create a centered rectangle for the settings
-
-    // Render the outer block
+                                                     // Render the outer block
     f.render_widget(outer_block, settings_area);
 
     // Create an inner area with margins
