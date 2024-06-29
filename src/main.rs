@@ -35,12 +35,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut app = App::new();
     let res = run_app(&mut terminal, &mut app, running);
 
-    // Restore terminal
-    cleanup();
+    app.check_api_key();
 
     if let Err(err) = res {
         println!("{:?}", err)
     }
+
+    // Save settings on exit
+    if let Err(e) = app.settings.save_to_file("settings.json") {
+        eprintln!("Failed to save settings: {:?}", e);
+    }
+    // Restore terminal
+    cleanup();
 
     Ok(())
 }

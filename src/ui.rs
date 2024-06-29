@@ -1,13 +1,12 @@
-use crate::app::{App, AppState, GameState}; // Importing necessary modules from the app crate
-
+use crate::app::{App, AppState};
 use ratatui::{
-    // Importing various modules from the ratatui library
-    backend::Backend, // Backend module for handling backend-specific functionality
-    layout::{Alignment, Constraint, Direction, Layout, Margin, Rect}, // Layout modules for arranging UI components
-    style::{Color, Modifier, Style}, // Style modules for customizing text and UI appearance
-    text::{Line, Span},              // Text modules for handling lines and spans of text
-    widgets::*,                      // Importing all widgets
-    Frame,                           // Frame module for drawing the UI
+    backend::Backend,
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    prelude::Margin,
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::*,
+    Frame,
 };
 
 // ASCII_ART constant remains unchanged
@@ -41,13 +40,13 @@ const TITLE: &str = r#"
 "#;
 
 pub fn draw(f: &mut Frame, app: &App) {
-    // Main draw function that decides which screen to draw based on the app state
     match app.state {
-        AppState::MainMenu => draw_main_menu(f, app), // Draw main menu
-        AppState::InGame => draw_in_game(f, app),     // Draw in-game screen
-        AppState::LoadGame => draw_load_game(f, app), // Draw load game screen
-        AppState::CreateImage => draw_create_image(f, app), // Draw create image screen
-        AppState::Settings => draw_settings(f, app),  // Draw settings screen
+        AppState::MainMenu => draw_main_menu(f, app),
+        AppState::InGame => draw_in_game(f, app),
+        AppState::LoadGame => draw_load_game(f, app),
+        AppState::CreateImage => draw_create_image(f, app),
+        AppState::Settings => draw_settings(f, app),
+        AppState::InputApiKey => draw_api_key_input(f, app),
     }
 }
 
@@ -71,7 +70,7 @@ fn draw_main_menu(f: &mut Frame, app: &App) {
             [
                 Constraint::Min(20), // Fixed height for ASCII art
                 Constraint::Min(10), // Fixed height for title art
-                Constraint::Min(5),  // Minimum height for console
+                Constraint::Min(3),  // Minimum height for console
                 Constraint::Min(6),  // Minimum height for menu
                 Constraint::Max(3),  // Fixed height for status bar
             ]
@@ -98,6 +97,7 @@ fn draw_main_menu(f: &mut Frame, app: &App) {
         .alignment(Alignment::Center); // Center align the status bar text
     f.render_widget(status, chunks[4]); // Render the status bar in the third chunk
 }
+
 fn render_menu(f: &mut Frame, app: &App, area: Rect) {
     // Function to render the menu
     let menu_items = [
@@ -111,10 +111,8 @@ fn render_menu(f: &mut Frame, app: &App, area: Rect) {
         .iter()
         .enumerate()
         .map(|(i, &item)| {
-            let number = {
-                format!("{}. ", i + 1) // Format other item numbers starting from 1
-            };
-            let content = item; // Convert the item to a string
+            let number = format!("{}. ", i + 1);
+            let content = item;
             if i == app.main_menu_state.selected().unwrap_or(0) {
                 Line::from(vec![
                     Span::styled(number, Style::default().fg(Color::Yellow)), // Highlight the selected item number
@@ -219,150 +217,157 @@ fn render_title(f: &mut Frame, area: Rect) {
 }
 
 fn draw_settings(f: &mut Frame, app: &App) {
-    // Function to draw the settings screen
     let chunks = Layout::default()
-        .direction(Direction::Vertical) // Arrange elements vertically
+        .direction(Direction::Vertical)
         .constraints(
             [
-                Constraint::Length(14), // Fixed height for ART
-                Constraint::Length(5),  // Fixed height for TITLE
-                Constraint::Min(10),    // Minimum height for settings
-                Constraint::Length(3),  // Fixed height for status bar
+                Constraint::Min(20), // Fixed height for ASCII art
+                Constraint::Min(8),  // Fixed height for title art
+                Constraint::Min(2),  // Minimum height for console
+                Constraint::Min(10), // Minimum height for the settings
+                Constraint::Max(3),  // Fixed height for status bar
             ]
             .as_ref(),
         )
         .split(f.size());
 
-    // Render ASCII art
-    let ascii_art = Paragraph::new(ART)
-        .style(Style::default().fg(Color::Green)) // Style the ASCII art with green color
-        .alignment(Alignment::Center); // Center align the ASCII art
-    f.render_widget(ascii_art, chunks[0]); // Render the ASCII art in the first chunk
+    render_art(f, chunks[0]); // Render the art in the first chunk
+    render_title(f, chunks[1]); // Render the title in the second chunk
 
-    let title = Paragraph::new(TITLE)
-        .style(Style::default().fg(Color::Green))
+    let status = Paragraph::new("Here some system messages.")
+        .style(Style::default().fg(Color::LightCyan))
+        .block(Block::default().borders(Borders::ALL))
         .alignment(Alignment::Center);
-    f.render_widget(title, chunks[1]);
-
-    render_settings(f, app, chunks[2]); // Render the settings content in the second chunk
+    f.render_widget(status, chunks[2]);
+    render_settings(f, app, chunks[3]);
 
     let status = Paragraph::new("Press Esc to return to main menu")
-        .style(Style::default().fg(Color::LightCyan)) // Style the status bar text with light cyan color
-        .block(Block::default().borders(Borders::ALL)) // Add borders to the status bar
-        .alignment(Alignment::Center); // Center align the status bar text
-    f.render_widget(status, chunks[3]); // Render the status bar in the third chunk
+        .style(Style::default().fg(Color::LightCyan))
+        .block(Block::default().borders(Borders::ALL))
+        .alignment(Alignment::Center);
+    f.render_widget(status, chunks[4]);
 }
 
 fn render_settings(f: &mut Frame, app: &App, area: Rect) {
-    // Function to render the settings content
     let settings = [
-        ("Language", vec!["English", "Français", "日本語"]), // Language setting with options
-        ("API Key", vec!["Set", "Not Set"]),                 // API Key setting with options
-        ("Voice Output", vec!["On", "Off"]),                 // Voice output setting with options
-        ("Voice Input", vec!["On", "Off"]),                  // Voice input setting with options
-        ("Debug Mode", vec!["Off", "On"]),                   // Debug mode setting with options
+        ("Language", vec!["English", "Français", "日本語"]),
+        ("OpenAI API Key", vec![]),
+        ("Voice Output", vec!["On", "Off"]),
+        ("Voice Input", vec!["On", "Off"]),
+        ("Debug Mode", vec!["Off", "On"]),
     ];
 
     let text: Vec<Line> = settings
         .iter()
         .enumerate()
-        .map(|(i, (setting, options))| {
-            // Map each setting to a line of text
-            let mut spans = vec![
-                Span::styled(format!("{}. ", i + 1), Style::default().fg(Color::Yellow)), // Highlight the setting number
-                Span::styled(
-                    format!("{:<15}", setting), // Format the setting name with fixed width
-                    Style::default().fg(Color::White), // Style the setting name
-                ),
-            ];
+        .map(|(number, (setting, options))| {
+            let is_selected_setting = number == app.settings_state.selected_setting;
 
-            let selected_option = match i {
-                0 => match app.settings.language.as_str() {
-                    "en" => 0, // English option
-                    "fr" => 1, // French option
-                    "ja" => 2, // Japanese option
-                    _ => 0,    // Default to English
-                },
-                1 => {
-                    if app.settings.openai_api_key.is_empty() {
-                        1 // API key not set
-                    } else {
-                        0 // API key set
-                    }
-                }
-                2 => {
-                    if app.settings.audio_output_enabled {
-                        0 // Voice output enabled
-                    } else {
-                        1 // Voice output disabled
-                    }
-                }
-                3 => {
-                    if app.settings.audio_input_enabled {
-                        0 // Voice input enabled
-                    } else {
-                        1 // Voice input disabled
-                    }
-                }
-                4 => {
-                    if app.settings.debug_mode {
-                        1 // Debug mode enabled
-                    } else {
-                        0 // Debug mode disabled
-                    }
-                }
-                _ => 0,
+            let highlight_line_style = if is_selected_setting {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
             };
 
-            spans.extend(options.iter().enumerate().map(|(j, option)| {
-                // Map each option to a span of text
-                if j == selected_option {
-                    Span::styled(
-                        format!("[{}] ", option), // Highlight the selected option
-                        Style::default()
-                            .fg(Color::Green) // Green color for selected option
-                            .add_modifier(Modifier::BOLD),
-                    )
-                } else {
-                    Span::styled(format!("{} ", option), Style::default().fg(Color::Gray))
-                    // Gray color for non-selected options
-                }
-            }));
+            let mut spans = vec![
+                Span::styled(
+                    format!("{}. ", number + 1),
+                    Style::default().fg(Color::Gray),
+                ),
+                Span::styled(format!("{:<15}", setting), highlight_line_style),
+            ];
 
-            Line::from(spans) // Create a line from the spans
+            if number == 1 {
+                // API Key setting
+                let api_key_status = if app.settings.openai_api_key.is_empty() {
+                    "[not valid]"
+                } else {
+                    "[valid]"
+                };
+                spans.push(Span::styled(
+                    api_key_status,
+                    Style::default().fg(Color::Green),
+                ));
+            } else {
+                let selected_option = app.settings_state.selected_options[number];
+                spans.extend(options.iter().enumerate().map(|(option_number, option)| {
+                    let is_selected_option = option_number == selected_option;
+                    let option_style = if is_selected_option {
+                        Style::default().fg(Color::Green)
+                    } else {
+                        Style::default().fg(Color::White)
+                    };
+                    Span::styled(format!("[{}] ", option), option_style)
+                }));
+            }
+
+            Line::from(spans)
         })
         .collect();
 
     let outer_block = Block::default()
-        .borders(Borders::ALL) // Add borders to the outer block
-        .title("Settings") // Title the outer block
-        .style(Style::default().fg(Color::White)); // Style the outer block
-                                                   //
-                                                   // Create an inner area with margins
+        .borders(Borders::ALL)
+        .title("Settings")
+        .style(Style::default().fg(Color::White));
 
-    let settings_area = centered_rect(50, 40, area); // Create a centered rectangle for the settings
-                                                     // Render the outer block
+    let settings_area = centered_rect(50, 100, area);
     f.render_widget(outer_block, settings_area);
 
-    // Create an inner area with margins
     let inner_area = Layout::default()
-        .direction(Direction::Vertical) // Arrange elements vertically inside the settings
+        .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // Fixed height for top margin
-            Constraint::Min(1),    // Minimum height for content
-            Constraint::Length(1), // Fixed height for bottom margin
+            Constraint::Length(1),
+            Constraint::Min(1),
+            Constraint::Length(1),
         ])
         .split(settings_area.inner(Margin {
-            vertical: 1,   // Vertical margin of 1 unit
-            horizontal: 2, // Horizontal margin of 2 units
+            vertical: 1,
+            horizontal: area.width as u16 / 10,
         }))[1];
 
     let settings_widget = Paragraph::new(text)
-        .alignment(Alignment::Left) // Left align the settings text
-        .style(Style::default().fg(Color::White)); // Style the settings text
+        .alignment(Alignment::Left)
+        .style(Style::default().fg(Color::White));
 
-    // Render the settings text in the inner area
     f.render_widget(settings_widget, inner_area);
+}
+
+fn draw_api_key_input(f: &mut Frame, app: &App) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(2)
+        .constraints(
+            [
+                Constraint::Length(3),
+                Constraint::Length(3),
+                Constraint::Length(2),
+                Constraint::Min(1),
+            ]
+            .as_ref(),
+        )
+        .split(f.size());
+
+    let title = Paragraph::new("Enter OpenAI API Key")
+        .style(Style::default().fg(Color::Cyan))
+        .alignment(Alignment::Center);
+    f.render_widget(title, chunks[0]);
+
+    let input = Paragraph::new(app.api_key_input.as_str())
+        .style(Style::default().fg(Color::Yellow))
+        .block(Block::default().borders(Borders::ALL).title("API Key"));
+    f.render_widget(input, chunks[1]);
+
+    let instructions = Paragraph::new("Press Enter to confirm, Esc to cancel")
+        .style(Style::default().fg(Color::Gray))
+        .alignment(Alignment::Center);
+    f.render_widget(instructions, chunks[2]);
+
+    let paste_info = Paragraph::new("Use Ctrl+V to paste")
+        .style(Style::default().fg(Color::Gray))
+        .alignment(Alignment::Center);
+    f.render_widget(paste_info, chunks[3]);
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
