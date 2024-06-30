@@ -1,5 +1,6 @@
+use crate::ai::ConversationState;
+use crate::ai::AI;
 use crate::cleanup::cleanup;
-use async_openai::{config::OpenAIConfig, Client};
 use copypasta::{ClipboardContext, ClipboardProvider};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::widgets::ListState;
@@ -7,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{self, Write};
 
+#[derive(PartialEq)]
 pub enum AppState {
     MainMenu,
     InGame,
@@ -40,7 +42,7 @@ pub struct App {
     pub should_quit: bool,
     pub state: AppState,
     pub main_menu_state: ListState,
-    pub openai_client: Option<Client<OpenAIConfig>>,
+    pub ai_client: Option<AI>,
     pub current_game: Option<GameState>,
     pub settings: Settings,
     pub settings_state: SettingsState,
@@ -96,8 +98,14 @@ impl App {
         let settings = Settings::load_from_file("settings.json").unwrap_or_default();
         let settings_state = SettingsState::from_settings(&settings);
 
-        let openai_client = if !settings.openai_api_key.is_none() {
-            Some(Client::new())
+        let ai_client = if let Some(api_key) = &settings.openai_api_key {
+            match AI::new(api_key.clone()) {
+                Ok(client) => Some(client),
+                Err(e) => {
+                    eprintln!("Failed to initialize AI client: {:?}", e);
+                    None
+                }
+            }
         } else {
             None
         };
@@ -106,13 +114,13 @@ impl App {
             should_quit: false,
             state: AppState::MainMenu,
             main_menu_state,
-            openai_client,
+            ai_client,
             current_game: None,
             settings,
             settings_state,
             api_key_input: String::new(),
             game_content: Vec::new(),
-            game_content_scroll: 0, // Initialize here
+            game_content_scroll: 0,
             user_input: String::new(),
             cursor_position: 0,
             debug_info: String::new(),
@@ -261,7 +269,7 @@ impl App {
                 }
             }
             KeyCode::Down => {
-                if self.game_content_scroll < self.game_content.len() - 1 {
+                if self.game_content_scroll < self.game_content.len().saturating_sub(1) {
                     self.game_content_scroll += 1;
                 }
             }
@@ -321,14 +329,61 @@ impl App {
                 content: self.user_input.clone(),
                 message_type: MessageType::User,
             });
+
+            // Here, you would typically send the user input to the AI and get a response
+            // For now, we'll just add a placeholder response
+            self.game_content.push(Message {
+                content: "AI response placeholder".to_string(),
+                message_type: MessageType::Game,
+            });
+
             self.user_input.clear();
             self.cursor_position = 0;
 
-            // Simulate a response from the game
-            self.game_content.push(Message {
-                content: "What would you like to do next?".to_string(),
-                message_type: MessageType::Game,
-            });
+            // Automatically scroll to the bottom
+            self.game_content_scroll = self.game_content.len().saturating_sub(1);
+        }
+    }
+    pub fn check_api_key(&mut self) {
+        if self.settings.openai_api_key.is_none() {
+            self.state = AppState::InputApiKey;
+        }
+    }
+
+    // Add a new method to handle periodic updates
+    pub fn on_tick(&mut self) {
+        // Implement any logic that needs to run periodically
+        // For example, you could update game state, process AI responses, etc.
+    }
+    #[allow(dead_code)]
+    pub async fn start_new_conversation(
+        &mut self,
+        assistant_id: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(ai) = &mut self.ai_client {
+            ai.start_new_conversation(assistant_id).await?;
+        }
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    pub async fn continue_conversation(
+        &mut self,
+        conversation_state: ConversationState,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(ai) = &mut self.ai_client {
+            ai.continue_conversation(conversation_state).await;
+        }
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    pub async fn send_message(&self, message: &str) -> Result<String, Box<dyn std::error::Error>> {
+        if let Some(ai) = &self.ai_client {
+            let response = ai.send_message(message).await?;
+            Ok(response)
+        } else {
+            Err("AI client not initialized".into())
         }
     }
 
@@ -349,7 +404,13 @@ impl App {
             KeyCode::Enter => {
                 if !self.api_key_input.is_empty() {
                     self.settings.openai_api_key = Some(self.api_key_input.clone());
-                    self.openai_client = Some(Client::new());
+                    match AI::new(self.api_key_input.clone()) {
+                        Ok(client) => self.ai_client = Some(client),
+                        Err(e) => {
+                            eprintln!("Failed to initialize AI client: {:?}", e);
+                            self.ai_client = None;
+                        }
+                    }
                     self.api_key_input.clear();
                     self.state = AppState::Settings;
                     self.settings
@@ -377,12 +438,6 @@ impl App {
                 self.state = AppState::Settings;
             }
             _ => {}
-        }
-    }
-
-    pub fn check_api_key(&mut self) {
-        if self.settings.openai_api_key.is_none() {
-            self.state = AppState::InputApiKey;
         }
     }
 }

@@ -51,14 +51,40 @@ pub fn draw(f: &mut Frame, app: &App) {
 fn draw_in_game(f: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage(80), // Game Content
-            Constraint::Percentage(20), // User Input
-        ])
+        .constraints([Constraint::Percentage(80), Constraint::Percentage(20)].as_ref())
         .split(f.size());
 
-    draw_game_content(f, app, chunks[0]);
-    draw_user_input(f, app, chunks[1]);
+    let game_content = app
+        .game_content
+        .iter()
+        .map(|message| {
+            let (style, prefix) = match message.message_type {
+                MessageType::User => (Style::default().fg(Color::Yellow), "You: "),
+                MessageType::Game => (Style::default().fg(Color::Green), "Game: "),
+            };
+            ListItem::new(Text::styled(format!("{}{}", prefix, message.content), style) as Text<'_>)
+        })
+        .collect::<Vec<_>>();
+
+    let game_content_widget = List::new(game_content)
+        .block(Block::default().borders(Borders::ALL).title("Game Content"))
+        .highlight_style(Style::default().add_modifier(Modifier::BOLD));
+
+    let mut game_content_state = ListState::default();
+    game_content_state.select(Some(app.game_content_scroll));
+
+    f.render_stateful_widget(game_content_widget, chunks[0], &mut game_content_state);
+
+    let input = Paragraph::new(app.user_input.as_str())
+        .style(Style::default().fg(Color::Yellow))
+        .block(Block::default().borders(Borders::ALL).title("Your Input"));
+    f.render_widget(input, chunks[1]);
+
+    // Set cursor
+    f.set_cursor(
+        chunks[1].x + app.cursor_position as u16 + 1,
+        chunks[1].y + 1,
+    );
 }
 
 fn render_game_content(app: &App, area: Rect) -> (Block, Vec<ListItem>, Rect) {
@@ -77,7 +103,7 @@ fn render_game_content(app: &App, area: Rect) -> (Block, Vec<ListItem>, Rect) {
         .iter()
         .map(|message| {
             let style = match message.message_type {
-                MessageType::User => Style::default().fg(Color::Yellow),
+                MessageType::User => Style::default().fg(Color::Blue),
                 MessageType::Game => Style::default().fg(Color::Green),
             };
 
@@ -148,11 +174,25 @@ fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_load_game(f: &mut Frame, app: &App) {
-    // Placeholder for drawing the load game screen
+    let chunk = f.size();
+
+    let load_game_ui = Paragraph::new("Load Game functionality coming soon...")
+        .style(Style::default().fg(Color::Yellow))
+        .alignment(Alignment::Center)
+        .block(Block::default().borders(Borders::ALL).title("Load Game"));
+
+    f.render_widget(load_game_ui, chunk);
 }
 
 fn draw_create_image(f: &mut Frame, app: &App) {
-    // Placeholder for drawing the create image screen
+    let chunk = f.size();
+
+    let create_image_ui = Paragraph::new("Image creation functionality coming soon...")
+        .style(Style::default().fg(Color::Magenta))
+        .alignment(Alignment::Center)
+        .block(Block::default().borders(Borders::ALL).title("Create Image"));
+
+    f.render_widget(create_image_ui, chunk);
 }
 
 fn draw_main_menu(f: &mut Frame, app: &App) {
@@ -461,7 +501,7 @@ fn draw_api_key_input(f: &mut Frame, app: &App) {
             [
                 Constraint::Length(3),
                 Constraint::Length(3),
-                Constraint::Length(2),
+                Constraint::Length(3),
                 Constraint::Min(1),
             ]
             .as_ref(),
@@ -474,7 +514,7 @@ fn draw_api_key_input(f: &mut Frame, app: &App) {
     f.render_widget(title, chunks[0]);
 
     let input = Paragraph::new(app.api_key_input.as_str())
-        .style(Style::default().fg(Color::Red))
+        .style(Style::default().fg(Color::Yellow))
         .block(Block::default().borders(Borders::ALL).title("API Key"));
     f.render_widget(input, chunks[1]);
 
@@ -487,6 +527,12 @@ fn draw_api_key_input(f: &mut Frame, app: &App) {
         .style(Style::default().fg(Color::Gray))
         .alignment(Alignment::Center);
     f.render_widget(paste_info, chunks[3]);
+
+    // Set cursor
+    f.set_cursor(
+        chunks[1].x + app.api_key_input.len() as u16 + 1,
+        chunks[1].y + 1,
+    );
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
