@@ -1,10 +1,9 @@
-use crate::app::{App, AppState};
+use crate::app::{App, AppState, MessageType};
 use ratatui::{
-    backend::Backend,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     prelude::Margin,
     style::{Color, Modifier, Style},
-    text::{Line, Span},
+    text::{Line, Span, Text},
     widgets::*,
     Frame,
 };
@@ -30,8 +29,7 @@ const ART: &str = r#"
  Haller Family||  ||| |, ||.| | | ||| . ..| * ||| ||  .| | ..  ||||.|*| |||| 
 "#;
 
-const TITLE: &str = r#"
-  _____ _                         _
+const TITLE: &str = r#"_____ _                         _
  / ____| |                       | |
 | (___ | |__   __ _ _ __ __ _  __| |
  \___ \| '_ \ / _` | '__/ _` |/ _` |
@@ -50,34 +48,70 @@ pub fn draw(f: &mut Frame, app: &App) {
     }
 }
 
-pub fn draw_in_game(f: &mut Frame, app: &App) {
+fn draw_in_game(f: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage(60), // Game Content
+            Constraint::Percentage(80), // Game Content
             Constraint::Percentage(20), // User Input
-            Constraint::Percentage(10), // Status Bar
-            Constraint::Percentage(10), // Debug Info
         ])
         .split(f.size());
 
     draw_game_content(f, app, chunks[0]);
     draw_user_input(f, app, chunks[1]);
-    draw_status_bar(f, app, chunks[2]);
-    draw_debug_info(f, app, chunks[3]);
 }
 
-fn draw_game_content(f: &mut Frame, app: &App, area: Rect) {
+fn render_game_content(app: &App, area: Rect) -> (Block, Vec<ListItem>, Rect) {
     let block = Block::default()
         .title("Game Content")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan));
+    let inner_area = block.inner(area);
 
-    let content = Paragraph::new(app.game_content.clone())
-        .block(block)
-        .wrap(Wrap { trim: true });
+    // Calculate the visible range based on the scroll offset
+    let start_index = app.game_content_scroll;
+    let end_index = (start_index + inner_area.height as usize).min(app.game_content.len());
 
-    f.render_widget(content, area);
+    // Collect the visible messages
+    let messages: Vec<ListItem> = app.game_content[start_index..end_index]
+        .iter()
+        .map(|message| {
+            let style = match message.message_type {
+                MessageType::User => Style::default().fg(Color::Yellow),
+                MessageType::Game => Style::default().fg(Color::Green),
+            };
+
+            let alignment = match message.message_type {
+                MessageType::User => Alignment::Right,
+                MessageType::Game => Alignment::Left,
+            };
+
+            let content = match alignment {
+                Alignment::Right => {
+                    let padding = " "
+                        .repeat((inner_area.width as usize).saturating_sub(message.content.len()));
+                    Line::from(vec![
+                        Span::raw(padding),
+                        Span::styled(message.content.clone(), style),
+                    ])
+                }
+                _ => Line::from(Span::styled(message.content.clone(), style)),
+            };
+
+            ListItem::new(content)
+        })
+        .collect();
+
+    (block, messages, inner_area)
+}
+
+fn draw_game_content(f: &mut Frame, app: &App, area: Rect) {
+    let (block, messages, inner_area) = render_game_content(app, area);
+
+    f.render_widget(block, area);
+
+    let messages = List::new(messages).block(Block::default().borders(Borders::NONE));
+    f.render_widget(messages, inner_area);
 }
 
 fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
@@ -86,77 +120,31 @@ fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Yellow));
 
-    let input = Paragraph::new(app.user_input.clone())
-        .style(Style::default().fg(Color::White))
-        .block(block);
+    let inner_area = block.inner(area);
+    f.render_widget(block, area);
 
-    f.render_widget(input, area);
+    let input = Paragraph::new(app.user_input.as_str())
+        .style(Style::default().fg(Color::Yellow))
+        .alignment(Alignment::Left)
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(input, inner_area);
+
+    // Calculate cursor position
+    let lines: Vec<&str> = app.user_input.split('\n').collect();
+    let (cursor_x, cursor_y) = lines.iter().enumerate().fold((0, 0), |(_, y), (i, line)| {
+        if app.cursor_position > line.len() + y {
+            (0, y + line.len() + 1)
+        } else {
+            (app.cursor_position - y, y)
+        }
+    });
 
     // Set cursor
-    f.set_cursor(area.x + app.cursor_position as u16 + 1, area.y + 1)
-}
-
-fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
-    let block = Block::default()
-        .title("Status")
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Magenta));
-
-    let status = vec![Line::from(vec![
-        Span::raw("Audio Input: "),
-        Span::styled(
-            if app.settings.audio_input_enabled {
-                "ON"
-            } else {
-                "OFF"
-            },
-            Style::default().fg(if app.settings.audio_input_enabled {
-                Color::Green
-            } else {
-                Color::Red
-            }),
-        ),
-        Span::raw(" | "),
-        Span::raw("Audio Output: "),
-        Span::styled(
-            if app.settings.audio_output_enabled {
-                "ON"
-            } else {
-                "OFF"
-            },
-            Style::default().fg(if app.settings.audio_output_enabled {
-                Color::Green
-            } else {
-                Color::Red
-            }),
-        ),
-    ])];
-
-    let status_widget = Paragraph::new(status)
-        .block(block)
-        .wrap(Wrap { trim: true });
-
-    f.render_widget(status_widget, area);
-}
-
-fn draw_debug_info(f: &mut Frame, app: &App, area: Rect) {
-    let block = Block::default()
-        .title("Debug Info")
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::DarkGray));
-
-    let debug_info = if app.settings.debug_mode {
-        app.debug_info.clone()
-    } else {
-        "Debug mode is off".to_string()
-    };
-
-    let debug_widget = Paragraph::new(debug_info)
-        .style(Style::default().fg(Color::DarkGray))
-        .block(block)
-        .wrap(Wrap { trim: true });
-
-    f.render_widget(debug_widget, area);
+    f.set_cursor(
+        inner_area.x + cursor_x as u16,
+        inner_area.y + cursor_y as u16,
+    )
 }
 
 fn draw_load_game(f: &mut Frame, app: &App) {
@@ -173,9 +161,10 @@ fn draw_main_menu(f: &mut Frame, app: &App) {
         .direction(Direction::Vertical) // Arrange elements vertically
         .constraints(
             [
-                Constraint::Min(20), // Fixed height for ASCII art
-                Constraint::Min(10), // Fixed height for title art
-                Constraint::Min(3),  // Minimum height for console
+                Constraint::Max(3),  // Fixed height for ASCII art
+                Constraint::Max(20), // Fixed height for ASCII art
+                Constraint::Max(7),  // Fixed height for title art
+                Constraint::Min(2),  // Minimum height for console
                 Constraint::Min(6),  // Minimum height for menu
                 Constraint::Max(3),  // Fixed height for status bar
             ]
@@ -183,24 +172,25 @@ fn draw_main_menu(f: &mut Frame, app: &App) {
         )
         .split(f.size());
 
-    render_art(f, chunks[0]);
-    render_title(f, chunks[1]);
-    // Render status bar
-    let status = Paragraph::new("Here some system messages.")
-        .style(Style::default().fg(Color::LightCyan)) // Style the status bar text with light cyan color
-        .block(Block::default().borders(Borders::ALL)) // Add borders to the status bar
+    let header = Paragraph::new(format!("Sharad Ratatui v{}", env!("CARGO_PKG_VERSION")))
+        .style(Style::default().fg(Color::DarkGray)) // Style the status bar text with light cyan color
+        .block(Block::default()) // Add borders to the status bar
         .alignment(Alignment::Center); // Center align the status bar text
-    f.render_widget(status, chunks[2]); // Render the status bar in the third chunk
-
+    f.render_widget(header, chunks[0]); // Render the status bar in the third chunk
+                                        //
+    render_art(f, chunks[1]);
+    render_title(f, chunks[2]);
+    // Render status bar
+    render_console(f, chunks[3]);
     // Render menu
-    render_menu(f, app, chunks[3]); // Render the menu in the second chunk
+    render_menu(f, app, chunks[4]); // Render the menu in the second chunk
 
     // Render status bar
     let status = Paragraph::new("Press q to quit")
         .style(Style::default().fg(Color::LightCyan)) // Style the status bar text with light cyan color
         .block(Block::default().borders(Borders::ALL)) // Add borders to the status bar
         .alignment(Alignment::Center); // Center align the status bar text
-    f.render_widget(status, chunks[4]); // Render the status bar in the third chunk
+    f.render_widget(status, chunks[5]); // Render the status bar in the third chunk
 }
 
 fn render_menu(f: &mut Frame, app: &App, area: Rect) {
@@ -237,9 +227,9 @@ fn render_menu(f: &mut Frame, app: &App, area: Rect) {
     let outer_block = Block::default()
         .borders(Borders::ALL) // Add borders to the outer block
         .title("Menu") // Title the outer block
-        .style(Style::default().fg(Color::White)); // Style the outer block
+        .style(Style::default().fg(Color::DarkGray)); // Style the outer block
 
-    let menu_area = centered_rect(50, 100, area); // Create a centered rectangle for the menu
+    let menu_area = centered_rect(100, 100, area); // Create a centered rectangle for the menu
 
     // Render the outer block
     f.render_widget(outer_block, menu_area);
@@ -253,8 +243,8 @@ fn render_menu(f: &mut Frame, app: &App, area: Rect) {
             Constraint::Length(1), // Fixed height for bottom margin
         ])
         .split(menu_area.inner(Margin {
-            vertical: 0,    // No vertical margin
-            horizontal: 27, // Horizontal margin of 27 units
+            vertical: 1, // No vertical margin
+            horizontal: ((area.width as u16 - text[0].width() as u16) / 2 as u16), // Horizontal margin of 27 units
         }))[1];
 
     let menu = Paragraph::new(text)
@@ -266,51 +256,47 @@ fn render_menu(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_art(f: &mut Frame, area: Rect) {
-    let outer_block = Block::default()
-        .borders(Borders::ALL) // Add borders to the outer block
-        .style(Style::default().fg(Color::Green)); // Style the outer block
+    let outer_block = Block::default().style(Style::default().fg(Color::DarkGray));
 
-    let art_outer_area = centered_rect(50, 96, area); // Create a centered rectangle for the art
-    f.render_widget(&outer_block, art_outer_area);
+    f.render_widget(outer_block, area);
 
-    // Create an inner area with margins for the art
-    let art_inner_area = Layout::default()
-        .direction(Direction::Vertical) // Arrange elements vertically inside the art area
-        .constraints([
-            Constraint::Length(0), // Fixed height for top margin
-            Constraint::Min(15),   // Minimum height for content
-            Constraint::Length(0), // Fixed height for bottom margin
-        ])
-        .split(art_outer_area.inner(Margin {
-            vertical: 1,   // No vertical margin
-            horizontal: 1, // Horizontal margin of 27 units
-        }))[1];
+    // Calculate the center position
+    let center_x = area.x + (area.width - 80) / 2;
+    let center_y = area.y + (area.height - 18) / 2;
 
-    let art = Paragraph::new(ART)
-        .alignment(Alignment::Center) // Left align the art text
-        .style(Style::default().fg(Color::Green)); // Style the art text
+    // Create the inner rect with fixed dimensions (77x15) centered within the outer area
+    let inner_rect = Rect::new(center_x, center_y, 80, 18);
 
-    // Render the art text in the inner area
-    f.render_widget(art, art_inner_area);
+    let inner_block = Block::default()
+        .borders(Borders::ALL)
+        .style(Style::default().fg(Color::Green));
+
+    f.render_widget(inner_block, inner_rect);
+
+    let art = Paragraph::new(Text::raw(ART))
+        .alignment(Alignment::Center)
+        .style(Style::default().fg(Color::Green));
+
+    f.render_widget(art, inner_rect);
 }
 
 fn render_title(f: &mut Frame, area: Rect) {
-    let outer_block = Block::default();
+    let outer_block = Block::default().style(Style::default().fg(Color::DarkGray));
 
-    let title_outer_area = centered_rect(30, 100, area); // Create a centered rectangle for the title
+    let title_outer_area = centered_rect(100, 100, area); // Create a centered rectangle for the title
     f.render_widget(&outer_block, title_outer_area);
 
     // Create an inner area with margins for the title
     let title_inner_area = Layout::default()
         .direction(Direction::Vertical) // Arrange elements vertically inside the title area
         .constraints([
-            Constraint::Length(1), // Fixed height for top margin
-            Constraint::Min(6),    // Minimum height for content
-            Constraint::Length(1), // Fixed height for bottom margin
+            Constraint::Length(0), // Fixed height for top margin
+            Constraint::Max(9),    // Minimum height for content
+            Constraint::Length(0), // Fixed height for bottom margin
         ])
         .split(title_outer_area.inner(Margin {
-            vertical: 0,   // No vertical margin
-            horizontal: 5, // Horizontal margin of 27 units
+            vertical: 0, // No vertical margin
+            horizontal: 1,
         }))[1];
 
     let title = Paragraph::new(TITLE)
@@ -321,36 +307,68 @@ fn render_title(f: &mut Frame, area: Rect) {
     f.render_widget(title, title_inner_area);
 }
 
+fn render_console(f: &mut Frame, area: Rect) {
+    let outer_block = Block::default().style(Style::default().fg(Color::DarkGray));
+
+    let title_outer_area = centered_rect(100, 100, area); // Create a centered rectangle for the title
+    f.render_widget(&outer_block, title_outer_area);
+
+    // Create an inner area with margins for the title
+    let title_inner_area = Layout::default()
+        .direction(Direction::Vertical) // Arrange elements vertically inside the title area
+        .constraints([
+            Constraint::Length(0), // Fixed height for top margin
+            Constraint::Max(3),    // Minimum height for content
+            Constraint::Length(0), // Fixed height for bottom margin
+        ])
+        .split(title_outer_area.inner(Margin {
+            vertical: 1, // No vertical margin
+            horizontal: 1,
+        }))[1];
+
+    let text = Paragraph::new("Welcome to Sharad Ratatui!")
+        .alignment(Alignment::Center) // Left align the title text
+        .style(Style::default().fg(Color::Green)); // Style the title text
+
+    // Render the title text in the inner area
+    f.render_widget(text, title_inner_area);
+}
+
 fn draw_settings(f: &mut Frame, app: &App) {
     let chunks = Layout::default()
-        .direction(Direction::Vertical)
+        .direction(Direction::Vertical) // Arrange elements vertically
         .constraints(
             [
-                Constraint::Min(20), // Fixed height for ASCII art
-                Constraint::Min(8),  // Fixed height for title art
+                Constraint::Max(3),  // Fixed height for ASCII art
+                Constraint::Max(20), // Fixed height for ASCII art
+                Constraint::Max(7),  // Fixed height for title art
                 Constraint::Min(2),  // Minimum height for console
-                Constraint::Min(10), // Minimum height for the settings
+                Constraint::Min(6),  // Minimum height for menu
                 Constraint::Max(3),  // Fixed height for status bar
             ]
             .as_ref(),
         )
         .split(f.size());
 
-    render_art(f, chunks[0]); // Render the art in the first chunk
-    render_title(f, chunks[1]); // Render the title in the second chunk
+    let header = Paragraph::new(format!("Sharad Ratatui v{}", env!("CARGO_PKG_VERSION")))
+        .style(Style::default().fg(Color::DarkGray)) // Style the status bar text with light cyan color
+        .block(Block::default()) // Add borders to the status bar
+        .alignment(Alignment::Center); // Center align the status bar text
+    f.render_widget(header, chunks[0]); // Render the status bar in the third chunk
+                                        //
+    render_art(f, chunks[1]);
+    render_title(f, chunks[2]);
+    // Render status bar
+    render_console(f, chunks[3]);
+    // Render menu
 
-    let status = Paragraph::new("Here some system messages.")
-        .style(Style::default().fg(Color::LightCyan))
-        .block(Block::default().borders(Borders::ALL))
-        .alignment(Alignment::Center);
-    f.render_widget(status, chunks[2]);
-    render_settings(f, app, chunks[3]);
+    render_settings(f, app, chunks[4]);
 
     let status = Paragraph::new("Press Esc to return to main menu")
         .style(Style::default().fg(Color::LightCyan))
         .block(Block::default().borders(Borders::ALL))
         .alignment(Alignment::Center);
-    f.render_widget(status, chunks[4]);
+    f.render_widget(status, chunks[5]);
 }
 
 fn render_settings(f: &mut Frame, app: &App, area: Rect) {
@@ -386,15 +404,11 @@ fn render_settings(f: &mut Frame, app: &App, area: Rect) {
 
             if number == 1 {
                 // API Key setting
-                let api_key_status = if app.settings.openai_api_key.is_empty() {
-                    "[not valid]"
+                let api_key_status = if app.settings.openai_api_key.is_none() {
+                    spans.push(Span::styled("[not valid]", Style::default().fg(Color::Red)));
                 } else {
-                    "[valid]"
+                    spans.push(Span::styled("[valid]", Style::default().fg(Color::Green)));
                 };
-                spans.push(Span::styled(
-                    api_key_status,
-                    Style::default().fg(Color::Green),
-                ));
             } else {
                 let selected_option = app.settings_state.selected_options[number];
                 spans.extend(options.iter().enumerate().map(|(option_number, option)| {
@@ -415,9 +429,9 @@ fn render_settings(f: &mut Frame, app: &App, area: Rect) {
     let outer_block = Block::default()
         .borders(Borders::ALL)
         .title("Settings")
-        .style(Style::default().fg(Color::White));
+        .style(Style::default().fg(Color::DarkGray));
 
-    let settings_area = centered_rect(50, 100, area);
+    let settings_area = centered_rect(100, 100, area);
     f.render_widget(outer_block, settings_area);
 
     let inner_area = Layout::default()
@@ -429,7 +443,7 @@ fn render_settings(f: &mut Frame, app: &App, area: Rect) {
         ])
         .split(settings_area.inner(Margin {
             vertical: 1,
-            horizontal: area.width as u16 / 10,
+            horizontal: (area.width as u16 - text[0].width() as u16) / 2,
         }))[1];
 
     let settings_widget = Paragraph::new(text)
@@ -460,7 +474,7 @@ fn draw_api_key_input(f: &mut Frame, app: &App) {
     f.render_widget(title, chunks[0]);
 
     let input = Paragraph::new(app.api_key_input.as_str())
-        .style(Style::default().fg(Color::Yellow))
+        .style(Style::default().fg(Color::Red))
         .block(Block::default().borders(Borders::ALL).title("API Key"));
     f.render_widget(input, chunks[1]);
 

@@ -24,6 +24,18 @@ pub struct GameState {
     pub player_gold: u32,
 }
 
+#[derive(Clone, PartialEq)]
+pub enum MessageType {
+    User,
+    Game,
+}
+
+#[derive(Clone)]
+pub struct Message {
+    pub content: String,
+    pub message_type: MessageType,
+}
+
 pub struct App {
     pub should_quit: bool,
     pub state: AppState,
@@ -33,7 +45,8 @@ pub struct App {
     pub settings: Settings,
     pub settings_state: SettingsState,
     pub api_key_input: String,
-    pub game_content: String,
+    pub game_content: Vec<Message>,
+    pub game_content_scroll: usize,
     pub user_input: String,
     pub cursor_position: usize,
     pub debug_info: String,
@@ -43,7 +56,7 @@ pub struct App {
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Settings {
     pub language: String,
-    pub openai_api_key: String,
+    pub openai_api_key: Option<String>,
     pub audio_output_enabled: bool,
     pub audio_input_enabled: bool,
     pub debug_mode: bool,
@@ -56,13 +69,6 @@ pub struct SettingsState {
 }
 
 impl SettingsState {
-    pub fn new() -> Self {
-        SettingsState {
-            selected_setting: 0,
-            selected_options: vec![0, 0, 0, 0, 0], // Language, API Key, Audio Output, Audio Input, Debug Mode
-        }
-    }
-
     pub fn from_settings(settings: &Settings) -> Self {
         SettingsState {
             selected_setting: 0,
@@ -80,28 +86,6 @@ impl SettingsState {
             ],
         }
     }
-
-    pub fn selected_option(&self, setting_index: usize) -> Option<usize> {
-        self.selected_options.get(setting_index).cloned()
-    }
-
-    pub fn navigate_settings_menu(&mut self, direction: isize) {
-        let i = self.selected_setting as isize;
-        let new_i = (i + direction).rem_euclid(5) as usize;
-        self.selected_setting = new_i;
-    }
-
-    pub fn change_setting_option(&mut self, setting_index: usize, direction: isize) {
-        if let Some(option) = self.selected_options.get_mut(setting_index) {
-            let num_options = match setting_index {
-                0 => 3,
-                1 => 2,
-                _ => 2,
-            };
-            let new_option = (*option as isize + direction).rem_euclid(num_options) as usize;
-            *option = new_option;
-        }
-    }
 }
 
 impl App {
@@ -112,7 +96,7 @@ impl App {
         let settings = Settings::load_from_file("settings.json").unwrap_or_default();
         let settings_state = SettingsState::from_settings(&settings);
 
-        let openai_client = if !settings.openai_api_key.is_empty() {
+        let openai_client = if !settings.openai_api_key.is_none() {
             Some(Client::new())
         } else {
             None
@@ -127,7 +111,8 @@ impl App {
             settings,
             settings_state,
             api_key_input: String::new(),
-            game_content: String::new(),
+            game_content: Vec::new(),
+            game_content_scroll: 0, // Initialize here
             user_input: String::new(),
             cursor_position: 0,
             debug_info: String::new(),
@@ -270,6 +255,16 @@ impl App {
 
     fn handle_in_game_input(&mut self, key: KeyEvent) {
         match key.code {
+            KeyCode::Up => {
+                if self.game_content_scroll > 0 {
+                    self.game_content_scroll -= 1;
+                }
+            }
+            KeyCode::Down => {
+                if self.game_content_scroll < self.game_content.len() - 1 {
+                    self.game_content_scroll += 1;
+                }
+            }
             KeyCode::Enter => {
                 self.submit_user_input();
             }
@@ -319,17 +314,22 @@ impl App {
         }
     }
 
-    fn submit_user_input(&mut self) {
-        // Here you would typically send the user input to your game logic or AI
-        // For now, we'll just append it to the game content
-        self.game_content
-            .push_str(&format!("\nYou: {}", self.user_input));
-        self.user_input.clear();
-        self.cursor_position = 0;
+    pub fn submit_user_input(&mut self) {
+        if !self.user_input.trim().is_empty() {
+            // Add user input to game content
+            self.game_content.push(Message {
+                content: self.user_input.clone(),
+                message_type: MessageType::User,
+            });
+            self.user_input.clear();
+            self.cursor_position = 0;
 
-        // Simulate a response from the game
-        self.game_content
-            .push_str("\nGame Master: What would you like to do next?");
+            // Simulate a response from the game
+            self.game_content.push(Message {
+                content: "What would you like to do next?".to_string(),
+                message_type: MessageType::Game,
+            });
+        }
     }
 
     fn handle_load_game_input(&mut self, key: KeyEvent) {
@@ -348,7 +348,7 @@ impl App {
         match key.code {
             KeyCode::Enter => {
                 if !self.api_key_input.is_empty() {
-                    self.settings.openai_api_key = self.api_key_input.clone();
+                    self.settings.openai_api_key = Some(self.api_key_input.clone());
                     self.openai_client = Some(Client::new());
                     self.api_key_input.clear();
                     self.state = AppState::Settings;
@@ -381,7 +381,7 @@ impl App {
     }
 
     pub fn check_api_key(&mut self) {
-        if self.settings.openai_api_key.is_empty() {
+        if self.settings.openai_api_key.is_none() {
             self.state = AppState::InputApiKey;
         }
     }
@@ -391,7 +391,7 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             language: "English".to_string(),
-            openai_api_key: String::new(),
+            openai_api_key: None,
             audio_output_enabled: true,
             audio_input_enabled: true,
             debug_mode: false,

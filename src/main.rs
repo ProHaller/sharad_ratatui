@@ -1,13 +1,13 @@
 use crate::cleanup::cleanup;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{self, EnableMouseCapture, Event, KeyCode},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{enable_raw_mode, EnterAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::{
     error::Error,
-    io, process,
+    io,
     sync::atomic::{AtomicBool, Ordering},
     sync::Arc,
     time::Duration,
@@ -29,7 +29,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Create a flag to track if we should quit
     let running = Arc::new(AtomicBool::new(true));
-    let r = running.clone();
+    let _r = running.clone();
 
     // Create app and run it
     let mut app = App::new();
