@@ -37,7 +37,7 @@ const TITLE: &str = r#"_____ _                         _
 |_____/|_| |_|\__,_|_|  \__,_|\__,_|
 "#;
 
-pub fn draw(f: &mut Frame, app: &App) {
+pub fn draw(f: &mut Frame, app: &mut App) {
     match app.state {
         AppState::MainMenu => draw_main_menu(f, app),
         AppState::InGame => draw_in_game(f, app),
@@ -48,68 +48,45 @@ pub fn draw(f: &mut Frame, app: &App) {
     }
 }
 
-fn draw_in_game(f: &mut Frame, app: &App) {
+fn draw_in_game(f: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(80), Constraint::Percentage(20)].as_ref())
+        .constraints([
+            Constraint::Percentage(80), // Game Content
+            Constraint::Percentage(20), // User Input
+        ])
         .split(f.size());
 
-    let game_content = app
-        .game_content
-        .iter()
-        .map(|message| {
-            let (style, prefix) = match message.message_type {
-                MessageType::User => (Style::default().fg(Color::Yellow), "You: "),
-                MessageType::Game => (Style::default().fg(Color::Green), "Game: "),
-            };
-            ListItem::new(Text::styled(format!("{}{}", prefix, message.content), style) as Text<'_>)
-        })
-        .collect::<Vec<_>>();
-
-    let game_content_widget = List::new(game_content)
-        .block(Block::default().borders(Borders::ALL).title("Game Content"))
-        .highlight_style(Style::default().add_modifier(Modifier::BOLD));
-
-    let mut game_content_state = ListState::default();
-    game_content_state.select(Some(app.game_content_scroll));
-
-    f.render_stateful_widget(game_content_widget, chunks[0], &mut game_content_state);
-
-    let input = Paragraph::new(app.user_input.as_str())
-        .style(Style::default().fg(Color::Yellow))
-        .block(Block::default().borders(Borders::ALL).title("Your Input"));
-    f.render_widget(input, chunks[1]);
-
-    // Set cursor
-    f.set_cursor(
-        chunks[1].x + app.cursor_position as u16 + 1,
-        chunks[1].y + 1,
-    );
+    draw_game_content(f, app, chunks[0]);
+    draw_user_input(f, app, chunks[1]);
 }
 
-fn render_game_content(app: &App, area: Rect) -> (Block, Vec<ListItem>, Rect) {
+fn render_game_content(app: &mut App, area: Rect) -> (Block, Vec<ListItem>, Rect) {
     let block = Block::default()
         .title("Game Content")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan));
     let inner_area = block.inner(area);
 
+    // Update the number of visible messages and scroll position
+    let new_visible_messages = inner_area.height as usize;
+    if app.visible_messages != new_visible_messages {
+        app.visible_messages = new_visible_messages;
+        app.update_scroll();
+    }
+
     // Calculate the visible range based on the scroll offset
     let start_index = app.game_content_scroll;
-    let end_index = (start_index + inner_area.height as usize).min(app.game_content.len());
+    let end_index = (start_index + app.visible_messages).min(app.game_content.len());
 
     // Collect the visible messages
     let messages: Vec<ListItem> = app.game_content[start_index..end_index]
         .iter()
         .map(|message| {
-            let style = match message.message_type {
-                MessageType::User => Style::default().fg(Color::Blue),
-                MessageType::Game => Style::default().fg(Color::Green),
-            };
-
-            let alignment = match message.message_type {
-                MessageType::User => Alignment::Right,
-                MessageType::Game => Alignment::Left,
+            let (style, alignment) = match message.message_type {
+                MessageType::User => (Style::default().fg(Color::Blue), Alignment::Right),
+                MessageType::Game => (Style::default().fg(Color::Green), Alignment::Left),
+                MessageType::System => (Style::default().fg(Color::Yellow), Alignment::Center),
             };
 
             let content = match alignment {
@@ -118,10 +95,20 @@ fn render_game_content(app: &App, area: Rect) -> (Block, Vec<ListItem>, Rect) {
                         .repeat((inner_area.width as usize).saturating_sub(message.content.len()));
                     Line::from(vec![
                         Span::raw(padding),
-                        Span::styled(message.content.clone(), style),
+                        Span::styled(&message.content, style),
                     ])
                 }
-                _ => Line::from(Span::styled(message.content.clone(), style)),
+                Alignment::Left => Line::from(Span::styled(&message.content, style)),
+                Alignment::Center => {
+                    let padding = " ".repeat(
+                        ((inner_area.width as usize).saturating_sub(message.content.len())) / 2,
+                    );
+                    Line::from(vec![
+                        Span::raw(padding.clone()),
+                        Span::styled(&message.content, style),
+                        Span::raw(padding),
+                    ])
+                }
             };
 
             ListItem::new(content)
@@ -131,12 +118,14 @@ fn render_game_content(app: &App, area: Rect) -> (Block, Vec<ListItem>, Rect) {
     (block, messages, inner_area)
 }
 
-fn draw_game_content(f: &mut Frame, app: &App, area: Rect) {
+fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
     let (block, messages, inner_area) = render_game_content(app, area);
 
     f.render_widget(block, area);
 
-    let messages = List::new(messages).block(Block::default().borders(Borders::NONE));
+    let messages = List::new(messages)
+        .block(Block::default().borders(Borders::NONE))
+        .direction(ListDirection::TopToBottom);
     f.render_widget(messages, inner_area);
 }
 
@@ -150,27 +139,30 @@ fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(block, area);
 
     let input = Paragraph::new(app.user_input.as_str())
-        .style(Style::default().fg(Color::Yellow))
+        .style(Style::default().fg(Color::White))
         .alignment(Alignment::Left)
         .wrap(Wrap { trim: true });
 
     f.render_widget(input, inner_area);
 
     // Calculate cursor position
+
     let lines: Vec<&str> = app.user_input.split('\n').collect();
-    let (cursor_x, cursor_y) = lines.iter().enumerate().fold((0, 0), |(_, y), (i, line)| {
-        if app.cursor_position > line.len() + y {
-            (0, y + line.len() + 1)
+
+    let (cursor_x, cursor_y) = lines.iter().enumerate().fold((0, 0), |(x, y), (i, line)| {
+        if app.cursor_position > x + line.len() {
+            (x + line.len() + 1, y + 1)
         } else {
-            (app.cursor_position - y, y)
+            (x + app.cursor_position - x, y)
         }
     });
 
     // Set cursor
+
     f.set_cursor(
-        inner_area.x + cursor_x as u16,
-        inner_area.y + cursor_y as u16,
-    )
+        inner_area.x + cursor_y as u16,
+        inner_area.y + cursor_x as u16,
+    );
 }
 
 fn draw_load_game(f: &mut Frame, app: &App) {
@@ -374,7 +366,7 @@ fn render_console(f: &mut Frame, area: Rect) {
     f.render_widget(text, title_inner_area);
 }
 
-fn draw_settings(f: &mut Frame, app: &App) {
+fn draw_settings(f: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical) // Arrange elements vertically
         .constraints(

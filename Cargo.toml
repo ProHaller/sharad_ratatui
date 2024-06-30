@@ -16,4 +16,6 @@ ratatui = "0.27.0"
 serde = { version = "1.0.203", features = ["derive"] }
 serde_json = "1.0.118"
 textwrap = "0.16.1"
+thiserror = "1.0.61"
 tokio = { version = "1.38.0", features = ["full"] }
+tui-textarea = "0.4.0"

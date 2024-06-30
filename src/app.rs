@@ -1,12 +1,14 @@
-use crate::ai::ConversationState;
-use crate::ai::AI;
+use crate::ai::{AIError, GameAI, GameConversationState};
 use crate::cleanup::cleanup;
 use copypasta::{ClipboardContext, ClipboardProvider};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use ratatui::widgets::ListState;
+use ratatui::style::{Color, Style};
+use ratatui::widgets::{Block, Borders, ListState, Paragraph};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{self, Write};
+use tokio::sync::mpsc;
+use tui_textarea::TextArea;
 
 #[derive(PartialEq)]
 pub enum AppState {
@@ -30,6 +32,7 @@ pub struct GameState {
 pub enum MessageType {
     User,
     Game,
+    System,
 }
 
 #[derive(Clone)]
@@ -42,7 +45,7 @@ pub struct App {
     pub should_quit: bool,
     pub state: AppState,
     pub main_menu_state: ListState,
-    pub ai_client: Option<AI>,
+    pub ai_client: Option<GameAI>,
     pub current_game: Option<GameState>,
     pub settings: Settings,
     pub settings_state: SettingsState,
@@ -52,7 +55,9 @@ pub struct App {
     pub user_input: String,
     pub cursor_position: usize,
     pub debug_info: String,
+    pub visible_messages: usize,
     clipboard: ClipboardContext,
+    message_sender: mpsc::UnboundedSender<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -91,7 +96,8 @@ impl SettingsState {
 }
 
 impl App {
-    pub fn new() -> Self {
+    pub fn new() -> (Self, mpsc::UnboundedReceiver<String>) {
+        let (message_sender, message_receiver) = mpsc::unbounded_channel();
         let mut main_menu_state = ListState::default();
         main_menu_state.select(Some(0));
 
@@ -99,7 +105,7 @@ impl App {
         let settings_state = SettingsState::from_settings(&settings);
 
         let ai_client = if let Some(api_key) = &settings.openai_api_key {
-            match AI::new(api_key.clone()) {
+            match GameAI::new(api_key.clone()) {
                 Ok(client) => Some(client),
                 Err(e) => {
                     eprintln!("Failed to initialize AI client: {:?}", e);
@@ -110,22 +116,27 @@ impl App {
             None
         };
 
-        Self {
-            should_quit: false,
-            state: AppState::MainMenu,
-            main_menu_state,
-            ai_client,
-            current_game: None,
-            settings,
-            settings_state,
-            api_key_input: String::new(),
-            game_content: Vec::new(),
-            game_content_scroll: 0,
-            user_input: String::new(),
-            cursor_position: 0,
-            debug_info: String::new(),
-            clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
-        }
+        (
+            Self {
+                should_quit: false,
+                state: AppState::MainMenu,
+                main_menu_state,
+                ai_client,
+                current_game: None,
+                settings,
+                settings_state,
+                api_key_input: String::new(),
+                game_content: Vec::new(),
+                game_content_scroll: 0,
+                user_input: String::new(),
+                cursor_position: 0,
+                debug_info: String::new(),
+                visible_messages: 0,
+                clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
+                message_sender,
+            },
+            message_receiver,
+        )
     }
 
     pub fn on_key(&mut self, key: KeyEvent) {
@@ -262,41 +273,27 @@ impl App {
     }
 
     fn handle_in_game_input(&mut self, key: KeyEvent) {
+        if key.kind != KeyEventKind::Press {
+            return;
+        }
         match key.code {
-            KeyCode::Up => {
-                if self.game_content_scroll > 0 {
-                    self.game_content_scroll -= 1;
-                }
-            }
-            KeyCode::Down => {
-                if self.game_content_scroll < self.game_content.len().saturating_sub(1) {
-                    self.game_content_scroll += 1;
-                }
+            KeyCode::Esc => {
+                self.state = AppState::MainMenu;
             }
             KeyCode::Enter => {
-                self.submit_user_input();
-            }
-            KeyCode::Char(c) => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'v' {
-                    // Handle paste
-                    if let Ok(contents) = self.clipboard.get_contents() {
-                        self.user_input.insert_str(self.cursor_position, &contents);
-                        self.cursor_position += contents.len();
-                    }
-                } else {
-                    self.user_input.insert(self.cursor_position, c);
+                if key.modifiers.contains(KeyModifiers::SHIFT) {
+                    // Add a new line in the TextArea
+                    self.user_input.insert(self.cursor_position, '\n');
                     self.cursor_position += 1;
+                } else {
+                    // Submit the user input
+                    self.submit_user_input();
                 }
             }
             KeyCode::Backspace => {
                 if self.cursor_position > 0 {
                     self.user_input.remove(self.cursor_position - 1);
                     self.cursor_position -= 1;
-                }
-            }
-            KeyCode::Delete => {
-                if self.cursor_position < self.user_input.len() {
-                    self.user_input.remove(self.cursor_position);
                 }
             }
             KeyCode::Left => {
@@ -309,41 +306,66 @@ impl App {
                     self.cursor_position += 1;
                 }
             }
-            KeyCode::Home => {
-                self.cursor_position = 0;
-            }
-            KeyCode::End => {
-                self.cursor_position = self.user_input.len();
-            }
-            KeyCode::Esc => {
-                self.state = AppState::MainMenu;
+            KeyCode::Char(c) => {
+                self.user_input.insert(self.cursor_position, c);
+                self.cursor_position += 1;
             }
             _ => {}
         }
     }
 
     pub fn submit_user_input(&mut self) {
-        if !self.user_input.trim().is_empty() {
-            // Add user input to game content
-            self.game_content.push(Message {
-                content: self.user_input.clone(),
-                message_type: MessageType::User,
-            });
+        let input = self.user_input.trim().to_string();
+        if !input.is_empty() {
+            self.add_user_message(input.clone());
 
-            // Here, you would typically send the user input to the AI and get a response
-            // For now, we'll just add a placeholder response
-            self.game_content.push(Message {
-                content: "AI response placeholder".to_string(),
-                message_type: MessageType::Game,
-            });
+            // Send the message through the channel
+            if let Err(e) = self.message_sender.send(input) {
+                self.add_system_message(format!("Error sending message: {:?}", e));
+            }
 
+            // Clear the user input
             self.user_input.clear();
             self.cursor_position = 0;
-
-            // Automatically scroll to the bottom
-            self.game_content_scroll = self.game_content.len().saturating_sub(1);
         }
     }
+
+    pub fn update_scroll(&mut self) {
+        if self.game_content.len() > self.visible_messages {
+            self.game_content_scroll = self.game_content.len() - self.visible_messages;
+        } else {
+            self.game_content_scroll = 0;
+        }
+    }
+
+    fn scroll_to_bottom(&mut self) {
+        self.update_scroll();
+    }
+
+    pub fn add_user_message(&mut self, content: String) {
+        self.game_content.push(Message {
+            content,
+            message_type: MessageType::User,
+        });
+        self.scroll_to_bottom();
+    }
+
+    pub fn add_game_message(&mut self, content: String) {
+        self.game_content.push(Message {
+            content,
+            message_type: MessageType::Game,
+        });
+        self.scroll_to_bottom();
+    }
+
+    pub fn add_system_message(&mut self, content: String) {
+        self.game_content.push(Message {
+            content,
+            message_type: MessageType::System,
+        });
+        self.scroll_to_bottom();
+    }
+
     pub fn check_api_key(&mut self) {
         if self.settings.openai_api_key.is_none() {
             self.state = AppState::InputApiKey;
@@ -356,12 +378,16 @@ impl App {
         // For example, you could update game state, process AI responses, etc.
     }
     #[allow(dead_code)]
-    pub async fn start_new_conversation(
-        &mut self,
-        assistant_id: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn start_new_conversation(&mut self, assistant_id: &str) -> Result<(), AIError> {
         if let Some(ai) = &mut self.ai_client {
-            ai.start_new_conversation(assistant_id).await?;
+            let initial_state = GameConversationState {
+                assistant_id: assistant_id.to_string(),
+                thread_id: String::new(), // This will be set by start_new_conversation
+                player_health: 100,       // Set initial health
+                player_gold: 0,           // Set initial gold
+            };
+            ai.start_new_conversation(assistant_id, initial_state)
+                .await?;
         }
         Ok(())
     }
@@ -369,21 +395,21 @@ impl App {
     #[allow(dead_code)]
     pub async fn continue_conversation(
         &mut self,
-        conversation_state: ConversationState,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+        conversation_state: GameConversationState,
+    ) -> Result<(), AIError> {
         if let Some(ai) = &mut self.ai_client {
-            ai.continue_conversation(conversation_state).await;
+            ai.load_conversation(conversation_state).await;
         }
         Ok(())
     }
 
     #[allow(dead_code)]
-    pub async fn send_message(&self, message: &str) -> Result<String, Box<dyn std::error::Error>> {
-        if let Some(ai) = &self.ai_client {
+    pub async fn send_message(&mut self, message: &str) -> Result<String, AIError> {
+        if let Some(ai) = &mut self.ai_client {
             let response = ai.send_message(message).await?;
             Ok(response)
         } else {
-            Err("AI client not initialized".into())
+            Err(AIError::ConversationNotInitialized)
         }
     }
 
@@ -404,20 +430,20 @@ impl App {
             KeyCode::Enter => {
                 if !self.api_key_input.is_empty() {
                     self.settings.openai_api_key = Some(self.api_key_input.clone());
-                    match AI::new(self.api_key_input.clone()) {
-                        Ok(client) => self.ai_client = Some(client),
+                    match GameAI::new(self.api_key_input.clone()) {
+                        Ok(client) => {
+                            self.ai_client = Some(client);
+                            self.api_key_input.clear();
+                            self.state = AppState::Settings;
+                            if let Err(e) = self.settings.save_to_file("settings.json") {
+                                eprintln!("Failed to save settings: {:?}", e);
+                            }
+                        }
                         Err(e) => {
                             eprintln!("Failed to initialize AI client: {:?}", e);
                             self.ai_client = None;
                         }
                     }
-                    self.api_key_input.clear();
-                    self.state = AppState::Settings;
-                    self.settings
-                        .save_to_file("settings.json")
-                        .unwrap_or_else(|e| {
-                            eprintln!("Failed to save settings: {:?}", e);
-                        });
                 }
             }
             KeyCode::Char(c) => {
@@ -455,6 +481,19 @@ impl Default for Settings {
 }
 
 impl Settings {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn load() -> io::Result<Self> {
+        // For now, just load from a file
+        Self::load_from_file("settings.json")
+    }
+
+    pub fn save(&self) -> io::Result<()> {
+        // For now, just save to a file
+        self.save_to_file("settings.json")
+    }
     pub fn load_from_file(path: &str) -> io::Result<Self> {
         let data = fs::read_to_string(path)?;
         let settings = serde_json::from_str(&data)?;
@@ -466,5 +505,12 @@ impl Settings {
         let mut file = fs::File::create(path)?;
         file.write_all(data.as_bytes())?;
         Ok(())
+    }
+}
+
+fn clear_textarea(textarea: &mut TextArea) {
+    while !textarea.is_empty() {
+        textarea.move_cursor(tui_textarea::CursorMove::Top);
+        textarea.delete_line_by_end();
     }
 }
