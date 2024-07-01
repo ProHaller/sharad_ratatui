@@ -1,44 +1,21 @@
 use crate::ai::{AIError, GameAI, GameConversationState};
+use crate::app_state::AppState;
 use crate::cleanup::cleanup;
+use crate::game_state::GameState;
+use crate::message::{Message, MessageType};
+use crate::settings::Settings;
+use crate::settings_state::SettingsState;
+
 use copypasta::{ClipboardContext, ClipboardProvider};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use ratatui::style::{Color, Style};
-use ratatui::widgets::{Block, Borders, ListState, Paragraph};
-use serde::{Deserialize, Serialize};
+use ratatui::widgets::ListState;
 use std::fs;
-use std::io::{self, Write};
+use std::path::Path;
 use tokio::sync::mpsc;
-use tui_textarea::TextArea;
 
-#[derive(PartialEq)]
-pub enum AppState {
-    MainMenu,
-    InGame,
-    LoadGame,
-    CreateImage,
-    Settings,
-    InputApiKey,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct GameState {
-    pub assistant_id: String,
-    pub thread_id: String,
-    pub player_health: u8,
-    pub player_gold: u32,
-}
-
-#[derive(Clone, PartialEq)]
-pub enum MessageType {
-    User,
-    Game,
-    System,
-}
-
-#[derive(Clone)]
-pub struct Message {
-    pub content: String,
-    pub message_type: MessageType,
+pub enum AppCommand {
+    LoadGame(String),
+    StartNewGame,
 }
 
 pub struct App {
@@ -58,46 +35,15 @@ pub struct App {
     pub visible_messages: usize,
     clipboard: ClipboardContext,
     message_sender: mpsc::UnboundedSender<String>,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct Settings {
-    pub language: String,
-    pub openai_api_key: Option<String>,
-    pub audio_output_enabled: bool,
-    pub audio_input_enabled: bool,
-    pub debug_mode: bool,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct SettingsState {
-    pub selected_setting: usize,
-    pub selected_options: Vec<usize>,
-}
-
-impl SettingsState {
-    pub fn from_settings(settings: &Settings) -> Self {
-        SettingsState {
-            selected_setting: 0,
-            selected_options: vec![
-                match settings.language.as_str() {
-                    "English" => 0,
-                    "Français" => 1,
-                    "日本語" => 2,
-                    _ => 0,
-                },
-                0, // API Key (always 0 as it's not a toggle)
-                if settings.audio_output_enabled { 0 } else { 1 },
-                if settings.audio_input_enabled { 0 } else { 1 },
-                if settings.debug_mode { 1 } else { 0 },
-            ],
-        }
-    }
+    command_sender: mpsc::UnboundedSender<AppCommand>,
+    pub load_game_menu_state: ListState,
+    pub available_saves: Vec<String>,
 }
 
 impl App {
-    pub fn new() -> (Self, mpsc::UnboundedReceiver<String>) {
+    pub fn new() -> (Self, mpsc::UnboundedReceiver<AppCommand>) {
         let (message_sender, message_receiver) = mpsc::unbounded_channel();
+        let (command_sender, command_receiver) = mpsc::unbounded_channel();
         let mut main_menu_state = ListState::default();
         main_menu_state.select(Some(0));
 
@@ -116,6 +62,10 @@ impl App {
             None
         };
 
+        let mut load_game_menu_state = ListState::default();
+        load_game_menu_state.select(Some(0));
+
+        let available_saves = Self::scan_save_files();
         (
             Self {
                 should_quit: false,
@@ -126,6 +76,8 @@ impl App {
                 settings,
                 settings_state,
                 api_key_input: String::new(),
+                load_game_menu_state,
+                available_saves,
                 game_content: Vec::new(),
                 game_content_scroll: 0,
                 user_input: String::new(),
@@ -134,8 +86,9 @@ impl App {
                 visible_messages: 0,
                 clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
                 message_sender,
+                command_sender,
             },
-            message_receiver,
+            command_receiver,
         )
     }
 
@@ -238,9 +191,28 @@ impl App {
         }
 
         match key.code {
+            KeyCode::Enter => {
+                match self.main_menu_state.selected() {
+                    Some(0) => {
+                        // Start New Game
+                        if let Err(e) = self.command_sender.send(AppCommand::StartNewGame) {
+                            self.add_system_message(format!(
+                                "Failed to send start new game command: {:?}",
+                                e
+                            ));
+                        }
+                    }
+                    Some(1) => {
+                        // Load Game
+                        self.state = AppState::LoadGame;
+                        self.available_saves = Self::scan_save_files();
+                        self.load_game_menu_state.select(Some(0));
+                    }
+                    _ => {}
+                }
+            }
             KeyCode::Up => self.navigate_main_menu(-1),
             KeyCode::Down => self.navigate_main_menu(1),
-            KeyCode::Enter => self.select_main_menu_option(),
             KeyCode::Char(c) if ('0'..='4').contains(&c) => self.select_main_menu_by_char(c),
             KeyCode::Esc => {
                 cleanup();
@@ -413,10 +385,121 @@ impl App {
         }
     }
 
+    pub async fn start_new_game(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if self.ai_client.is_none() {
+            self.initialize_ai_client().await?;
+        }
+
+        if let Some(ai) = &mut self.ai_client {
+            let assistant_id = "asst_4kaphuqlAkwnsbBrf482Z6dR"; // Set your assistant_id here
+            ai.start_new_conversation(
+                assistant_id,
+                GameConversationState {
+                    assistant_id: assistant_id.to_string(),
+                    thread_id: String::new(),
+                    player_health: 100,
+                    player_gold: 0,
+                },
+            )
+            .await?;
+        } else {
+            return Err("AI client not initialized".into());
+        }
+
+        self.state = AppState::InGame;
+        self.add_system_message("New game started!".to_string());
+        Ok(())
+    }
+    async fn initialize_ai_client(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(api_key) = &self.settings.openai_api_key {
+            self.ai_client = Some(GameAI::new(api_key.clone())?);
+            Ok(())
+        } else {
+            Err("OpenAI API key not set".into())
+        }
+    }
+
+    pub fn scan_save_files() -> Vec<String> {
+        let save_dir = Path::new("./data/save");
+        if !save_dir.exists() {
+            return Vec::new();
+        }
+
+        fs::read_dir(save_dir)
+            .unwrap()
+            .filter_map(|entry| {
+                let entry = entry.ok()?;
+                let path = entry.path();
+                if path.is_file() && path.extension()? == "json" {
+                    path.file_name()?.to_str().map(String::from)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
     fn handle_load_game_input(&mut self, key: KeyEvent) {
-        // Implement load game input handling
-        cleanup();
-        unimplemented!("handle_load_game_input");
+        match key.code {
+            KeyCode::Enter => {
+                if let Some(selected) = self.load_game_menu_state.selected() {
+                    if selected < self.available_saves.len() {
+                        let save_path = format!("./data/save/{}", self.available_saves[selected]);
+                        if let Err(e) = self.command_sender.send(AppCommand::LoadGame(save_path)) {
+                            self.add_system_message(format!(
+                                "Failed to send load game command: {:?}",
+                                e
+                            ));
+                        }
+                    }
+                }
+            }
+            KeyCode::Esc => {
+                self.state = AppState::MainMenu;
+            }
+            KeyCode::Up => self.navigate_load_game_menu(-1),
+            KeyCode::Down => self.navigate_load_game_menu(1),
+            _ => {}
+        }
+    }
+
+    fn navigate_load_game_menu(&mut self, direction: isize) {
+        let len = self.available_saves.len();
+        if len == 0 {
+            return;
+        }
+        let current = self.load_game_menu_state.selected().unwrap_or(0);
+        let next = if direction > 0 {
+            (current + 1) % len
+        } else {
+            (current + len - 1) % len
+        };
+        self.load_game_menu_state.select(Some(next));
+    }
+
+    pub async fn load_game(&mut self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let game_state = GameState::load_from_file(path)?;
+
+        if self.ai_client.is_none() {
+            self.initialize_ai_client().await?;
+        }
+
+        if let Some(ai) = &mut self.ai_client {
+            ai.load_conversation(GameConversationState {
+                assistant_id: game_state.assistant_id.clone(),
+                thread_id: game_state.thread_id.clone(),
+                player_health: 100,
+                player_gold: 0,
+            })
+            .await;
+        } else {
+            return Err("AI client not initialized".into());
+        }
+
+        self.current_game = Some(game_state);
+        self.state = AppState::InGame;
+        self.add_system_message("Game loaded successfully!".to_string());
+        Ok(())
     }
 
     fn handle_create_image_input(&mut self, key: KeyEvent) {
@@ -465,52 +548,5 @@ impl App {
             }
             _ => {}
         }
-    }
-}
-
-impl Default for Settings {
-    fn default() -> Self {
-        Settings {
-            language: "English".to_string(),
-            openai_api_key: None,
-            audio_output_enabled: true,
-            audio_input_enabled: true,
-            debug_mode: false,
-        }
-    }
-}
-
-impl Settings {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn load() -> io::Result<Self> {
-        // For now, just load from a file
-        Self::load_from_file("settings.json")
-    }
-
-    pub fn save(&self) -> io::Result<()> {
-        // For now, just save to a file
-        self.save_to_file("settings.json")
-    }
-    pub fn load_from_file(path: &str) -> io::Result<Self> {
-        let data = fs::read_to_string(path)?;
-        let settings = serde_json::from_str(&data)?;
-        Ok(settings)
-    }
-
-    pub fn save_to_file(&self, path: &str) -> io::Result<()> {
-        let data = serde_json::to_string_pretty(self)?;
-        let mut file = fs::File::create(path)?;
-        file.write_all(data.as_bytes())?;
-        Ok(())
-    }
-}
-
-fn clear_textarea(textarea: &mut TextArea) {
-    while !textarea.is_empty() {
-        textarea.move_cursor(tui_textarea::CursorMove::Top);
-        textarea.delete_line_by_end();
     }
 }
