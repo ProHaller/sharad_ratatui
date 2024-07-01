@@ -60,13 +60,13 @@ fn render_load_game_menu(f: &mut Frame, app: &App, area: Rect) {
             .map(|(i, save)| {
                 if Some(i) == app.load_game_menu_state.selected() {
                     Line::from(Span::styled(
-                        format!("> {}. {}", (i + 1), save),
+                        format!("{}. {}", (i + 1), save),
                         Style::default()
                             .fg(Color::Yellow)
                             .add_modifier(Modifier::BOLD),
                     ))
                 } else {
-                    Line::from(Span::raw(format!("  {}. {}", (i + 1), save)))
+                    Line::from(Span::raw(format!("{}. {}", (i + 1), save)))
                 }
             })
             .collect()
