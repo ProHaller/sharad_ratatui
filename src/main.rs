@@ -63,17 +63,26 @@ async fn run_app(
         // Draw the current state of the app
         terminal.draw(|f| {
             let mut app = tokio::task::block_in_place(|| app.blocking_lock());
-            ui::draw(f, &mut *app)
+            ui::draw(f, &mut app)
         })?;
 
-        // Check if we need to handle input, perform a tick, process a command, or handle an AI response
+        let timeout = tick_rate
+            .checked_sub(last_tick.elapsed())
+            .unwrap_or_else(|| Duration::from_secs(0));
+
         tokio::select! {
-            _ = tokio::time::sleep_until(last_tick + tick_rate) => {
+            _ = tokio::time::sleep(timeout) => {
                 let mut app = app.lock().await;
                 app.on_tick();
                 last_tick = Instant::now();
             }
-            event = tokio::task::spawn_blocking(|| event::read()) => {
+            event = tokio::task::spawn_blocking(|| {
+                if event::poll(Duration::from_millis(0)).unwrap() {
+                    event::read()
+                } else {
+                    Ok(Event::FocusGained)
+                }
+            }) => {
                 if let Ok(Ok(Event::Key(key))) = event {
                     let mut app = app.lock().await;
                     app.on_key(key);

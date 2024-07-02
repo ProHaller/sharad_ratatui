@@ -16,6 +16,7 @@ use tokio::sync::mpsc;
 pub enum AppCommand {
     LoadGame(String),
     StartNewGame,
+    ProcessMessage(String),
 }
 
 pub struct App {
@@ -38,12 +39,17 @@ pub struct App {
     command_sender: mpsc::UnboundedSender<AppCommand>,
     pub load_game_menu_state: ListState,
     pub available_saves: Vec<String>,
+    ai_sender: mpsc::UnboundedSender<String>,
 }
 
 impl App {
-    pub fn new() -> (Self, mpsc::UnboundedReceiver<AppCommand>) {
-        let (message_sender, message_receiver) = mpsc::unbounded_channel();
+    pub fn new(
+        ai_sender: mpsc::UnboundedSender<String>,
+    ) -> (Self, mpsc::UnboundedReceiver<AppCommand>) {
         let (command_sender, command_receiver) = mpsc::unbounded_channel();
+        let (message_sender, message_receiver) = mpsc::unbounded_channel();
+        let (ai_sender, ai_receiver) = mpsc::unbounded_channel();
+
         let mut main_menu_state = ListState::default();
         main_menu_state.select(Some(0));
 
@@ -87,6 +93,7 @@ impl App {
                 clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
                 message_sender,
                 command_sender,
+                ai_sender,
             },
             command_receiver,
         )
@@ -208,6 +215,12 @@ impl App {
                         self.available_saves = Self::scan_save_files();
                         self.load_game_menu_state.select(Some(0));
                     }
+                    Some(2) => {
+                        self.state = AppState::CreateImage;
+                    }
+                    Some(3) => {
+                        self.state = AppState::Settings;
+                    }
                     _ => {}
                 }
             }
@@ -251,10 +264,11 @@ impl App {
         match key.code {
             KeyCode::Esc => {
                 self.state = AppState::MainMenu;
+                self.add_system_message("Game paused. Returned to main menu.".to_string());
             }
             KeyCode::Enter => {
                 if key.modifiers.contains(KeyModifiers::SHIFT) {
-                    // Add a new line in the TextArea
+                    // Add a new line in the input
                     self.user_input.insert(self.cursor_position, '\n');
                     self.cursor_position += 1;
                 } else {
@@ -268,19 +282,87 @@ impl App {
                     self.cursor_position -= 1;
                 }
             }
+            KeyCode::Delete => {
+                if self.cursor_position < self.user_input.len() {
+                    self.user_input.remove(self.cursor_position);
+                }
+            }
             KeyCode::Left => {
-                if self.cursor_position > 0 {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    // Move cursor to the start of the previous word
+                    while self.cursor_position > 0
+                        && !self
+                            .user_input
+                            .chars()
+                            .nth(self.cursor_position - 1)
+                            .unwrap()
+                            .is_alphanumeric()
+                    {
+                        self.cursor_position -= 1;
+                    }
+                    while self.cursor_position > 0
+                        && self
+                            .user_input
+                            .chars()
+                            .nth(self.cursor_position - 1)
+                            .unwrap()
+                            .is_alphanumeric()
+                    {
+                        self.cursor_position -= 1;
+                    }
+                } else if self.cursor_position > 0 {
                     self.cursor_position -= 1;
                 }
             }
             KeyCode::Right => {
-                if self.cursor_position < self.user_input.len() {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    // Move cursor to the start of the next word
+                    while self.cursor_position < self.user_input.len()
+                        && self
+                            .user_input
+                            .chars()
+                            .nth(self.cursor_position)
+                            .unwrap()
+                            .is_alphanumeric()
+                    {
+                        self.cursor_position += 1;
+                    }
+                    while self.cursor_position < self.user_input.len()
+                        && !self
+                            .user_input
+                            .chars()
+                            .nth(self.cursor_position)
+                            .unwrap()
+                            .is_alphanumeric()
+                    {
+                        self.cursor_position += 1;
+                    }
+                } else if self.cursor_position < self.user_input.len() {
                     self.cursor_position += 1;
                 }
             }
+            KeyCode::Home => {
+                self.cursor_position = 0;
+            }
+            KeyCode::End => {
+                self.cursor_position = self.user_input.len();
+            }
             KeyCode::Char(c) => {
-                self.user_input.insert(self.cursor_position, c);
-                self.cursor_position += 1;
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    match c {
+                        'a' => self.cursor_position = 0,
+                        'e' => self.cursor_position = self.user_input.len(),
+                        'k' => self.user_input.truncate(self.cursor_position),
+                        'u' => {
+                            self.user_input = self.user_input.split_off(self.cursor_position);
+                            self.cursor_position = 0;
+                        }
+                        _ => {}
+                    }
+                } else {
+                    self.user_input.insert(self.cursor_position, c);
+                    self.cursor_position += 1;
+                }
             }
             _ => {}
         }
@@ -291,9 +373,12 @@ impl App {
         if !input.is_empty() {
             self.add_user_message(input.clone());
 
-            // Send the message through the channel
-            if let Err(e) = self.message_sender.send(input) {
-                self.add_system_message(format!("Error sending message: {:?}", e));
+            // Send a command to process the message
+            if let Err(e) = self.command_sender.send(AppCommand::ProcessMessage(input)) {
+                self.add_system_message(format!("Error sending message command: {:?}", e));
+            } else {
+                // Add a "thinking" message to indicate that the AI is processing
+                self.add_system_message("AI is thinking...".to_string());
             }
 
             // Clear the user input
@@ -375,13 +460,24 @@ impl App {
         Ok(())
     }
 
-    #[allow(dead_code)]
-    pub async fn send_message(&mut self, message: &str) -> Result<String, AIError> {
+    pub async fn send_message(
+        &mut self,
+        message: String,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(ai) = &mut self.ai_client {
-            let response = ai.send_message(message).await?;
-            Ok(response)
+            match ai.send_message(&message).await {
+                Ok(response) => {
+                    self.ai_sender.send(response)?;
+                    Ok(())
+                }
+                Err(e) => {
+                    self.add_system_message(format!("Error from AI: {:?}", e));
+                    Err(Box::new(e))
+                }
+            }
         } else {
-            Err(AIError::ConversationNotInitialized)
+            self.add_system_message("AI client not initialized".to_string());
+            Err("AI client not initialized".into())
         }
     }
 
@@ -503,9 +599,15 @@ impl App {
     }
 
     fn handle_create_image_input(&mut self, key: KeyEvent) {
-        // Implement image creation input handling
-        cleanup();
-        unimplemented!("handle_create_image_input");
+        if key.kind != KeyEventKind::Press {
+            return;
+        }
+        match key.code {
+            KeyCode::Esc => {
+                self.state = AppState::MainMenu;
+            }
+            _ => {}
+        }
     }
 
     fn handle_api_key_input(&mut self, key: KeyEvent) {
