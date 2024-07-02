@@ -172,6 +172,28 @@ impl App {
             KeyCode::Esc => {
                 self.state = AppState::MainMenu;
             }
+            KeyCode::Char(c) => {
+                if let Some(digit) = c.to_digit(10) {
+                    if digit < 5 {
+                        self.settings_state.selected_setting = (digit - 1) as usize;
+                        let current_setting = self.settings_state.selected_setting;
+                        if current_setting == 1 {
+                            // API Key setting
+                            self.state = AppState::InputApiKey;
+                        } else {
+                            let current_option =
+                                self.settings_state.selected_options[current_setting];
+                            let new_option = match current_setting {
+                                0 => (current_option + 1) % 3,   // Language (3 options)
+                                2 | 3 | 4 => 1 - current_option, // Toggle settings (2 options)
+                                _ => current_option,
+                            };
+                            self.settings_state.selected_options[current_setting] = new_option;
+                        }
+                        self.apply_settings();
+                    }
+                }
+            }
             _ => {}
         }
     }

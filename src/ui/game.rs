@@ -19,7 +19,7 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
     draw_game_content(f, app, chunks[0]);
     draw_user_input(f, app, chunks[1]);
 }
-
+// TODO: Make the scrolling start position at the bottom.
 fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
     let block = Block::default()
         .title("Game Content")
@@ -72,10 +72,10 @@ fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
     app.update_scroll();
     app.update_debug_info();
 
-    // Render debug info
-    let debug_area = Rect::new(area.x, area.bottom() - 1, area.width, 1);
-    let debug_text = Paragraph::new(app.debug_info.clone()).style(Style::default().fg(Color::Gray));
-    f.render_widget(debug_text, debug_area);
+    // // Render debug info
+    // let debug_area = Rect::new(area.x, area.bottom() - 1, area.width, 1);
+    // let debug_text = Paragraph::new(app.debug_info.clone()).style(Style::default().fg(Color::Gray));
+    // f.render_widget(debug_text, debug_area);
 }
 
 fn render_messages(game_content: &[Message], width: u16) -> Vec<ListItem> {
