@@ -609,33 +609,29 @@ impl App {
             self.initialize_ai_client().await?;
         }
 
-        if let Some(ai) = &mut self.ai_client {
-            ai.load_conversation(GameConversationState {
-                assistant_id: game_state.assistant_id.clone(),
-                thread_id: game_state.thread_id.clone(),
-                player_health: 100, // You might want to store and load these values as well
-                player_gold: 0,
-            })
-            .await;
-        } else {
-            return Err("AI client not initialized".into());
-        }
+        let ai = self.ai_client.as_mut().ok_or("AI client not initialized")?;
 
-        // Load message history if it exists, otherwise initialize with a system message
-        if game_state.message_history.is_empty() {
-            self.game_content = vec![Message {
-                content: "Game loaded. No previous messages found.".to_string(),
-                message_type: MessageType::System,
-            }];
-        } else {
-            self.game_content = game_state.message_history.clone();
-        }
+        ai.load_conversation(GameConversationState {
+            assistant_id: game_state.assistant_id.clone(),
+            thread_id: game_state.thread_id.clone(),
+            player_health: 100,
+            player_gold: 0,
+        })
+        .await;
+
+        // Fetch all messages from the thread
+        let all_messages = ai.fetch_all_messages(&game_state.thread_id).await?;
+
+        // Load message history
+        self.game_content = all_messages;
+
+        // Add a system message indicating the game was loaded
+        self.add_system_message("Game loaded successfully!".to_string());
 
         // Store the game state
         self.current_game = Some(game_state);
 
         self.state = AppState::InGame;
-        self.add_system_message("Game loaded successfully!".to_string());
         self.update_scroll(); // Ensure the scroll position is updated
         Ok(())
     }

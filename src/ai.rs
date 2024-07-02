@@ -1,3 +1,4 @@
+use crate::message::{Message, MessageType};
 use async_openai::{
     config::OpenAIConfig,
     types::{
@@ -163,6 +164,42 @@ impl GameAI {
         Ok(response)
     }
 
+    pub async fn fetch_all_messages(&self, thread_id: &str) -> Result<Vec<Message>, AIError> {
+        let mut all_messages = Vec::new();
+        let mut before: Option<String> = None;
+        loop {
+            let mut params = vec![("order", "desc"), ("limit", "100")];
+            if let Some(before_id) = &before {
+                params.push(("before", before_id));
+            }
+            let messages = self
+                .client
+                .threads()
+                .messages(thread_id)
+                .list(&params)
+                .await?;
+
+            for message in messages.data.into_iter().rev() {
+                if let Some(MessageContent::Text(text_content)) = message.content.first() {
+                    all_messages.push(Message {
+                        content: text_content.text.value.clone(),
+                        message_type: match message.role {
+                            MessageRole::User => MessageType::User,
+                            MessageRole::Assistant => MessageType::Game,
+                            _ => MessageType::System,
+                        },
+                    });
+                }
+            }
+
+            if messages.has_more {
+                before = messages.first_id;
+            } else {
+                break;
+            }
+        }
+        Ok(all_messages)
+    }
     async fn get_latest_message(&self, thread_id: &str) -> Result<String, AIError> {
         let messages = self
             .client
