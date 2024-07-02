@@ -5,7 +5,7 @@ use crate::app_state::AppState;
 
 use ratatui::Frame;
 
-use super::{api_key_input, create_image, game, load_game, main_menu, settings};
+use super::{api_key_input, create_image, game, load_game, main_menu, save_name_input, settings};
 
 pub fn draw(f: &mut Frame, app: &mut App) {
     match app.state {
@@ -15,5 +15,6 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         AppState::CreateImage => create_image::draw_create_image(f, app),
         AppState::Settings => settings::draw_settings(f, app),
         AppState::InputApiKey => api_key_input::draw_api_key_input(f, app),
+        AppState::InputSaveName => save_name_input::draw_save_name_input(f, app),
     }
 }

@@ -8,4 +8,5 @@ pub enum AppState {
     CreateImage,
     Settings,
     InputApiKey,
+    InputSaveName,
 }

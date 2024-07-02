@@ -12,6 +12,7 @@ use tokio::sync::mpsc;
 use tokio::{sync::Mutex, time::Instant};
 
 mod ai;
+mod ai_response;
 mod app;
 mod app_state;
 mod cleanup;
@@ -96,8 +97,8 @@ async fn run_app(
                             app.add_system_message(format!("Failed to load game: {:?}", e));
                         }
                     }
-                    AppCommand::StartNewGame => {
-                        if let Err(e) = app.start_new_game().await {
+                    AppCommand::StartNewGame(save_name) => {
+                        if let Err(e) = app.start_new_game(save_name).await {
                             app.add_system_message(format!("Failed to start new game: {:?}", e));
                         }
                     }
@@ -110,13 +111,12 @@ async fn run_app(
             }
             Some(ai_response) = ai_receiver.recv() => {
                 let mut app = app.lock().await;
-                // Remove the "AI is thinking..." message
                 if let Some(last_message) = app.game_content.last() {
                     if last_message.content == "AI is thinking..." && last_message.message_type == MessageType::System {
                         app.game_content.pop();
                     }
                 }
-                app.add_game_message(ai_response);
+                app.handle_ai_response(ai_response);
             }
         }
 

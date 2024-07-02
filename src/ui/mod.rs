@@ -7,6 +7,7 @@ mod draw;
 pub mod game;
 mod load_game;
 mod main_menu;
+mod save_name_input;
 mod settings;
 mod utils;
 

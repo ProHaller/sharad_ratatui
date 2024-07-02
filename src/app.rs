@@ -1,4 +1,5 @@
 use crate::ai::{AIError, GameAI, GameConversationState};
+use crate::ai_response::{create_user_message, GameResponse, UserMessage};
 use crate::app_state::AppState;
 use crate::cleanup::cleanup;
 use crate::game_state::GameState;
@@ -15,7 +16,7 @@ use tokio::sync::mpsc;
 
 pub enum AppCommand {
     LoadGame(String),
-    StartNewGame,
+    StartNewGame(String), // Modified to include save name
     ProcessMessage(String),
 }
 
@@ -42,6 +43,9 @@ pub struct App {
     pub visible_lines: usize,
     pub total_lines: usize,
     pub message_line_counts: Vec<usize>, // Store the number of lines for each message
+    pub save_name_input: String,
+    pub current_game_response: Option<GameResponse>,
+    pub last_user_message: Option<UserMessage>,
 }
 
 impl App {
@@ -83,6 +87,7 @@ impl App {
                 settings_state,
                 api_key_input: String::new(),
                 load_game_menu_state,
+                save_name_input: String::new(),
                 available_saves,
                 game_content: Vec::new(),
                 game_content_scroll: 0,
@@ -96,6 +101,8 @@ impl App {
                 clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
                 command_sender,
                 ai_sender,
+                current_game_response: None,
+                last_user_message: None,
             },
             command_receiver,
         )
@@ -109,6 +116,7 @@ impl App {
             AppState::CreateImage => self.handle_create_image_input(key),
             AppState::Settings => self.handle_settings_input(key),
             AppState::InputApiKey => self.handle_api_key_input(key),
+            AppState::InputSaveName => self.handle_save_name_input(key),
         }
     }
 
@@ -161,8 +169,8 @@ impl App {
                 } else {
                     let current_option = self.settings_state.selected_options[current_setting];
                     let new_option = match current_setting {
-                        0 => (current_option + 1) % 3,   // Language (3 options)
-                        2 | 3 | 4 => 1 - current_option, // Toggle settings (2 options)
+                        0 => (current_option + 1) % 3, // Language (3 options)
+                        2..=4 => 1 - current_option,   // Toggle settings (2 options)
                         _ => current_option,
                     };
                     self.settings_state.selected_options[current_setting] = new_option;
@@ -184,8 +192,8 @@ impl App {
                             let current_option =
                                 self.settings_state.selected_options[current_setting];
                             let new_option = match current_setting {
-                                0 => (current_option + 1) % 3,   // Language (3 options)
-                                2 | 3 | 4 => 1 - current_option, // Toggle settings (2 options)
+                                0 => (current_option + 1) % 3, // Language (3 options)
+                                2..=4 => 1 - current_option,   // Toggle settings (2 options)
                                 _ => current_option,
                             };
                             self.settings_state.selected_options[current_setting] = new_option;
@@ -226,12 +234,8 @@ impl App {
                 match self.main_menu_state.selected() {
                     Some(0) => {
                         // Start New Game
-                        if let Err(e) = self.command_sender.send(AppCommand::StartNewGame) {
-                            self.add_system_message(format!(
-                                "Failed to send start new game command: {:?}",
-                                e
-                            ));
-                        }
+                        self.state = AppState::InputSaveName;
+                        self.save_name_input.clear(); // Clear any previous input
                     }
                     Some(1) => {
                         // Load Game
@@ -250,7 +254,7 @@ impl App {
             }
             KeyCode::Up => self.navigate_main_menu(-1),
             KeyCode::Down => self.navigate_main_menu(1),
-            KeyCode::Char(c) if ('0'..='4').contains(&c) => self.select_main_menu_by_char(c),
+            KeyCode::Char(c) if ('1'..='4').contains(&c) => self.select_main_menu_by_char(c),
             KeyCode::Char('q') => {
                 cleanup();
                 std::process::exit(0);
@@ -267,7 +271,7 @@ impl App {
 
     fn select_main_menu_option(&mut self) {
         match self.main_menu_state.selected() {
-            Some(0) => self.state = AppState::InGame,
+            Some(0) => self.state = AppState::InputSaveName,
             Some(1) => self.state = AppState::LoadGame,
             Some(2) => self.state = AppState::CreateImage,
             Some(3) => self.state = AppState::Settings,
@@ -451,10 +455,6 @@ impl App {
         );
     }
 
-    fn scroll_to_bottom(&mut self) {
-        self.update_scroll();
-    }
-
     pub fn add_user_message(&mut self, content: String) {
         self.game_content.push(Message {
             content,
@@ -479,6 +479,12 @@ impl App {
         self.scroll_to_bottom();
     }
 
+    fn scroll_to_bottom(&mut self) {
+        self.game_content_scroll = self.game_content.len().saturating_sub(self.visible_lines);
+        self.update_scroll();
+    }
+
+    // TODO: Implement an API key check logic by making a simple request to the API.
     pub fn check_api_key(&mut self) {
         if self.settings.openai_api_key.is_none() {
             self.state = AppState::InputApiKey;
@@ -486,18 +492,14 @@ impl App {
     }
 
     // Add a new method to handle periodic updates
-    pub fn on_tick(&mut self) {
-        // Implement any logic that needs to run periodically
-        // For example, you could update game state, process AI responses, etc.
-    }
+    pub fn on_tick(&mut self) {}
+
     #[allow(dead_code)]
     pub async fn start_new_conversation(&mut self, assistant_id: &str) -> Result<(), AIError> {
         if let Some(ai) = &mut self.ai_client {
             let initial_state = GameConversationState {
                 assistant_id: assistant_id.to_string(),
-                thread_id: String::new(), // This will be set by start_new_conversation
-                player_health: 100,       // Set initial health
-                player_gold: 0,           // Set initial gold
+                thread_id: String::new(),
             };
             ai.start_new_conversation(assistant_id, initial_state)
                 .await?;
@@ -520,27 +522,69 @@ impl App {
         &mut self,
         message: String,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let user_message = create_user_message(&message);
+        let formatted_message = user_message.to_ai_format();
+
+        self.last_user_message = Some(user_message.clone());
+        self.add_user_message(format!(
+            "Instructions: \n{}\nPlayer Action: \n{}",
+            user_message.instructions, user_message.player_action
+        ));
+
         if let Some(ai) = &mut self.ai_client {
-            match ai.send_message(&message).await {
-                Ok(response) => {
-                    if let Err(e) = self.ai_sender.send(response) {
-                        self.add_system_message(format!("Error sending AI response: {:?}", e));
-                        return Err(Box::new(e));
+            match ai.send_message(&formatted_message).await {
+                Ok(response) => match GameResponse::from_json(&response) {
+                    Ok(game_response) => {
+                        self.current_game_response = Some(game_response.clone());
+
+                        self.add_game_message(format!(
+                            "Reasoning: \n{}\nNarration: \n{}",
+                            game_response.reasoning, game_response.narration
+                        ));
+                        Ok(())
                     }
-                    Ok(())
-                }
+                    Err(e) => {
+                        let error_msg = format!("Failed to parse AI response: {:?}", e);
+                        self.add_system_message(error_msg.clone());
+                        self.add_system_message(format!("full response: {}", response));
+                        Err(error_msg.into())
+                    }
+                },
                 Err(e) => {
-                    self.add_system_message(format!("Error from AI: {:?}", e));
-                    Err(Box::new(e))
+                    let error_msg = format!("Error from AI: {:?}", e);
+                    self.add_system_message(error_msg.clone());
+                    Err(error_msg.into())
                 }
             }
         } else {
-            self.add_system_message("AI client not initialized".to_string());
-            Err("AI client not initialized".into())
+            let error_msg = "AI client not initialized".to_string();
+            self.add_system_message(error_msg.clone());
+            Err(error_msg.into())
         }
     }
 
-    pub async fn start_new_game(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn handle_ai_response(&mut self, response: String) {
+        match GameResponse::from_json(&response) {
+            Ok(game_response) => {
+                self.current_game_response = Some(game_response.clone());
+                self.add_game_message(format!(
+                    "Reasoning: \n{}\nNarration: \n{}",
+                    game_response.reasoning, game_response.narration
+                ));
+            }
+            Err(e) => {
+                self.add_system_message(format!("Failed to parse AI response: {:?}", e));
+                self.add_game_message(response);
+            }
+        }
+    }
+
+    // Update this method or create a new one to handle incoming AI responses
+
+    pub async fn start_new_game(
+        &mut self,
+        save_name: String,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         if self.ai_client.is_none() {
             self.initialize_ai_client().await?;
         }
@@ -552,29 +596,27 @@ impl App {
                 GameConversationState {
                     assistant_id: assistant_id.to_string(),
                     thread_id: String::new(),
-                    player_health: 100,
-                    player_gold: 0,
                 },
             )
             .await?;
+
+            // Save the game immediately after starting
+            self.save_game(&save_name)?;
         } else {
             return Err("AI client not initialized".into());
         }
 
         self.state = AppState::InGame;
-        self.add_system_message("New game started!".to_string());
+        self.add_system_message(format!("New game '{}' started!", save_name));
+
+        // Send an initial message to the AI to start the game
+        self.send_message("Start the game in json".to_string())
+            .await?;
+
         Ok(())
     }
-    async fn initialize_ai_client(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        if let Some(api_key) = &self.settings.openai_api_key {
-            self.ai_client = Some(GameAI::new(api_key.clone())?);
-            Ok(())
-        } else {
-            Err("OpenAI API key not set".into())
-        }
-    }
 
-    pub fn save_game(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn save_game(&self, save_name: &str) -> Result<(), Box<dyn std::error::Error>> {
         let game_state = GameState {
             assistant_id: self
                 .ai_client
@@ -597,8 +639,18 @@ impl App {
             message_history: self.game_content.clone(),
         };
 
-        game_state.save_to_file(path)?;
+        let save_path = format!("./data/save/{}.json", save_name);
+        game_state.save_to_file(&save_path)?;
         Ok(())
+    }
+
+    async fn initialize_ai_client(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(api_key) = &self.settings.openai_api_key {
+            self.ai_client = Some(GameAI::new(api_key.clone())?);
+            Ok(())
+        } else {
+            Err("OpenAI API key not set".into())
+        }
     }
 
     pub fn scan_save_files() -> Vec<String> {
@@ -690,8 +742,6 @@ impl App {
         ai.load_conversation(GameConversationState {
             assistant_id: game_state.assistant_id.clone(),
             thread_id: game_state.thread_id.clone(),
-            player_health: 100,
-            player_gold: 0,
         })
         .await;
 
@@ -712,6 +762,40 @@ impl App {
         Ok(())
     }
 
+    fn handle_save_name_input(&mut self, key: KeyEvent) {
+        if key.kind != KeyEventKind::Press {
+            return;
+        }
+        match key.code {
+            KeyCode::Enter => {
+                if !self.save_name_input.is_empty() {
+                    // Start a new game with the given save name
+                    if let Err(e) = self
+                        .command_sender
+                        .send(AppCommand::StartNewGame(self.save_name_input.clone()))
+                    {
+                        self.add_system_message(format!(
+                            "Failed to send start new game command: {:?}",
+                            e
+                        ));
+                    }
+                    self.save_name_input.clear();
+                    self.state = AppState::InGame;
+                }
+            }
+            KeyCode::Char(c) => {
+                self.save_name_input.push(c);
+            }
+            KeyCode::Backspace => {
+                self.save_name_input.pop();
+            }
+            KeyCode::Esc => {
+                self.save_name_input.clear();
+                self.state = AppState::MainMenu;
+            }
+            _ => {}
+        }
+    }
     fn handle_create_image_input(&mut self, key: KeyEvent) {
         if key.kind != KeyEventKind::Press {
             return;

@@ -88,7 +88,7 @@ fn render_load_game_menu(f: &mut Frame, app: &App, area: Rect) {
         ])
         .split(menu_area.inner(Margin {
             vertical: 1,
-            horizontal: (area.width - text[0].width() as u16) / 2,
+            horizontal: (area.width - text.iter().map(|t| t.width() as u16).max().unwrap()) / 2,
         }))[1];
 
     let menu = Paragraph::new(text)

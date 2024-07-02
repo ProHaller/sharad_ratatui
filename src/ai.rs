@@ -14,8 +14,6 @@ use tokio::time::{timeout, Duration};
 pub struct GameConversationState {
     pub assistant_id: String,
     pub thread_id: String,
-    pub player_health: u8,
-    pub player_gold: u32,
     // Add other game-specific state here
 }
 
@@ -49,6 +47,7 @@ impl GameAI {
         })
     }
 
+    #[allow(dead_code)]
     pub async fn create_game_assistant(
         &self,
         name: &str,
@@ -61,7 +60,7 @@ impl GameAI {
                 CreateAssistantRequestArgs::default()
                     .name(name)
                     .instructions(instructions)
-                    .model("gpt-4-1106-preview")
+                    .model("gpt-4o")
                     .tools(vec![AssistantTools::CodeInterpreter])
                     .build()?,
             )
@@ -89,10 +88,7 @@ impl GameAI {
 
         let initial_message = CreateMessageRequestArgs::default()
             .role(MessageRole::User)
-            .content(format!(
-                "Start a new game. Player health: {}, Player gold: {}",
-                initial_game_state.player_health, initial_game_state.player_gold
-            ))
+            .content(format!("Start a new game. Answer in valid json"))
             .build()?;
 
         self.client
@@ -220,20 +216,6 @@ impl GameAI {
         // This is a placeholder. You'll need to implement proper parsing based on your AI's response format.
         if let Some(state) = &mut self.conversation_state {
             // Example parsing, adjust according to your actual AI response format
-            if let Some(health_str) = response.split("Player health:").nth(1) {
-                if let Some(health) = health_str.split(',').next() {
-                    state.player_health = health.trim().parse().map_err(|_| {
-                        AIError::GameStateParseError("Failed to parse player health".into())
-                    })?;
-                }
-            }
-            if let Some(gold_str) = response.split("Player gold:").nth(1) {
-                if let Some(gold) = gold_str.split('.').next() {
-                    state.player_gold = gold.trim().parse().map_err(|_| {
-                        AIError::GameStateParseError("Failed to parse player gold".into())
-                    })?;
-                }
-            }
         }
         Ok(())
     }
