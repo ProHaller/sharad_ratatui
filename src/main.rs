@@ -63,9 +63,16 @@ async fn run_app(
             ui::draw(f, &mut *app)
         })?;
 
+<<<<<<< Updated upstream
         // Check if we need to handle input, perform a tick, or process a command
+=======
+        let timeout = tick_rate
+            .checked_sub(last_tick.elapsed())
+            .unwrap_or_else(|| Duration::from_secs(0));
+
+>>>>>>> Stashed changes
         tokio::select! {
-            _ = tokio::time::sleep_until(last_tick + tick_rate) => {
+            _ = tokio::time::sleep(timeout) => {
                 let mut app = app.lock().await;
                 app.on_tick();
                 last_tick = Instant::now();
@@ -77,7 +84,11 @@ async fn run_app(
                     Ok(Event::FocusGained)
                 }
             }) => {
+<<<<<<< Updated upstream
                 if let Ok(Event::Key(key)) = event.unwrap() {
+=======
+                if let Ok(Ok(Event::Key(key))) = event {
+>>>>>>> Stashed changes
                     let mut app = app.lock().await;
                     if key.code == KeyCode::Char('q') && app.state == AppState::MainMenu {
                         return Ok(());
