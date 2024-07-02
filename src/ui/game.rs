@@ -27,25 +27,55 @@ fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
         .border_style(Style::default().fg(Color::Cyan));
     let inner_area = block.inner(area);
 
-    // Update the number of visible messages and scroll position
-    let new_visible_messages = inner_area.height as usize;
-    if app.visible_messages != new_visible_messages {
-        app.visible_messages = new_visible_messages;
-        app.update_scroll();
-    }
-
-    let messages = render_messages(&app.game_content, inner_area.width);
-
     f.render_widget(block, area);
 
-    let list = List::new(messages)
-        .block(Block::default().borders(Borders::NONE))
-        .direction(ListDirection::TopToBottom);
+    let max_width = inner_area.width as usize - 2;
+    let mut all_lines = Vec::new();
 
-    let mut state = ListState::default();
-    state.select(Some(app.game_content_scroll));
+    // Calculate all lines and their styles
+    for message in &app.game_content {
+        let (style, alignment) = match message.message_type {
+            MessageType::User => (Style::default().fg(Color::Blue), Alignment::Right),
+            MessageType::Game => (Style::default().fg(Color::Green), Alignment::Left),
+            MessageType::System => (Style::default().fg(Color::Yellow), Alignment::Center),
+        };
 
-    f.render_stateful_widget(list, inner_area, &mut state);
+        let wrapped_lines = textwrap::wrap(&message.content, max_width);
+        for line in wrapped_lines {
+            all_lines.push((line.to_string(), style, alignment));
+        }
+    }
+
+    app.total_lines = all_lines.len();
+
+    // Render visible lines
+    let visible_lines: Vec<Line> = all_lines
+        .iter()
+        .skip(app.game_content_scroll)
+        .take(inner_area.height as usize)
+        .map(|(content, style, alignment)| {
+            let span = Span::styled(content.clone(), *style);
+            match alignment {
+                Alignment::Right => Line::from(vec![span]).alignment(Alignment::Right),
+                Alignment::Left => Line::from(vec![span]),
+                Alignment::Center => Line::from(vec![span]).alignment(Alignment::Center),
+            }
+        })
+        .collect();
+
+    let content = Paragraph::new(visible_lines).block(Block::default().borders(Borders::NONE));
+
+    f.render_widget(content, inner_area);
+
+    // Update app state
+    app.visible_lines = inner_area.height as usize;
+    app.update_scroll();
+    app.update_debug_info();
+
+    // Render debug info
+    let debug_area = Rect::new(area.x, area.bottom() - 1, area.width, 1);
+    let debug_text = Paragraph::new(app.debug_info.clone()).style(Style::default().fg(Color::Gray));
+    f.render_widget(debug_text, debug_area);
 }
 
 fn render_messages(game_content: &[Message], width: u16) -> Vec<ListItem> {

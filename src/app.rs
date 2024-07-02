@@ -28,17 +28,20 @@ pub struct App {
     pub settings: Settings,
     pub settings_state: SettingsState,
     pub api_key_input: String,
-    pub game_content: Vec<Message>,
-    pub game_content_scroll: usize,
     pub user_input: String,
     pub cursor_position: usize,
     pub debug_info: String,
-    pub visible_messages: usize,
     clipboard: ClipboardContext,
     command_sender: mpsc::UnboundedSender<AppCommand>,
     pub load_game_menu_state: ListState,
     pub available_saves: Vec<String>,
     ai_sender: mpsc::UnboundedSender<String>,
+    pub visible_messages: usize,
+    pub game_content: Vec<Message>,
+    pub game_content_scroll: usize,
+    pub visible_lines: usize,
+    pub total_lines: usize,
+    pub message_line_counts: Vec<usize>, // Store the number of lines for each message
 }
 
 impl App {
@@ -87,6 +90,9 @@ impl App {
                 cursor_position: 0,
                 debug_info: String::new(),
                 visible_messages: 0,
+                total_lines: 0,
+                visible_lines: 0,
+                message_line_counts: Vec::new(),
                 clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
                 command_sender,
                 ai_sender,
@@ -337,12 +343,6 @@ impl App {
                     self.cursor_position += 1;
                 }
             }
-            KeyCode::Home => {
-                self.cursor_position = 0;
-            }
-            KeyCode::End => {
-                self.cursor_position = self.user_input.len();
-            }
             KeyCode::Char(c) => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
                     match c {
@@ -359,6 +359,24 @@ impl App {
                     self.user_input.insert(self.cursor_position, c);
                     self.cursor_position += 1;
                 }
+            }
+            KeyCode::PageUp => {
+                for _ in 0..self.visible_lines {
+                    self.scroll_up();
+                }
+            }
+            KeyCode::Up => self.scroll_up(),
+            KeyCode::PageDown => {
+                for _ in 0..self.visible_lines {
+                    self.scroll_down();
+                }
+            }
+            KeyCode::Down => self.scroll_down(),
+            KeyCode::Home => {
+                self.game_content_scroll = 0;
+            }
+            KeyCode::End => {
+                self.game_content_scroll = self.total_lines.saturating_sub(self.visible_lines);
             }
             _ => {}
         }
@@ -383,12 +401,32 @@ impl App {
         }
     }
 
-    pub fn update_scroll(&mut self) {
-        if self.game_content.len() > self.visible_messages {
-            self.game_content_scroll = self.game_content.len() - self.visible_messages;
-        } else {
-            self.game_content_scroll = 0;
+    pub fn scroll_up(&mut self) {
+        if self.game_content_scroll > 0 {
+            self.game_content_scroll -= 1;
         }
+    }
+
+    pub fn scroll_down(&mut self) {
+        if self.game_content_scroll < self.total_lines.saturating_sub(self.visible_lines) {
+            self.game_content_scroll += 1;
+        }
+    }
+
+    pub fn update_scroll(&mut self) {
+        let max_scroll = self.total_lines.saturating_sub(self.visible_lines);
+        self.game_content_scroll = self.game_content_scroll.min(max_scroll);
+    }
+
+    pub fn update_debug_info(&mut self) {
+        self.debug_info = format!(
+            "Scroll: {}/{}, Visible Lines: {}, Total Lines: {}, Messages: {}",
+            self.game_content_scroll,
+            self.total_lines.saturating_sub(self.visible_lines),
+            self.visible_lines,
+            self.total_lines,
+            self.game_content.len()
+        );
     }
 
     fn scroll_to_bottom(&mut self) {
@@ -632,7 +670,7 @@ impl App {
         self.current_game = Some(game_state);
 
         self.state = AppState::InGame;
-        self.update_scroll(); // Ensure the scroll position is updated
+        self.update_scroll(); // This will set the scroll position to show the most recent messages
         Ok(())
     }
 
