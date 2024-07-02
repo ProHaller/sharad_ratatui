@@ -251,7 +251,7 @@ impl App {
             KeyCode::Up => self.navigate_main_menu(-1),
             KeyCode::Down => self.navigate_main_menu(1),
             KeyCode::Char(c) if ('0'..='4').contains(&c) => self.select_main_menu_by_char(c),
-            KeyCode::Esc => {
+            KeyCode::Char('q') => {
                 cleanup();
                 std::process::exit(0);
             }
@@ -644,6 +644,22 @@ impl App {
             }
             KeyCode::Up => self.navigate_load_game_menu(-1),
             KeyCode::Down => self.navigate_load_game_menu(1),
+
+            KeyCode::Char(c) => {
+                if let Some(digit) = c.to_digit(10) {
+                    let selected = (digit as usize - 1) % self.available_saves.len();
+                    self.load_game_menu_state.select(Some(selected));
+                    let save_path = format!("./data/save/{}", self.available_saves[selected]);
+                    if let Err(e) = self.command_sender.send(AppCommand::LoadGame(save_path)) {
+                        self.add_system_message(format!(
+                            "Failed to send load game command: {:?}",
+                            e
+                        ));
+                    } else {
+                        self.add_system_message("Loading game...".to_string());
+                    }
+                }
+            }
             _ => {}
         }
     }
