@@ -1,11 +1,12 @@
-// game_state.rs
-
+use crate::message::Message;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct GameState {
     pub assistant_id: String,
     pub thread_id: String,
+    #[serde(default)]
+    pub message_history: Vec<Message>,
 }
 
 impl GameState {
@@ -21,4 +22,3 @@ impl GameState {
         Ok(())
     }
 }
-

@@ -1,7 +1,7 @@
 // ui/game.rs
 
 use crate::app::App;
-use crate::message::MessageType;
+use crate::message::{Message, MessageType};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style},
@@ -20,6 +20,60 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
     draw_user_input(f, app, chunks[1]);
 }
 
+fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
+    let block = Block::default()
+        .title("Game Content")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan));
+    let inner_area = block.inner(area);
+
+    // Update the number of visible messages and scroll position
+    let new_visible_messages = inner_area.height as usize;
+    if app.visible_messages != new_visible_messages {
+        app.visible_messages = new_visible_messages;
+        app.update_scroll();
+    }
+
+    let messages = render_messages(&app.game_content, inner_area.width);
+
+    f.render_widget(block, area);
+
+    let list = List::new(messages)
+        .block(Block::default().borders(Borders::NONE))
+        .direction(ListDirection::TopToBottom);
+
+    let mut state = ListState::default();
+    state.select(Some(app.game_content_scroll));
+
+    f.render_stateful_widget(list, inner_area, &mut state);
+}
+
+fn render_messages(game_content: &[Message], width: u16) -> Vec<ListItem> {
+    game_content
+        .iter()
+        .map(|message| {
+            let (style, alignment) = match message.message_type {
+                MessageType::User => (Style::default().fg(Color::Blue), Alignment::Right),
+                MessageType::Game => (Style::default().fg(Color::Green), Alignment::Left),
+                MessageType::System => (Style::default().fg(Color::Yellow), Alignment::Center),
+            };
+
+            let wrapped_content = textwrap::wrap(&message.content, width as usize - 2)
+                .into_iter()
+                .map(|s| Line::from(vec![Span::styled(s, style)]))
+                .collect::<Vec<Line>>();
+
+            let content = match alignment {
+                Alignment::Right => Text::from(wrapped_content).alignment(Alignment::Right),
+                Alignment::Left => Text::from(wrapped_content).alignment(Alignment::Left),
+                Alignment::Center => Text::from(wrapped_content).alignment(Alignment::Center),
+            };
+
+            ListItem::new(content)
+        })
+        .collect()
+}
+
 fn render_game_content(app: &mut App, area: Rect) -> (Block, Vec<ListItem>, Rect) {
     let block = Block::default()
         .title("Game Content")
@@ -34,12 +88,9 @@ fn render_game_content(app: &mut App, area: Rect) -> (Block, Vec<ListItem>, Rect
         app.update_scroll();
     }
 
-    // Calculate the visible range based on the scroll offset
-    let start_index = app.game_content_scroll;
-    let end_index = (start_index + app.visible_messages).min(app.game_content.len());
-
-    // Collect the visible messages
-    let messages: Vec<ListItem> = app.game_content[start_index..end_index]
+    // Collect all messages
+    let messages: Vec<ListItem> = app
+        .game_content
         .iter()
         .map(|message| {
             let (style, alignment) = match message.message_type {
@@ -64,17 +115,6 @@ fn render_game_content(app: &mut App, area: Rect) -> (Block, Vec<ListItem>, Rect
         .collect();
 
     (block, messages, inner_area)
-}
-
-fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
-    let (block, messages, inner_area) = render_game_content(app, area);
-
-    f.render_widget(block, area);
-
-    let messages = List::new(messages)
-        .block(Block::default().borders(Borders::NONE))
-        .direction(ListDirection::TopToBottom);
-    f.render_widget(messages, inner_area);
 }
 
 fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {

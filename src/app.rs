@@ -35,7 +35,6 @@ pub struct App {
     pub debug_info: String,
     pub visible_messages: usize,
     clipboard: ClipboardContext,
-    message_sender: mpsc::UnboundedSender<String>,
     command_sender: mpsc::UnboundedSender<AppCommand>,
     pub load_game_menu_state: ListState,
     pub available_saves: Vec<String>,
@@ -47,8 +46,6 @@ impl App {
         ai_sender: mpsc::UnboundedSender<String>,
     ) -> (Self, mpsc::UnboundedReceiver<AppCommand>) {
         let (command_sender, command_receiver) = mpsc::unbounded_channel();
-        let (message_sender, message_receiver) = mpsc::unbounded_channel();
-        let (ai_sender, ai_receiver) = mpsc::unbounded_channel();
 
         let mut main_menu_state = ListState::default();
         main_menu_state.select(Some(0));
@@ -91,7 +88,6 @@ impl App {
                 debug_info: String::new(),
                 visible_messages: 0,
                 clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
-                message_sender,
                 command_sender,
                 ai_sender,
             },
@@ -467,7 +463,10 @@ impl App {
         if let Some(ai) = &mut self.ai_client {
             match ai.send_message(&message).await {
                 Ok(response) => {
-                    self.ai_sender.send(response)?;
+                    if let Err(e) = self.ai_sender.send(response) {
+                        self.add_system_message(format!("Error sending AI response: {:?}", e));
+                        return Err(Box::new(e));
+                    }
                     Ok(())
                 }
                 Err(e) => {
@@ -515,6 +514,33 @@ impl App {
         }
     }
 
+    pub fn save_game(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let game_state = GameState {
+            assistant_id: self
+                .ai_client
+                .as_ref()
+                .unwrap()
+                .conversation_state
+                .as_ref()
+                .unwrap()
+                .assistant_id
+                .clone(),
+            thread_id: self
+                .ai_client
+                .as_ref()
+                .unwrap()
+                .conversation_state
+                .as_ref()
+                .unwrap()
+                .thread_id
+                .clone(),
+            message_history: self.game_content.clone(),
+        };
+
+        game_state.save_to_file(path)?;
+        Ok(())
+    }
+
     pub fn scan_save_files() -> Vec<String> {
         let save_dir = Path::new("./data/save");
         if !save_dir.exists() {
@@ -546,6 +572,9 @@ impl App {
                                 "Failed to send load game command: {:?}",
                                 e
                             ));
+                        } else {
+                            // Add a message to indicate that the game is being loaded
+                            self.add_system_message("Loading game...".to_string());
                         }
                     }
                 }
@@ -584,7 +613,7 @@ impl App {
             ai.load_conversation(GameConversationState {
                 assistant_id: game_state.assistant_id.clone(),
                 thread_id: game_state.thread_id.clone(),
-                player_health: 100,
+                player_health: 100, // You might want to store and load these values as well
                 player_gold: 0,
             })
             .await;
@@ -592,9 +621,22 @@ impl App {
             return Err("AI client not initialized".into());
         }
 
+        // Load message history if it exists, otherwise initialize with a system message
+        if game_state.message_history.is_empty() {
+            self.game_content = vec![Message {
+                content: "Game loaded. No previous messages found.".to_string(),
+                message_type: MessageType::System,
+            }];
+        } else {
+            self.game_content = game_state.message_history.clone();
+        }
+
+        // Store the game state
         self.current_game = Some(game_state);
+
         self.state = AppState::InGame;
         self.add_system_message("Game loaded successfully!".to_string());
+        self.update_scroll(); // Ensure the scroll position is updated
         Ok(())
     }
 

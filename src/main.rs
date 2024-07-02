@@ -34,7 +34,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (ai_sender, ai_receiver) = mpsc::unbounded_channel();
 
     // Create app and run it
-    let (app, command_receiver) = App::new(ai_sender);
+    let (app, command_receiver) = App::new(ai_sender.clone());
     let app = Arc::new(Mutex::new(app));
 
     // Run the main app loop

@@ -1,13 +1,13 @@
-// message.rs
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub enum MessageType {
     User,
     Game,
     System,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Message {
     pub content: String,
     pub message_type: MessageType,
