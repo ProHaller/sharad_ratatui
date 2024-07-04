@@ -9,7 +9,11 @@ pub struct UserMessage {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct GameResponse {
+pub struct SystemMessage {
+    pub message: String,
+}
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GameMessage {
     pub reasoning: String,
     pub narration: String,
 }
@@ -22,6 +26,14 @@ impl UserMessage {
         }
     }
 
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
+    }
+
+    pub fn from_json(json: &str) -> Result<Self, serde_json::Error> {
+        serde_json::from_str(json)
+    }
+
     pub fn to_ai_format(&self) -> String {
         format!(
             "{{instructions: {}, player_action: {}}}",
@@ -30,7 +42,32 @@ impl UserMessage {
     }
 }
 
-impl GameResponse {
+impl GameMessage {
+    pub fn new(reasoning: String, narration: String) -> Self {
+        GameMessage {
+            reasoning,
+            narration,
+        }
+    }
+
+    pub fn from_json(json: &str) -> Result<Self, serde_json::Error> {
+        serde_json::from_str(json)
+    }
+
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
+    }
+}
+
+impl SystemMessage {
+    pub fn new(message: String) -> Self {
+        SystemMessage { message }
+    }
+
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
+    }
+
     pub fn from_json(json: &str) -> Result<Self, serde_json::Error> {
         serde_json::from_str(json)
     }

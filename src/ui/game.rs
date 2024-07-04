@@ -1,5 +1,3 @@
-// ui/game.rs
-
 use crate::app::App;
 use crate::message::{Message, MessageType};
 use ratatui::{
@@ -11,15 +9,27 @@ use ratatui::{
 };
 
 pub fn draw_in_game(f: &mut Frame, app: &mut App) {
+    let size = f.size();
+    app.debug_info = format!("Terminal size: {}x{}", size.width, size.height);
+
+    // Check if the terminal size is too small
+    if size.width < 20 || size.height < 10 {
+        let warning = Paragraph::new("Terminal too small. Please resize.")
+            .style(Style::default().fg(Color::Red))
+            .alignment(Alignment::Center);
+        f.render_widget(warning, size);
+        return;
+    }
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Percentage(80), Constraint::Percentage(20)])
-        .split(f.size());
+        .split(size);
 
     draw_game_content(f, app, chunks[0]);
     draw_user_input(f, app, chunks[1]);
 }
-// TODO: Make the scrolling start position at the bottom.
+
 fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
     let block = Block::default()
         .title("Game Content")
@@ -29,7 +39,9 @@ fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
 
     f.render_widget(block, area);
 
-    let max_width = inner_area.width as usize - 2;
+    let max_width = inner_area.width.saturating_sub(2) as usize;
+    let max_height = inner_area.height.saturating_sub(2) as usize;
+
     let mut all_lines = Vec::new();
 
     // Calculate all lines and their styles
@@ -47,12 +59,13 @@ fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
     }
 
     app.total_lines = all_lines.len();
+    app.debug_info += &format!(", Total lines: {}", app.total_lines);
 
     // Render visible lines
     let visible_lines: Vec<Line> = all_lines
         .iter()
         .skip(app.game_content_scroll)
-        .take(inner_area.height as usize)
+        .take(max_height)
         .map(|(content, style, alignment)| {
             let span = Span::styled(content.clone(), *style);
             match alignment {
@@ -63,19 +76,23 @@ fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
         })
         .collect();
 
-    let content = Paragraph::new(visible_lines).block(Block::default().borders(Borders::NONE));
+    app.debug_info += &format!(", Visible lines: {}", visible_lines.len());
+
+    let content = Paragraph::new(visible_lines)
+        .block(Block::default().borders(Borders::NONE))
+        .wrap(Wrap { trim: true });
 
     f.render_widget(content, inner_area);
 
     // Update app state
-    app.visible_lines = inner_area.height as usize;
+    app.visible_lines = max_height;
     app.update_scroll();
     app.update_debug_info();
 
-    // // Render debug info
-    // let debug_area = Rect::new(area.x, area.bottom() - 1, area.width, 1);
-    // let debug_text = Paragraph::new(app.debug_info.clone()).style(Style::default().fg(Color::Gray));
-    // f.render_widget(debug_text, debug_area);
+    // Render debug info
+    let debug_area = Rect::new(area.x, area.bottom() - 1, area.width, 1);
+    let debug_text = Paragraph::new(app.debug_info.clone()).style(Style::default().fg(Color::Gray));
+    f.render_widget(debug_text, debug_area);
 }
 
 fn render_messages(game_content: &[Message], width: u16) -> Vec<ListItem> {

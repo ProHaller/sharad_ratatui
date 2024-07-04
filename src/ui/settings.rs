@@ -70,11 +70,12 @@ pub fn render_settings(f: &mut Frame, app: &App, area: Rect) {
 
             if number == 1 {
                 // API Key setting
-                let api_key_status = if app.settings.openai_api_key.is_none() {
-                    spans.push(Span::styled("[not valid]", Style::default().fg(Color::Red)));
+                let api_key_status = if app.settings.openai_api_key.is_some() {
+                    Span::styled("[Valid]", Style::default().fg(Color::Green))
                 } else {
-                    spans.push(Span::styled("[valid]", Style::default().fg(Color::Green)));
+                    Span::styled("[Not Valid]", Style::default().fg(Color::Red))
                 };
+                spans.push(api_key_status);
             } else {
                 let selected_option = app.settings_state.selected_options[number];
                 spans.extend(options.iter().enumerate().map(|(option_number, option)| {

@@ -1,13 +1,15 @@
 use crate::app::{App, AppCommand};
 use crate::cleanup::cleanup;
+use crate::message::Message;
 use crate::message::MessageType;
 use crossterm::{
     event::{self, Event},
     execute,
-    terminal::{enable_raw_mode, EnterAlternateScreen},
+    terminal::{enable_raw_mode, EnterAlternateScreen, SetSize},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
-use std::{error::Error, io, sync::Arc, time::Duration};
+use std::panic;
+use std::{io, sync::Arc, time::Duration};
 use tokio::sync::mpsc;
 use tokio::{sync::Mutex, time::Instant};
 
@@ -22,8 +24,46 @@ mod settings;
 mod settings_state;
 mod ui;
 
+const MIN_WIDTH: u16 = 90;
+const MIN_HEIGHT: u16 = 50;
+
+fn ensure_minimum_terminal_size() -> io::Result<()> {
+    let (width, height) = crossterm::terminal::size()?;
+    if width < MIN_WIDTH || height < MIN_HEIGHT {
+        execute!(
+            io::stdout(),
+            SetSize(MIN_WIDTH.max(width), MIN_HEIGHT.max(height))
+        )?;
+    }
+    Ok(())
+}
+
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Setup terminal
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen)?;
+
+    // Ensure minimum terminal size
+    ensure_minimum_terminal_size()?;
+
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+    // Set up panic hook
+    panic::set_hook(Box::new(|panic_info| {
+        cleanup();
+        if let Some(location) = panic_info.location() {
+            println!(
+                "Panic occurred in file '{}' at line {}",
+                location.file(),
+                location.line(),
+            );
+        }
+        if let Some(message) = panic_info.payload().downcast_ref::<&str>() {
+            println!("Panic message: {}", message);
+        }
+    }));
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -39,13 +79,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let app = Arc::new(Mutex::new(app));
 
     // Run the main app loop
-    let result = run_app(&mut terminal, app, command_receiver, ai_receiver).await;
-
-    // Restore terminal
-    cleanup();
-
-    if let Err(err) = result {
-        println!("{:?}", err)
+    if let Err(err) = run_app(&mut terminal, app, command_receiver, ai_receiver).await {
+        println!("Error: {:?}", err);
     }
 
     Ok(())
@@ -59,12 +94,16 @@ async fn run_app(
 ) -> io::Result<()> {
     let tick_rate = Duration::from_millis(100);
     let mut last_tick = Instant::now();
+    let (api_key_sender, mut api_key_receiver) = mpsc::channel(1);
 
     loop {
-        // Draw the current state of the app
+        {
+            let mut app = app.lock().await;
+            app.handle_api_key_check().await;
+        }
         terminal.draw(|f| {
             let mut app = tokio::task::block_in_place(|| app.blocking_lock());
-            ui::draw(f, &mut app)
+            ui::draw(f, &mut app, api_key_sender.clone())
         })?;
 
         let timeout = tick_rate
@@ -94,17 +133,17 @@ async fn run_app(
                 match command {
                     AppCommand::LoadGame(path) => {
                         if let Err(e) = app.load_game(&path).await {
-                            app.add_system_message(format!("Failed to load game: {:?}", e));
+                            app.add_message(Message::new(format!("Failed to load game: {:?}", e), MessageType::System));
                         }
                     }
                     AppCommand::StartNewGame(save_name) => {
                         if let Err(e) = app.start_new_game(save_name).await {
-                            app.add_system_message(format!("Failed to start new game: {:?}", e));
+                            app.add_message(Message::new(format!("Failed to start new game: {:?}", e), MessageType::System));
                         }
                     }
                     AppCommand::ProcessMessage(message) => {
                         if let Err(e) = app.send_message(message).await {
-                            app.add_system_message(format!("Failed to process message: {:?}", e));
+                            app.add_message(Message::new(format!("Failed to process message: {:?}", e), MessageType::System));
                         }
                     }
                 }
@@ -118,9 +157,12 @@ async fn run_app(
                 }
                 app.handle_ai_response(ai_response);
             }
+            Some(is_valid) = api_key_receiver.recv() => {
+                let mut app = app.lock().await;
+                app.openai_api_key_valid = is_valid;
+            }
         }
 
-        // Check if we should quit
         if app.lock().await.should_quit {
             return Ok(());
         }

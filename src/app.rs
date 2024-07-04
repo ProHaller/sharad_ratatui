@@ -1,5 +1,5 @@
 use crate::ai::{AIError, GameAI, GameConversationState};
-use crate::ai_response::{create_user_message, GameResponse, UserMessage};
+use crate::ai_response::{create_user_message, GameMessage, UserMessage};
 use crate::app_state::AppState;
 use crate::cleanup::cleanup;
 use crate::game_state::GameState;
@@ -7,6 +7,7 @@ use crate::message::{Message, MessageType};
 use crate::settings::Settings;
 use crate::settings_state::SettingsState;
 
+use async_openai::{config::OpenAIConfig, Client};
 use copypasta::{ClipboardContext, ClipboardProvider};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::widgets::ListState;
@@ -27,8 +28,10 @@ pub struct App {
     pub ai_client: Option<GameAI>,
     pub current_game: Option<GameState>,
     pub settings: Settings,
-    pub settings_state: SettingsState,
     pub api_key_input: String,
+    pub api_key_check_receiver: Option<mpsc::Receiver<bool>>,
+    pub openai_api_key_valid: bool,
+    pub settings_state: SettingsState,
     pub user_input: String,
     pub cursor_position: usize,
     pub debug_info: String,
@@ -44,7 +47,7 @@ pub struct App {
     pub total_lines: usize,
     pub message_line_counts: Vec<usize>, // Store the number of lines for each message
     pub save_name_input: String,
-    pub current_game_response: Option<GameResponse>,
+    pub current_game_response: Option<GameMessage>,
     pub last_user_message: Option<UserMessage>,
 }
 
@@ -83,9 +86,11 @@ impl App {
                 main_menu_state,
                 ai_client,
                 current_game: None,
-                settings,
-                settings_state,
+                settings: Settings::load_from_file("settings.json").unwrap_or_default(),
                 api_key_input: String::new(),
+                api_key_check_receiver: None,
+                openai_api_key_valid: false,
+                settings_state,
                 load_game_menu_state,
                 save_name_input: String::new(),
                 available_saves,
@@ -292,7 +297,10 @@ impl App {
         match key.code {
             KeyCode::Esc => {
                 self.state = AppState::MainMenu;
-                self.add_system_message("Game paused. Returned to main menu.".to_string());
+                self.add_message(Message::new(
+                    "Game paused. Returned to main menu.".to_string(),
+                    MessageType::System,
+                ))
             }
             KeyCode::Enter => {
                 if key.modifiers.contains(KeyModifiers::SHIFT) {
@@ -411,14 +419,20 @@ impl App {
     pub fn submit_user_input(&mut self) {
         let input = self.user_input.trim().to_string();
         if !input.is_empty() {
-            self.add_user_message(input.clone());
+            self.add_message(Message::new(input.clone(), MessageType::System));
 
             // Send a command to process the message
             if let Err(e) = self.command_sender.send(AppCommand::ProcessMessage(input)) {
-                self.add_system_message(format!("Error sending message command: {:?}", e));
+                self.add_message(Message::new(
+                    format!("Error sending message command: {:?}", e),
+                    MessageType::System,
+                ));
             } else {
                 // Add a "thinking" message to indicate that the AI is processing
-                self.add_system_message("AI is thinking...".to_string());
+                self.add_message(Message::new(
+                    "AI is thinking...".to_string(),
+                    MessageType::System,
+                ));
             }
 
             // Clear the user input
@@ -455,39 +469,54 @@ impl App {
         );
     }
 
-    pub fn add_user_message(&mut self, content: String) {
-        self.game_content.push(Message {
-            content,
-            message_type: MessageType::User,
-        });
+    pub fn add_message(&mut self, message: Message) {
+        self.game_content.push(message);
         self.scroll_to_bottom();
     }
 
-    pub fn add_game_message(&mut self, content: String) {
-        self.game_content.push(Message {
-            content,
-            message_type: MessageType::Game,
-        });
-        self.scroll_to_bottom();
-    }
-
-    pub fn add_system_message(&mut self, content: String) {
-        self.game_content.push(Message {
-            content,
-            message_type: MessageType::System,
-        });
-        self.scroll_to_bottom();
-    }
+    // pub fn add_user_message(&mut self, content: String) {
+    //     self.game_content.push(Message {
+    //         content,
+    //         message_type: MessageType::User,
+    //     });
+    //     self.scroll_to_bottom();
+    // }
+    //
+    // pub fn add_game_message(&mut self, content: String) {
+    //     self.game_content.push(Message {
+    //         content,
+    //         message_type: MessageType::Game,
+    //     });
+    //     self.scroll_to_bottom();
+    // }
+    //
+    // pub fn add_system_message(&mut self, content: String) {
+    //     self.game_content.push(Message {
+    //         content,
+    //         message_type: MessageType::System,
+    //     });
+    //     self.scroll_to_bottom();
+    // }
 
     fn scroll_to_bottom(&mut self) {
         self.game_content_scroll = self.game_content.len().saturating_sub(self.visible_lines);
         self.update_scroll();
     }
 
-    // TODO: Implement an API key check logic by making a simple request to the API.
-    pub fn check_api_key(&mut self) {
-        if self.settings.openai_api_key.is_none() {
-            self.state = AppState::InputApiKey;
+    pub async fn check_openai_api_key(&mut self) {
+        if let Some(api_key) = &self.settings.openai_api_key {
+            let client = Client::with_config(OpenAIConfig::new().with_api_key(api_key));
+            let is_valid = client.models().list().await.is_ok();
+
+            if !is_valid {
+                self.settings.openai_api_key = None;
+                if let Err(e) = self.settings.save_to_file("settings.json") {
+                    eprintln!(
+                        "Failed to save settings after removing invalid API key: {:?}",
+                        e
+                    );
+                }
+            }
         }
     }
 
@@ -526,55 +555,70 @@ impl App {
         let formatted_message = user_message.to_ai_format();
 
         self.last_user_message = Some(user_message.clone());
-        self.add_user_message(format!(
-            "Instructions: \n{}\nPlayer Action: \n{}",
-            user_message.instructions, user_message.player_action
+        self.add_message(Message::new(
+            format!(
+                "Instructions: \n{}\nPlayer Action: \n{}",
+                user_message.instructions, user_message.player_action
+            ),
+            MessageType::User,
         ));
 
         if let Some(ai) = &mut self.ai_client {
             match ai.send_message(&formatted_message).await {
-                Ok(response) => match GameResponse::from_json(&response) {
+                Ok(response) => match GameMessage::from_json(&response) {
                     Ok(game_response) => {
                         self.current_game_response = Some(game_response.clone());
 
-                        self.add_game_message(format!(
-                            "Reasoning: \n{}\nNarration: \n{}",
-                            game_response.reasoning, game_response.narration
+                        self.add_message(Message::new(
+                            format!(
+                                "Reasoning: \n{}\nNarration: \n{}",
+                                game_response.reasoning, game_response.narration,
+                            ),
+                            MessageType::Game,
                         ));
                         Ok(())
                     }
                     Err(e) => {
                         let error_msg = format!("Failed to parse AI response: {:?}", e);
-                        self.add_system_message(error_msg.clone());
-                        self.add_system_message(format!("full response: {}", response));
+                        self.add_message(Message::new(error_msg.clone(), MessageType::System));
+                        self.add_message(Message::new(
+                            format!("full response: {}", response),
+                            MessageType::System,
+                        ));
                         Err(error_msg.into())
                     }
                 },
                 Err(e) => {
                     let error_msg = format!("Error from AI: {:?}", e);
-                    self.add_system_message(error_msg.clone());
+                    self.add_message(Message::new(error_msg.clone(), MessageType::System));
                     Err(error_msg.into())
                 }
             }
         } else {
             let error_msg = "AI client not initialized".to_string();
-            self.add_system_message(error_msg.clone());
+            self.add_message(Message::new(error_msg.clone(), MessageType::System));
             Err(error_msg.into())
         }
     }
 
     pub fn handle_ai_response(&mut self, response: String) {
-        match GameResponse::from_json(&response) {
+        match GameMessage::from_json(&response) {
             Ok(game_response) => {
                 self.current_game_response = Some(game_response.clone());
-                self.add_game_message(format!(
-                    "Reasoning: \n{}\nNarration: \n{}",
-                    game_response.reasoning, game_response.narration
+                self.add_message(Message::new(
+                    format!(
+                        "Reasoning: \n{}\nNarration: \n{}",
+                        game_response.reasoning, game_response.narration
+                    ),
+                    MessageType::Game,
                 ));
             }
             Err(e) => {
-                self.add_system_message(format!("Failed to parse AI response: {:?}", e));
-                self.add_game_message(response);
+                self.add_message(Message::new(
+                    format!("Failed to parse AI response: {:?}", e),
+                    MessageType::System,
+                ));
+                self.add_message(Message::new(response, MessageType::System));
             }
         }
     }
@@ -607,7 +651,10 @@ impl App {
         }
 
         self.state = AppState::InGame;
-        self.add_system_message(format!("New game '{}' started!", save_name));
+        self.add_message(Message::new(
+            format!("New game '{}' started!", save_name),
+            MessageType::System,
+        ));
 
         // Send an initial message to the AI to start the game
         self.send_message("Start the game in json".to_string())
@@ -680,13 +727,16 @@ impl App {
                     if selected < self.available_saves.len() {
                         let save_path = format!("./data/save/{}", self.available_saves[selected]);
                         if let Err(e) = self.command_sender.send(AppCommand::LoadGame(save_path)) {
-                            self.add_system_message(format!(
-                                "Failed to send load game command: {:?}",
-                                e
+                            self.add_message(Message::new(
+                                format!("Failed to send load game command: {:?}", e),
+                                MessageType::System,
                             ));
                         } else {
                             // Add a message to indicate that the game is being loaded
-                            self.add_system_message("Loading game...".to_string());
+                            self.add_message(Message::new(
+                                "Loading game...".to_string(),
+                                MessageType::System,
+                            ));
                         }
                     }
                 }
@@ -703,12 +753,15 @@ impl App {
                     self.load_game_menu_state.select(Some(selected));
                     let save_path = format!("./data/save/{}", self.available_saves[selected]);
                     if let Err(e) = self.command_sender.send(AppCommand::LoadGame(save_path)) {
-                        self.add_system_message(format!(
-                            "Failed to send load game command: {:?}",
-                            e
+                        self.add_message(Message::new(
+                            format!("Failed to send load game command: {:?}", e),
+                            MessageType::System,
                         ));
                     } else {
-                        self.add_system_message("Loading game...".to_string());
+                        self.add_message(Message::new(
+                            "Loading game...".to_string(),
+                            MessageType::System,
+                        ));
                     }
                 }
             }
@@ -752,7 +805,10 @@ impl App {
         self.game_content = all_messages;
 
         // Add a system message indicating the game was loaded
-        self.add_system_message("Game loaded successfully!".to_string());
+        self.add_message(Message::new(
+            "Game loaded successfully!".to_string(),
+            MessageType::System,
+        ));
 
         // Store the game state
         self.current_game = Some(game_state);
@@ -774,9 +830,9 @@ impl App {
                         .command_sender
                         .send(AppCommand::StartNewGame(self.save_name_input.clone()))
                     {
-                        self.add_system_message(format!(
-                            "Failed to send start new game command: {:?}",
-                            e
+                        self.add_message(Message::new(
+                            format!("Failed to send start new game command: {:?}", e),
+                            MessageType::System,
                         ));
                     }
                     self.save_name_input.clear();
@@ -808,25 +864,28 @@ impl App {
         }
     }
 
-    fn handle_api_key_input(&mut self, key: KeyEvent) {
+    pub fn handle_api_key_input(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Enter => {
                 if !self.api_key_input.is_empty() {
-                    self.settings.openai_api_key = Some(self.api_key_input.clone());
-                    match GameAI::new(self.api_key_input.clone()) {
-                        Ok(client) => {
-                            self.ai_client = Some(client);
-                            self.api_key_input.clear();
-                            self.state = AppState::Settings;
-                            if let Err(e) = self.settings.save_to_file("settings.json") {
-                                eprintln!("Failed to save settings: {:?}", e);
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("Failed to initialize AI client: {:?}", e);
-                            self.ai_client = None;
-                        }
-                    }
+                    let api_key = self.api_key_input.clone();
+                    self.settings.openai_api_key = Some(api_key.clone());
+
+                    // Create a channel for the API key check result
+                    let (tx, rx) = mpsc::channel(1);
+
+                    // Spawn the API key check task
+                    tokio::spawn(async move {
+                        let client = Client::with_config(OpenAIConfig::new().with_api_key(api_key));
+                        let is_valid = client.models().list().await.is_ok();
+                        let _ = tx.send(is_valid).await;
+                    });
+
+                    // Store the receiver for later use
+                    self.api_key_check_receiver = Some(rx);
+
+                    self.api_key_input.clear();
+                    self.state = AppState::Settings;
                 }
             }
             KeyCode::Char(c) => {
@@ -847,6 +906,23 @@ impl App {
                 self.state = AppState::Settings;
             }
             _ => {}
+        }
+    }
+
+    pub async fn handle_api_key_check(&mut self) {
+        if let Some(rx) = &mut self.api_key_check_receiver {
+            if let Ok(is_valid) = rx.try_recv() {
+                if !is_valid {
+                    self.settings.openai_api_key = None;
+                    if let Err(e) = self.settings.save_to_file("settings.json") {
+                        eprintln!(
+                            "Failed to save settings after removing invalid API key: {:?}",
+                            e
+                        );
+                    }
+                }
+                self.api_key_check_receiver = None;
+            }
         }
     }
 }
