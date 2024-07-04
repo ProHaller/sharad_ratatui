@@ -35,10 +35,13 @@ impl UserMessage {
     }
 
     pub fn to_ai_format(&self) -> String {
-        format!(
-            "{{instructions: {}, player_action: {}}}",
-            self.instructions, self.player_action
-        )
+        match self.to_json() {
+            Ok(json) => json,
+            Err(_) => format!(
+                r#"{{"instructions": "{}", "player_action": "{}"}}"#,
+                self.instructions, self.player_action
+            ),
+        }
     }
 }
 

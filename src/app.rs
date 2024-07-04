@@ -17,8 +17,9 @@ use tokio::sync::mpsc;
 
 pub enum AppCommand {
     LoadGame(String),
-    StartNewGame(String), // Modified to include save name
+    StartNewGame(String),
     ProcessMessage(String),
+    ApiKeyValidationResult(bool),
 }
 
 pub struct App {
@@ -29,7 +30,6 @@ pub struct App {
     pub current_game: Option<GameState>,
     pub settings: Settings,
     pub api_key_input: String,
-    pub api_key_check_receiver: Option<mpsc::Receiver<bool>>,
     pub openai_api_key_valid: bool,
     pub settings_state: SettingsState,
     pub user_input: String,
@@ -52,7 +52,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(
+    pub async fn new(
         ai_sender: mpsc::UnboundedSender<String>,
     ) -> (Self, mpsc::UnboundedReceiver<AppCommand>) {
         let (command_sender, command_receiver) = mpsc::unbounded_channel();
@@ -60,7 +60,18 @@ impl App {
         let mut main_menu_state = ListState::default();
         main_menu_state.select(Some(0));
 
-        let settings = Settings::load_from_file("settings.json").unwrap_or_default();
+        let mut settings = Settings::load_from_file("settings.json").unwrap_or_default();
+        let openai_api_key_valid = if let Some(ref api_key) = settings.openai_api_key {
+            Settings::validate_api_key(api_key).await
+        } else {
+            false
+        };
+
+        if !openai_api_key_valid {
+            settings.openai_api_key = None;
+            settings.save_to_file("settings.json").ok();
+        }
+
         let settings_state = SettingsState::from_settings(&settings);
 
         let ai_client = if let Some(api_key) = &settings.openai_api_key {
@@ -86,10 +97,9 @@ impl App {
                 main_menu_state,
                 ai_client,
                 current_game: None,
-                settings: Settings::load_from_file("settings.json").unwrap_or_default(),
+                settings,
                 api_key_input: String::new(),
-                api_key_check_receiver: None,
-                openai_api_key_valid: false,
+                openai_api_key_valid,
                 settings_state,
                 load_game_menu_state,
                 save_name_input: String::new(),
@@ -122,6 +132,59 @@ impl App {
             AppState::Settings => self.handle_settings_input(key),
             AppState::InputApiKey => self.handle_api_key_input(key),
             AppState::InputSaveName => self.handle_save_name_input(key),
+        }
+    }
+
+    pub fn handle_api_key_input(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Enter => {
+                if !self.api_key_input.is_empty() {
+                    let api_key = self.api_key_input.clone();
+                    self.settings.openai_api_key = Some(api_key.clone());
+                    self.api_key_input.clear();
+
+                    let sender = self.command_sender.clone();
+                    tokio::spawn(async move {
+                        let is_valid = Settings::validate_api_key(&api_key).await;
+                        let _ = sender.send(AppCommand::ApiKeyValidationResult(is_valid));
+                    });
+
+                    self.state = AppState::Settings;
+                }
+            }
+            KeyCode::Char(c) => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'v' {
+                    // Handle paste
+                    if let Ok(contents) = self.clipboard.get_contents() {
+                        self.api_key_input.push_str(&contents);
+                    }
+                } else {
+                    self.api_key_input.push(c);
+                }
+            }
+            KeyCode::Backspace => {
+                self.api_key_input.pop();
+            }
+            KeyCode::Esc => {
+                self.api_key_input.clear();
+                self.state = AppState::Settings;
+            }
+            _ => {}
+        }
+    }
+
+    pub fn handle_api_key_validation_result(&mut self, is_valid: bool) {
+        if !is_valid {
+            self.settings.openai_api_key = None;
+            self.add_message(Message::new(
+                "Invalid API key entered. Please try again.".to_string(),
+                MessageType::System,
+            ));
+        } else {
+            self.openai_api_key_valid = true;
+        }
+        if let Err(e) = self.settings.save_to_file("settings.json") {
+            eprintln!("Failed to save settings: {:?}", e);
         }
     }
 
@@ -861,68 +924,6 @@ impl App {
                 self.state = AppState::MainMenu;
             }
             _ => {}
-        }
-    }
-
-    pub fn handle_api_key_input(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Enter => {
-                if !self.api_key_input.is_empty() {
-                    let api_key = self.api_key_input.clone();
-                    self.settings.openai_api_key = Some(api_key.clone());
-
-                    // Create a channel for the API key check result
-                    let (tx, rx) = mpsc::channel(1);
-
-                    // Spawn the API key check task
-                    tokio::spawn(async move {
-                        let client = Client::with_config(OpenAIConfig::new().with_api_key(api_key));
-                        let is_valid = client.models().list().await.is_ok();
-                        let _ = tx.send(is_valid).await;
-                    });
-
-                    // Store the receiver for later use
-                    self.api_key_check_receiver = Some(rx);
-
-                    self.api_key_input.clear();
-                    self.state = AppState::Settings;
-                }
-            }
-            KeyCode::Char(c) => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'v' {
-                    // Handle paste
-                    if let Ok(contents) = self.clipboard.get_contents() {
-                        self.api_key_input.push_str(&contents);
-                    }
-                } else {
-                    self.api_key_input.push(c);
-                }
-            }
-            KeyCode::Backspace => {
-                self.api_key_input.pop();
-            }
-            KeyCode::Esc => {
-                self.api_key_input.clear();
-                self.state = AppState::Settings;
-            }
-            _ => {}
-        }
-    }
-
-    pub async fn handle_api_key_check(&mut self) {
-        if let Some(rx) = &mut self.api_key_check_receiver {
-            if let Ok(is_valid) = rx.try_recv() {
-                if !is_valid {
-                    self.settings.openai_api_key = None;
-                    if let Err(e) = self.settings.save_to_file("settings.json") {
-                        eprintln!(
-                            "Failed to save settings after removing invalid API key: {:?}",
-                            e
-                        );
-                    }
-                }
-                self.api_key_check_receiver = None;
-            }
         }
     }
 }

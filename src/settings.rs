@@ -1,5 +1,6 @@
 // settings.rs
 
+use async_openai::{config::OpenAIConfig, Client};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{self, Write};
@@ -49,5 +50,10 @@ impl Settings {
         let mut file = fs::File::create(path)?;
         file.write_all(data.as_bytes())?;
         Ok(())
+    }
+
+    pub async fn validate_api_key(api_key: &str) -> bool {
+        let client = Client::with_config(OpenAIConfig::new().with_api_key(api_key));
+        client.models().list().await.is_ok()
     }
 }

@@ -1,7 +1,6 @@
 use crate::app::{App, AppCommand};
 use crate::cleanup::cleanup;
-use crate::message::Message;
-use crate::message::MessageType;
+use crate::message::{Message, MessageType};
 use crossterm::{
     event::{self, Event},
     execute,
@@ -75,7 +74,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (ai_sender, ai_receiver) = mpsc::unbounded_channel();
 
     // Create app and run it
-    let (app, command_receiver) = App::new(ai_sender.clone());
+    let (app, command_receiver) = App::new(ai_sender.clone()).await;
     let app = Arc::new(Mutex::new(app));
 
     // Run the main app loop
@@ -94,16 +93,11 @@ async fn run_app(
 ) -> io::Result<()> {
     let tick_rate = Duration::from_millis(100);
     let mut last_tick = Instant::now();
-    let (api_key_sender, mut api_key_receiver) = mpsc::channel(1);
 
     loop {
-        {
-            let mut app = app.lock().await;
-            app.handle_api_key_check().await;
-        }
         terminal.draw(|f| {
             let mut app = tokio::task::block_in_place(|| app.blocking_lock());
-            ui::draw(f, &mut app, api_key_sender.clone())
+            ui::draw(f, &mut app)
         })?;
 
         let timeout = tick_rate
@@ -146,6 +140,9 @@ async fn run_app(
                             app.add_message(Message::new(format!("Failed to process message: {:?}", e), MessageType::System));
                         }
                     }
+                    AppCommand::ApiKeyValidationResult(is_valid) => {
+                        app.handle_api_key_validation_result(is_valid);
+                    }
                 }
             }
             Some(ai_response) = ai_receiver.recv() => {
@@ -156,10 +153,6 @@ async fn run_app(
                     }
                 }
                 app.handle_ai_response(ai_response);
-            }
-            Some(is_valid) = api_key_receiver.recv() => {
-                let mut app = app.lock().await;
-                app.openai_api_key_valid = is_valid;
             }
         }
 
