@@ -1,4 +1,3 @@
-use crate::ai_response::{GameMessage, SystemMessage, UserMessage};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
@@ -9,33 +8,45 @@ pub enum MessageType {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct Message {
-    pub content: String,
-    pub message_type: MessageType,
+pub struct UserMessage {
+    pub instructions: String,
+    pub player_action: String,
 }
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct GameMessage {
+    pub reasoning: String,
+    pub narration: String,
+    // Add other fields for function calling when implemented
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Message {
+    pub message_type: MessageType,
+    pub content: String, // This will store the raw JSON or error message
+}
+
 impl Message {
-    pub fn new(content: String, message_type: MessageType) -> Message {
+    pub fn new(message_type: MessageType, content: String) -> Self {
         Message {
-            content,
             message_type,
+            content,
         }
     }
-    pub fn from_user_message(user_message: UserMessage) -> Message {
-        Message::new(
-            format!(
-                "Instructions: {}\nPlayer Action: {}",
-                user_message.instructions, user_message.player_action
-            ),
-            MessageType::User,
-        )
+
+    pub fn parse_user_message(&self) -> Option<UserMessage> {
+        if self.message_type == MessageType::User {
+            serde_json::from_str(&self.content).ok()
+        } else {
+            None
+        }
     }
-    pub fn from_game_message(game_message: GameMessage) -> Message {
-        Message::new(
-            format!(
-                "Reasoning: {}\nNarration: {}",
-                game_message.reasoning, game_message.narration
-            ),
-            MessageType::Game,
-        )
+
+    pub fn parse_game_message(&self) -> Option<GameMessage> {
+        if self.message_type == MessageType::Game {
+            serde_json::from_str(&self.content).ok()
+        } else {
+            None
+        }
     }
 }

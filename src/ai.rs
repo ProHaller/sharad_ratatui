@@ -1,4 +1,4 @@
-use crate::message::{Message, MessageType};
+use crate::message::{GameMessage, Message, MessageType};
 use async_openai::{
     config::OpenAIConfig,
     types::{
@@ -157,7 +157,11 @@ impl GameAI {
 
         let response = self.get_latest_message(&state.thread_id).await?;
         self.update_game_state(&response)?;
-        Ok(response)
+        if serde_json::from_str::<GameMessage>(&response).is_ok() {
+            Ok(response)
+        } else {
+            Err(AIError::GameStateParseError(response))
+        }
     }
 
     pub async fn fetch_all_messages(&self, thread_id: &str) -> Result<Vec<Message>, AIError> {
@@ -177,14 +181,12 @@ impl GameAI {
 
             for message in messages.data.into_iter().rev() {
                 if let Some(MessageContent::Text(text_content)) = message.content.first() {
-                    all_messages.push(Message {
-                        content: text_content.text.value.clone(),
-                        message_type: match message.role {
-                            MessageRole::User => MessageType::User,
-                            MessageRole::Assistant => MessageType::Game,
-                            _ => MessageType::System,
-                        },
-                    });
+                    let message_type = match message.role {
+                        MessageRole::User => MessageType::User,
+                        MessageRole::Assistant => MessageType::Game,
+                        _ => MessageType::System,
+                    };
+                    all_messages.push(Message::new(message_type, text_content.text.value.clone()));
                 }
             }
 
@@ -196,6 +198,7 @@ impl GameAI {
         }
         Ok(all_messages)
     }
+
     async fn get_latest_message(&self, thread_id: &str) -> Result<String, AIError> {
         let messages = self
             .client

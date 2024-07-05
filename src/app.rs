@@ -177,8 +177,8 @@ impl App {
         if !is_valid {
             self.settings.openai_api_key = None;
             self.add_message(Message::new(
-                "Invalid API key entered. Please try again.".to_string(),
                 MessageType::System,
+                "Invalid API key entered. Please try again.".to_string(),
             ));
         } else {
             self.openai_api_key_valid = true;
@@ -361,8 +361,8 @@ impl App {
             KeyCode::Esc => {
                 self.state = AppState::MainMenu;
                 self.add_message(Message::new(
-                    "Game paused. Returned to main menu.".to_string(),
                     MessageType::System,
+                    "Game paused. Returned to main menu.".to_string(),
                 ))
             }
             KeyCode::Enter => {
@@ -482,19 +482,19 @@ impl App {
     pub fn submit_user_input(&mut self) {
         let input = self.user_input.trim().to_string();
         if !input.is_empty() {
-            self.add_message(Message::new(input.clone(), MessageType::System));
+            self.add_message(Message::new(MessageType::System, input.clone()));
 
             // Send a command to process the message
             if let Err(e) = self.command_sender.send(AppCommand::ProcessMessage(input)) {
                 self.add_message(Message::new(
-                    format!("Error sending message command: {:?}", e),
                     MessageType::System,
+                    format!("Error sending message command: {:?}", e),
                 ));
             } else {
                 // Add a "thinking" message to indicate that the AI is processing
                 self.add_message(Message::new(
-                    "AI is thinking...".to_string(),
                     MessageType::System,
+                    "AI is thinking...".to_string(),
                 ));
             }
 
@@ -537,29 +537,45 @@ impl App {
         self.scroll_to_bottom();
     }
 
-    // pub fn add_user_message(&mut self, content: String) {
-    //     self.game_content.push(Message {
-    //         content,
-    //         message_type: MessageType::User,
-    //     });
-    //     self.scroll_to_bottom();
-    // }
-    //
-    // pub fn add_game_message(&mut self, content: String) {
-    //     self.game_content.push(Message {
-    //         content,
-    //         message_type: MessageType::Game,
-    //     });
-    //     self.scroll_to_bottom();
-    // }
-    //
-    // pub fn add_system_message(&mut self, content: String) {
-    //     self.game_content.push(Message {
-    //         content,
-    //         message_type: MessageType::System,
-    //     });
-    //     self.scroll_to_bottom();
-    // }
+    pub async fn send_message(
+        &mut self,
+        message: String,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let user_message = create_user_message(&message);
+        let formatted_message = serde_json::to_string(&user_message)?;
+
+        self.add_message(Message::new(MessageType::User, formatted_message.clone()));
+
+        if let Some(ai) = &mut self.ai_client {
+            match ai.send_message(&formatted_message).await {
+                Ok(response) => {
+                    self.add_message(Message::new(MessageType::Game, response));
+                    Ok(())
+                }
+                Err(e) => {
+                    let error_msg = format!("Error from AI: {:?}", e);
+                    self.add_message(Message::new(MessageType::System, error_msg.clone()));
+                    Err(error_msg.into())
+                }
+            }
+        } else {
+            let error_msg = "AI client not initialized".to_string();
+            self.add_message(Message::new(MessageType::System, error_msg.clone()));
+            Err(error_msg.into())
+        }
+    }
+
+    pub fn handle_ai_response(&mut self, response: String) {
+        if let Ok(game_message) = serde_json::from_str::<GameMessage>(&response) {
+            self.current_game_response = Some(game_message);
+            self.add_message(Message::new(MessageType::Game, response));
+        } else {
+            self.add_message(Message::new(
+                MessageType::System,
+                format!("Failed to parse AI response: {}", response),
+            ));
+        }
+    }
 
     fn scroll_to_bottom(&mut self) {
         self.game_content_scroll = self.game_content.len().saturating_sub(self.visible_lines);
@@ -610,82 +626,6 @@ impl App {
         Ok(())
     }
 
-    pub async fn send_message(
-        &mut self,
-        message: String,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let user_message = create_user_message(&message);
-        let formatted_message = user_message.to_ai_format();
-
-        self.last_user_message = Some(user_message.clone());
-        self.add_message(Message::new(
-            format!(
-                "Instructions: \n{}\nPlayer Action: \n{}",
-                user_message.instructions, user_message.player_action
-            ),
-            MessageType::User,
-        ));
-
-        if let Some(ai) = &mut self.ai_client {
-            match ai.send_message(&formatted_message).await {
-                Ok(response) => match GameMessage::from_json(&response) {
-                    Ok(game_response) => {
-                        self.current_game_response = Some(game_response.clone());
-
-                        self.add_message(Message::new(
-                            format!(
-                                "Reasoning: \n{}\nNarration: \n{}",
-                                game_response.reasoning, game_response.narration,
-                            ),
-                            MessageType::Game,
-                        ));
-                        Ok(())
-                    }
-                    Err(e) => {
-                        let error_msg = format!("Failed to parse AI response: {:?}", e);
-                        self.add_message(Message::new(error_msg.clone(), MessageType::System));
-                        self.add_message(Message::new(
-                            format!("full response: {}", response),
-                            MessageType::System,
-                        ));
-                        Err(error_msg.into())
-                    }
-                },
-                Err(e) => {
-                    let error_msg = format!("Error from AI: {:?}", e);
-                    self.add_message(Message::new(error_msg.clone(), MessageType::System));
-                    Err(error_msg.into())
-                }
-            }
-        } else {
-            let error_msg = "AI client not initialized".to_string();
-            self.add_message(Message::new(error_msg.clone(), MessageType::System));
-            Err(error_msg.into())
-        }
-    }
-
-    pub fn handle_ai_response(&mut self, response: String) {
-        match GameMessage::from_json(&response) {
-            Ok(game_response) => {
-                self.current_game_response = Some(game_response.clone());
-                self.add_message(Message::new(
-                    format!(
-                        "Reasoning: \n{}\nNarration: \n{}",
-                        game_response.reasoning, game_response.narration
-                    ),
-                    MessageType::Game,
-                ));
-            }
-            Err(e) => {
-                self.add_message(Message::new(
-                    format!("Failed to parse AI response: {:?}", e),
-                    MessageType::System,
-                ));
-                self.add_message(Message::new(response, MessageType::System));
-            }
-        }
-    }
-
     // Update this method or create a new one to handle incoming AI responses
 
     pub async fn start_new_game(
@@ -715,8 +655,8 @@ impl App {
 
         self.state = AppState::InGame;
         self.add_message(Message::new(
-            format!("New game '{}' started!", save_name),
             MessageType::System,
+            format!("New game '{}' started!", save_name),
         ));
 
         // Send an initial message to the AI to start the game
@@ -791,14 +731,14 @@ impl App {
                         let save_path = format!("./data/save/{}", self.available_saves[selected]);
                         if let Err(e) = self.command_sender.send(AppCommand::LoadGame(save_path)) {
                             self.add_message(Message::new(
-                                format!("Failed to send load game command: {:?}", e),
                                 MessageType::System,
+                                format!("Failed to send load game command: {:?}", e),
                             ));
                         } else {
                             // Add a message to indicate that the game is being loaded
                             self.add_message(Message::new(
-                                "Loading game...".to_string(),
                                 MessageType::System,
+                                "Loading game...".to_string(),
                             ));
                         }
                     }
@@ -817,13 +757,13 @@ impl App {
                     let save_path = format!("./data/save/{}", self.available_saves[selected]);
                     if let Err(e) = self.command_sender.send(AppCommand::LoadGame(save_path)) {
                         self.add_message(Message::new(
-                            format!("Failed to send load game command: {:?}", e),
                             MessageType::System,
+                            format!("Failed to send load game command: {:?}", e),
                         ));
                     } else {
                         self.add_message(Message::new(
-                            "Loading game...".to_string(),
                             MessageType::System,
+                            "Loading game...".to_string(),
                         ));
                     }
                 }
@@ -869,8 +809,8 @@ impl App {
 
         // Add a system message indicating the game was loaded
         self.add_message(Message::new(
-            "Game loaded successfully!".to_string(),
             MessageType::System,
+            "Game loaded successfully!".to_string(),
         ));
 
         // Store the game state
@@ -894,8 +834,8 @@ impl App {
                         .send(AppCommand::StartNewGame(self.save_name_input.clone()))
                     {
                         self.add_message(Message::new(
-                            format!("Failed to send start new game command: {:?}", e),
                             MessageType::System,
+                            format!("Failed to send start new game command: {:?}", e),
                         ));
                     }
                     self.save_name_input.clear();

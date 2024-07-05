@@ -1,9 +1,9 @@
 use crate::app::App;
-use crate::message::{Message, MessageType};
+use crate::message::MessageType;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style},
-    text::{Line, Span, Text},
+    text::{Line, Span},
     widgets::*,
     Frame,
 };
@@ -49,22 +49,47 @@ fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_widget(&narration_block, chunks[0]);
     f.render_widget(&game_info_block, chunks[1]);
 
-    let inner_area = narration_block.inner(chunks[0]);
+    let narration_area = narration_block.inner(chunks[0]);
+    let game_info_area = game_info_block.inner(chunks[1]);
 
-    let max_width = inner_area.width.saturating_sub(2) as usize;
-    let max_height = inner_area.height.saturating_sub(2) as usize;
+    let max_width = narration_area.width.saturating_sub(2) as usize;
+    let max_height = narration_area.height.saturating_sub(2) as usize;
 
     let mut all_lines = Vec::new();
 
     // Calculate all lines and their styles
     for message in &app.game_content {
-        let (style, alignment) = match message.message_type {
-            MessageType::User => (Style::default().fg(Color::Blue), Alignment::Right),
-            MessageType::Game => (Style::default().fg(Color::Green), Alignment::Left),
-            MessageType::System => (Style::default().fg(Color::Yellow), Alignment::Center),
+        let (content, style, alignment) = match message.message_type {
+            MessageType::User => {
+                if let Some(user_message) = message.parse_user_message() {
+                    (
+                        format!("Player: {}", user_message.player_action),
+                        Style::default().fg(Color::Blue),
+                        Alignment::Right,
+                    )
+                } else {
+                    continue;
+                }
+            }
+            MessageType::Game => {
+                if let Some(game_message) = message.parse_game_message() {
+                    (
+                        format!("Narration: {}", game_message.narration),
+                        Style::default().fg(Color::Green),
+                        Alignment::Left,
+                    )
+                } else {
+                    continue;
+                }
+            }
+            MessageType::System => (
+                message.content.clone(),
+                Style::default().fg(Color::Yellow),
+                Alignment::Center,
+            ),
         };
 
-        let wrapped_lines = textwrap::wrap(&message.content, max_width);
+        let wrapped_lines = textwrap::wrap(&content, max_width);
         for line in wrapped_lines {
             all_lines.push((line.to_string(), style, alignment));
         }
@@ -94,7 +119,26 @@ fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
         .block(Block::default().borders(Borders::NONE))
         .wrap(Wrap { trim: true });
 
-    f.render_widget(content, inner_area);
+    f.render_widget(content, narration_area);
+
+    // Render game info (reasoning) in the right panel
+    let mut game_info_content = Vec::new();
+    for message in &app.game_content {
+        if let MessageType::Game = message.message_type {
+            if let Some(game_message) = message.parse_game_message() {
+                game_info_content.push(Line::from(vec![
+                    Span::styled("Reasoning: ", Style::default().fg(Color::Cyan)),
+                    Span::raw(game_message.reasoning),
+                ]));
+            }
+        }
+    }
+
+    let game_info_paragraph = Paragraph::new(game_info_content)
+        .wrap(Wrap { trim: true })
+        .scroll((app.game_content_scroll as u16, 0));
+
+    f.render_widget(game_info_paragraph, game_info_area);
 
     // Update app state
     app.visible_lines = max_height;

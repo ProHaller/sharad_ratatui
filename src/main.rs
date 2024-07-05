@@ -127,17 +127,17 @@ async fn run_app(
                 match command {
                     AppCommand::LoadGame(path) => {
                         if let Err(e) = app.load_game(&path).await {
-                            app.add_message(Message::new(format!("Failed to load game: {:?}", e), MessageType::System));
+                            app.add_message(Message::new( MessageType::System, format!("Failed to load game: {:?}", e)));
                         }
                     }
                     AppCommand::StartNewGame(save_name) => {
                         if let Err(e) = app.start_new_game(save_name).await {
-                            app.add_message(Message::new(format!("Failed to start new game: {:?}", e), MessageType::System));
+                            app.add_message(Message::new( MessageType::System, format!("Failed to start new game: {:?}", e)));
                         }
                     }
                     AppCommand::ProcessMessage(message) => {
                         if let Err(e) = app.send_message(message).await {
-                            app.add_message(Message::new(format!("Failed to process message: {:?}", e), MessageType::System));
+                            app.add_message(Message::new( MessageType::System, format!("Failed to process message: {:?}", e)));
                         }
                     }
                     AppCommand::ApiKeyValidationResult(is_valid) => {
@@ -161,65 +161,3 @@ async fn run_app(
         }
     }
 }
-
-// TODO: Add method to check API key validation in settings.rs for better encapsulation
-
-// TODO: Create a helper function to update game content scroll in app.rs to reduce code duplication
-
-// TODO: Add a debug message when invalid API key is detected in app.rs to provide better debugging info
-
-// TODO: Refactor `apply_settings` method in app.rs to use a match statement for cleaner code
-
-// TODO: Add unit tests for `validate_api_key` method in settings.rs to ensure proper functionality
-
-// TODO: Ensure terminal is resized on initialization in main.rs for consistent user experience
-
-// TODO: Add error handling for API key validation in settings.rs to handle invalid responses gracefully
-
-// TODO: Add logging for key events in handle_main_menu_input in app.rs to aid debugging
-
-// TODO: Extract message formatting into a separate function in app.rs to improve readability
-
-// TODO: Add a helper method to switch app states in app.rs to simplify state transitions
-
-// TODO: Add a visual indicator for invalid API key in the UI in api_key_input.rs for better user feedback
-
-// TODO: Validate save name input length in handle_save_name_input in app.rs to avoid excessively long save names
-
-// TODO: Add keyboard shortcuts for main menu options in handle_main_menu_input in app.rs for faster navigation
-
-// TODO: Highlight selected save game file in render_load_game_menu in load_game.rs to improve UX
-
-// TODO: Ensure consistent error messages in handle_api_key_input in app.rs to maintain uniformity
-
-// TODO: Add tests for settings loading and saving in settings.rs to ensure robustness
-
-// TODO: Refactor run_app loop in main.rs to separate concerns and improve readability
-
-// TODO: Add method to clear game content in app.rs for better state management
-
-// TODO: Add helper method to initialize terminal in main.rs to reduce duplication
-
-// TODO: Refactor message history loading in load_game in app.rs to handle large histories efficiently
-
-// TODO: Add a method to fetch the game content as text in app.rs to support different UI components
-
-// TODO: Ensure API key is hidden when entered in api_key_input.rs for security
-
-// TODO: Add placeholder text for API key input in api_key_input.rs for better UX
-
-// TODO: Add a confirmation prompt for exiting the game in app.rs to prevent accidental exits
-
-// TODO: Add constraints to ensure terminal size does not go below the minimum in main.rs for stability
-
-// TODO: Add a method to reset settings to default in settings.rs for easier troubleshooting
-
-// TODO: Refactor state transition logic in handle_key to a separate function in app.rs for clarity
-
-// TODO: Add tests for message serialization and deserialization in ai_response.rs to ensure correctness
-
-// TODO: Refactor draw methods in various UI modules to reduce code duplication and improve maintainability
-
-// TODO: Add a method to render a loading spinner in ui.rs to indicate background operations
-
-// TODO: Add a method to scroll game content to the top in app.rs to support full content review
