@@ -4,6 +4,7 @@ use super::constants::{ART, TITLE};
 use super::utils::centered_rect;
 use crate::app::App;
 use crate::app_state::AppState;
+use crate::message::MessageType;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
     style::{Color, Modifier, Style},
@@ -31,7 +32,7 @@ pub fn draw_main_menu(f: &mut Frame, app: &App) {
     render_header(f, chunks[0]);
     render_art(f, chunks[1]);
     render_title(f, chunks[2]);
-    render_console(f, chunks[3]);
+    render_console(f, app, chunks[3]);
     render_menu(f, app, chunks[4]);
     render_status(f, app, chunks[5]);
 }
@@ -86,7 +87,7 @@ pub fn render_title(f: &mut Frame, area: Rect) {
     f.render_widget(title, title_inner_area);
 }
 
-pub fn render_console(f: &mut Frame, area: Rect) {
+pub fn render_console(f: &mut Frame, app: &App, area: Rect) {
     let outer_block = Block::default().style(Style::default().fg(Color::DarkGray));
     let console_outer_area = centered_rect(100, 100, area);
     f.render_widget(&outer_block, console_outer_area);
@@ -103,9 +104,19 @@ pub fn render_console(f: &mut Frame, area: Rect) {
             horizontal: 1,
         }))[1];
 
-    let text = Paragraph::new("Welcome to Sharad Ratatui!")
+    let finaly = if let Some(content) = app.game_content.last() {
+        if content.message_type == MessageType::System {
+            Some(content.content.to_string())
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let text = Paragraph::new(finaly.unwrap_or("".to_string()))
         .alignment(Alignment::Center)
-        .style(Style::default().fg(Color::Green));
+        .style(Style::default().fg(Color::Yellow));
     f.render_widget(text, console_inner_area);
 }
 

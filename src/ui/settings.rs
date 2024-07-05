@@ -32,7 +32,7 @@ pub fn draw_settings(f: &mut Frame, app: &mut App) {
     render_header(f, chunks[0]);
     render_art(f, chunks[1]);
     render_title(f, chunks[2]);
-    render_console(f, chunks[3]);
+    render_console(f, app, chunks[3]);
     render_settings(f, app, chunks[4]);
     render_status(f, app, chunks[5]);
 }
@@ -110,7 +110,7 @@ pub fn render_settings(f: &mut Frame, app: &App, area: Rect) {
         ])
         .split(settings_area.inner(Margin {
             vertical: 1,
-            horizontal: (area.width as u16 - text[0].width() as u16) / 2,
+            horizontal: (area.width - text[0].width() as u16) / 2,
         }))[1];
 
     let settings_widget = Paragraph::new(text)
