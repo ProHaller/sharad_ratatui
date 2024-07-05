@@ -1529,6 +1529,7 @@ dependencies = [
  "tokio",
  "tui-textarea",
  "unicode-segmentation",
+ "unicode-width",
 ]
 
 [[package]]

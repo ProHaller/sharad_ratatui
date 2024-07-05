@@ -7,6 +7,8 @@ use ratatui::{
     widgets::*,
     Frame,
 };
+use textwrap::{core::display_width, wrap};
+use unicode_segmentation::UnicodeSegmentation;
 
 pub fn draw_in_game(f: &mut Frame, app: &mut App) {
     let size = f.size();
@@ -160,7 +162,11 @@ fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
     let inner_area = block.inner(area);
     f.render_widget(block, area);
 
-    let wrapped_input = textwrap::wrap(&app.user_input, inner_area.width as usize - 2);
+    let max_width = inner_area.width as usize - 2;
+
+    // Wrap the input text
+    let wrapped_input = wrap(&app.user_input, max_width);
+
     let input = Paragraph::new(wrapped_input.join("\n"))
         .style(Style::default().fg(Color::White))
         .alignment(Alignment::Left)
@@ -169,16 +175,43 @@ fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(input, inner_area);
 
     // Calculate cursor position
-    let cursor_position = textwrap::core::display_width(&app.user_input[..app.cursor_position]);
-    let (cursor_x, cursor_y) = if cursor_position < inner_area.width as usize - 2 {
-        (cursor_position as u16, 0)
-    } else {
-        let line = cursor_position / (inner_area.width as usize - 2);
-        let column = cursor_position % (inner_area.width as usize - 2);
-        (column as u16, line as u16)
-    };
+    let mut current_line = 0;
+    let mut current_column = 0;
+    let mut chars_processed = 0;
+    let mut last_word_start = 0;
+
+    for (i, grapheme) in app.user_input.graphemes(true).enumerate() {
+        if chars_processed == app.cursor_position {
+            break;
+        }
+
+        let grapheme_width = display_width(grapheme);
+
+        if grapheme == " " {
+            last_word_start = current_column + grapheme_width;
+        }
+
+        if current_column + grapheme_width > max_width {
+            current_line += 1;
+            if last_word_start > 0 {
+                // If we're in the middle of a word, set current_column to the length
+                // of the part of the word that wrapped to the new line
+                current_column = current_column - last_word_start + 1;
+            } else {
+                // If it's a very long word, just wrap to the next line
+                current_column = 0;
+            }
+            last_word_start = 0;
+        } else {
+            current_column += grapheme_width;
+        }
+
+        chars_processed += 1;
+    }
 
     // Set cursor
-
-    f.set_cursor(inner_area.x + cursor_x, inner_area.y + cursor_y);
+    f.set_cursor(
+        inner_area.x + current_column as u16,
+        inner_area.y + current_line as u16,
+    );
 }
