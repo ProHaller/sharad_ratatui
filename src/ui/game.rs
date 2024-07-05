@@ -31,13 +31,25 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
 }
 
 fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
-    let block = Block::default()
-        .title("Game Content")
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
+        .split(area);
+
+    let narration_block = Block::default()
+        .title("Narration")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Green));
+
+    let game_info_block = Block::default()
+        .title("Game Info")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan));
-    let inner_area = block.inner(area);
 
-    f.render_widget(block, area);
+    f.render_widget(&narration_block, chunks[0]);
+    f.render_widget(&game_info_block, chunks[1]);
+
+    let inner_area = narration_block.inner(chunks[0]);
 
     let max_width = inner_area.width.saturating_sub(2) as usize;
     let max_height = inner_area.height.saturating_sub(2) as usize;
@@ -95,75 +107,6 @@ fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_widget(debug_text, debug_area);
 }
 
-fn render_messages(game_content: &[Message], width: u16) -> Vec<ListItem> {
-    game_content
-        .iter()
-        .map(|message| {
-            let (style, alignment) = match message.message_type {
-                MessageType::User => (Style::default().fg(Color::Blue), Alignment::Right),
-                MessageType::Game => (Style::default().fg(Color::Green), Alignment::Left),
-                MessageType::System => (Style::default().fg(Color::Yellow), Alignment::Center),
-            };
-
-            let wrapped_content = textwrap::wrap(&message.content, width as usize - 2)
-                .into_iter()
-                .map(|s| Line::from(vec![Span::styled(s, style)]))
-                .collect::<Vec<Line>>();
-
-            let content = match alignment {
-                Alignment::Right => Text::from(wrapped_content).alignment(Alignment::Right),
-                Alignment::Left => Text::from(wrapped_content).alignment(Alignment::Left),
-                Alignment::Center => Text::from(wrapped_content).alignment(Alignment::Center),
-            };
-
-            ListItem::new(content)
-        })
-        .collect()
-}
-
-fn render_game_content(app: &mut App, area: Rect) -> (Block, Vec<ListItem>, Rect) {
-    let block = Block::default()
-        .title("Game Content")
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan));
-    let inner_area = block.inner(area);
-
-    // Update the number of visible messages and scroll position
-    let new_visible_messages = inner_area.height as usize;
-    if app.visible_messages != new_visible_messages {
-        app.visible_messages = new_visible_messages;
-        app.update_scroll();
-    }
-
-    // Collect all messages
-    let messages: Vec<ListItem> = app
-        .game_content
-        .iter()
-        .map(|message| {
-            let (style, alignment) = match message.message_type {
-                MessageType::User => (Style::default().fg(Color::Blue), Alignment::Right),
-                MessageType::Game => (Style::default().fg(Color::Green), Alignment::Left),
-                MessageType::System => (Style::default().fg(Color::Yellow), Alignment::Center),
-            };
-
-            let wrapped_content = textwrap::wrap(&message.content, inner_area.width as usize - 2)
-                .into_iter()
-                .map(|s| Line::from(vec![Span::styled(s, style)]))
-                .collect::<Vec<Line>>();
-
-            let content = match alignment {
-                Alignment::Right => Text::from(wrapped_content).alignment(Alignment::Right),
-                Alignment::Left => Text::from(wrapped_content).alignment(Alignment::Left),
-                Alignment::Center => Text::from(wrapped_content).alignment(Alignment::Center),
-            };
-
-            ListItem::new(content)
-        })
-        .collect();
-
-    (block, messages, inner_area)
-}
-
 fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .title("Your Action")
@@ -193,8 +136,5 @@ fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
 
     // Set cursor
 
-    f.set_cursor(
-        inner_area.x + cursor_x as u16,
-        inner_area.y + cursor_y as u16,
-    );
+    f.set_cursor(inner_area.x + cursor_x, inner_area.y + cursor_y);
 }
