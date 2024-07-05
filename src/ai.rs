@@ -204,7 +204,7 @@ impl GameAI {
             .client
             .threads()
             .messages(thread_id)
-            .list(&[("limit", "1")])
+            .list(&[("limit", "100")])
             .await?;
 
         if let Some(latest_message) = messages.data.first() {

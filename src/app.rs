@@ -14,6 +14,7 @@ use ratatui::widgets::ListState;
 use std::fs;
 use std::path::Path;
 use tokio::sync::mpsc;
+use unicode_segmentation::UnicodeSegmentation;
 
 pub enum AppCommand {
     LoadGame(String),
@@ -136,6 +137,9 @@ impl App {
     }
 
     pub fn handle_api_key_input(&mut self, key: KeyEvent) {
+        if key.kind != KeyEventKind::Press {
+            return;
+        }
         match key.code {
             KeyCode::Enter => {
                 if !self.api_key_input.is_empty() {
@@ -360,6 +364,7 @@ impl App {
         match key.code {
             KeyCode::Esc => {
                 self.state = AppState::MainMenu;
+                self.available_saves = Self::scan_save_files();
                 self.add_message(Message::new(
                     MessageType::System,
                     "Game paused. Returned to main menu.".to_string(),
@@ -368,7 +373,7 @@ impl App {
             KeyCode::Enter => {
                 if key.modifiers.contains(KeyModifiers::SHIFT) {
                     // Add a new line in the input
-                    self.user_input.insert(self.cursor_position, '\n');
+                    self.user_input.insert_str(self.cursor_position, "\n");
                     self.cursor_position += 1;
                 } else {
                     // Submit the user input
@@ -377,67 +382,62 @@ impl App {
             }
             KeyCode::Backspace => {
                 if self.cursor_position > 0 {
-                    self.user_input.remove(self.cursor_position - 1);
-                    self.cursor_position -= 1;
+                    let prev_char_start = self.user_input[..self.cursor_position]
+                        .grapheme_indices(true)
+                        .last()
+                        .map(|(i, _)| i)
+                        .unwrap_or(0);
+                    self.user_input
+                        .replace_range(prev_char_start..self.cursor_position, "");
+                    self.cursor_position = prev_char_start;
                 }
             }
             KeyCode::Delete => {
                 if self.cursor_position < self.user_input.len() {
-                    self.user_input.remove(self.cursor_position);
+                    let next_char_end = self.user_input[self.cursor_position..]
+                        .grapheme_indices(true)
+                        .nth(1)
+                        .map(|(i, _)| i + self.cursor_position)
+                        .unwrap_or(self.user_input.len());
+                    self.user_input
+                        .replace_range(self.cursor_position..next_char_end, "");
                 }
             }
             KeyCode::Left => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
                     // Move cursor to the start of the previous word
-                    while self.cursor_position > 0
-                        && !self
-                            .user_input
-                            .chars()
-                            .nth(self.cursor_position - 1)
-                            .unwrap()
-                            .is_alphanumeric()
-                    {
-                        self.cursor_position -= 1;
-                    }
-                    while self.cursor_position > 0
-                        && self
-                            .user_input
-                            .chars()
-                            .nth(self.cursor_position - 1)
-                            .unwrap()
-                            .is_alphanumeric()
-                    {
-                        self.cursor_position -= 1;
-                    }
+                    let words: Vec<&str> = self.user_input[..self.cursor_position]
+                        .unicode_words()
+                        .collect();
+                    self.cursor_position = words
+                        .iter()
+                        .take(words.len().saturating_sub(1))
+                        .map(|w| w.len())
+                        .sum();
                 } else if self.cursor_position > 0 {
-                    self.cursor_position -= 1;
+                    self.cursor_position = self.user_input[..self.cursor_position]
+                        .grapheme_indices(true)
+                        .last()
+                        .map(|(i, _)| i)
+                        .unwrap_or(0);
                 }
             }
             KeyCode::Right => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
                     // Move cursor to the start of the next word
-                    while self.cursor_position < self.user_input.len()
-                        && self
-                            .user_input
-                            .chars()
-                            .nth(self.cursor_position)
-                            .unwrap()
-                            .is_alphanumeric()
-                    {
-                        self.cursor_position += 1;
-                    }
-                    while self.cursor_position < self.user_input.len()
-                        && !self
-                            .user_input
-                            .chars()
-                            .nth(self.cursor_position)
-                            .unwrap()
-                            .is_alphanumeric()
-                    {
-                        self.cursor_position += 1;
+                    let words: Vec<&str> = self.user_input[self.cursor_position..]
+                        .unicode_words()
+                        .collect();
+                    self.cursor_position += words.get(0).map(|w| w.len()).unwrap_or(0);
+                    if self.cursor_position < self.user_input.len() {
+                        self.cursor_position += 1; // Move past the space
                     }
                 } else if self.cursor_position < self.user_input.len() {
-                    self.cursor_position += 1;
+                    self.cursor_position = self.user_input[self.cursor_position..]
+                        .grapheme_indices(true)
+                        .nth(1)
+                        .map(|(i, _)| i + self.cursor_position)
+                        .unwrap_or(self.user_input.len());
                 }
             }
             KeyCode::Char(c) => {
@@ -453,8 +453,9 @@ impl App {
                         _ => {}
                     }
                 } else {
-                    self.user_input.insert(self.cursor_position, c);
-                    self.cursor_position += 1;
+                    self.user_input
+                        .insert_str(self.cursor_position, &c.to_string());
+                    self.cursor_position += c.len_utf8();
                 }
             }
             KeyCode::PageUp => {
@@ -689,7 +690,13 @@ impl App {
             message_history: self.game_content.clone(),
         };
 
-        let save_path = format!("./data/save/{}.json", save_name);
+        let save_dir = "./data/save";
+        if !Path::new(save_dir).exists() {
+            fs::create_dir_all(save_dir)?;
+        }
+
+        let save_path = format!("{}/{}.json", save_dir, save_name);
+        fs::File::create(&save_path)?; // Create the file if it does not exist
         game_state.save_to_file(&save_path)?;
         Ok(())
     }
