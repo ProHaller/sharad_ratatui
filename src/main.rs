@@ -1,6 +1,6 @@
 use crate::app::{App, AppCommand};
 use crate::cleanup::cleanup;
-use crate::message::{Message, MessageType};
+use crate::message::{AIMessage, Message, MessageType};
 use crossterm::{
     event::{self, Event},
     execute,
@@ -16,6 +16,7 @@ mod ai;
 mod ai_response;
 mod app;
 mod app_state;
+mod character;
 mod cleanup;
 mod game_state;
 mod message;
@@ -71,13 +72,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut terminal = Terminal::new(backend)?;
 
     // Create channel for AI responses
-    let (ai_sender, ai_receiver) = mpsc::unbounded_channel();
+    let (ai_sender, ai_receiver) = mpsc::unbounded_channel::<AIMessage>();
 
-    // Create app and run it
     let (app, command_receiver) = App::new(ai_sender.clone()).await;
     let app = Arc::new(Mutex::new(app));
 
-    // Run the main app loop
     if let Err(err) = run_app(&mut terminal, app, command_receiver, ai_receiver).await {
         println!("Error: {:?}", err);
     }
@@ -89,9 +88,9 @@ async fn run_app(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: Arc<Mutex<App>>,
     mut command_receiver: mpsc::UnboundedReceiver<AppCommand>,
-    mut ai_receiver: mpsc::UnboundedReceiver<String>,
+    mut ai_receiver: mpsc::UnboundedReceiver<AIMessage>,
 ) -> io::Result<()> {
-    let tick_rate = Duration::from_millis(100);
+    let tick_rate = Duration::from_millis(50);
     let mut last_tick = Instant::now();
 
     loop {
@@ -143,16 +142,29 @@ async fn run_app(
                     AppCommand::ApiKeyValidationResult(is_valid) => {
                         app.handle_api_key_validation_result(is_valid);
                     }
-                }
-            }
-            Some(ai_response) = ai_receiver.recv() => {
-                let mut app = app.lock().await;
-                if let Some(last_message) = app.game_content.last() {
-                    if last_message.content == "AI is thinking..." && last_message.message_type == MessageType::System {
-                        app.game_content.pop();
+                    AppCommand::CreateCharacter => {
+                        app.handle_create_character().await;
+                    }
+                    AppCommand::UpdateCharacterSheet(character_sheet) => {
+                        app.update_character_sheet(character_sheet);
                     }
                 }
-                app.handle_ai_response(ai_response);
+            }
+            Some(ai_message) = ai_receiver.recv() => {
+                let mut app = app.lock().await;
+                match ai_message {
+                    AIMessage::Debug(debug_message) => {
+                        app.add_debug_message(debug_message);
+                    }
+                    AIMessage::Response(ai_response) => {
+                        if let Some(last_message) = app.game_content.last() {
+                            if last_message.content == "AI is thinking..." && last_message.message_type == MessageType::System {
+                                app.game_content.pop();
+                            }
+                        }
+                        app.handle_ai_response(ai_response);
+                    }
+                }
             }
         }
 

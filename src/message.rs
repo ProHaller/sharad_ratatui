@@ -26,6 +26,12 @@ pub struct Message {
     pub content: String, // This will store the raw JSON or error message
 }
 
+#[derive(Clone)]
+pub enum AIMessage {
+    Debug(String),
+    Response(String),
+}
+
 impl Message {
     pub fn new(message_type: MessageType, content: String) -> Self {
         Message {

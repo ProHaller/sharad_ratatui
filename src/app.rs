@@ -1,9 +1,10 @@
 use crate::ai::{AIError, GameAI, GameConversationState};
 use crate::ai_response::{create_user_message, GameMessage, UserMessage};
 use crate::app_state::AppState;
+use crate::character::{CharacterSheet, Race};
 use crate::cleanup::cleanup;
 use crate::game_state::GameState;
-use crate::message::{Message, MessageType};
+use crate::message::{self, AIMessage, Message, MessageType};
 use crate::settings::Settings;
 use crate::settings_state::SettingsState;
 
@@ -21,6 +22,8 @@ pub enum AppCommand {
     StartNewGame(String),
     ProcessMessage(String),
     ApiKeyValidationResult(bool),
+    CreateCharacter,
+    UpdateCharacterSheet(CharacterSheet),
 }
 
 pub struct App {
@@ -40,7 +43,7 @@ pub struct App {
     command_sender: mpsc::UnboundedSender<AppCommand>,
     pub load_game_menu_state: ListState,
     pub available_saves: Vec<String>,
-    ai_sender: mpsc::UnboundedSender<String>,
+    ai_sender: mpsc::UnboundedSender<AIMessage>,
     pub visible_messages: usize,
     pub game_content: Vec<Message>,
     pub game_content_scroll: usize,
@@ -50,78 +53,86 @@ pub struct App {
     pub save_name_input: String,
     pub current_game_response: Option<GameMessage>,
     pub last_user_message: Option<UserMessage>,
+    pub character_sheet: Option<CharacterSheet>,
+    pub is_character_creation: bool,
+    pub is_waiting_for_name: bool,
+    pub is_waiting_for_gender: bool,
+    pub is_waiting_for_backstory: bool,
 }
 
 impl App {
     pub async fn new(
-        ai_sender: mpsc::UnboundedSender<String>,
+        ai_sender: mpsc::UnboundedSender<AIMessage>,
     ) -> (Self, mpsc::UnboundedReceiver<AppCommand>) {
         let (command_sender, command_receiver) = mpsc::unbounded_channel();
 
         let mut main_menu_state = ListState::default();
         main_menu_state.select(Some(0));
 
-        let mut settings = Settings::load_from_file("settings.json").unwrap_or_default();
+        let settings = Settings::load_from_file("settings.json").unwrap_or_default();
+        let settings_state = SettingsState::from_settings(&settings);
+
+        let mut load_game_menu_state = ListState::default();
+        load_game_menu_state.select(Some(0));
+
+        let available_saves = Self::scan_save_files();
+
         let openai_api_key_valid = if let Some(ref api_key) = settings.openai_api_key {
             Settings::validate_api_key(api_key).await
         } else {
             false
         };
 
-        if !openai_api_key_valid {
-            settings.openai_api_key = None;
-            settings.save_to_file("settings.json").ok();
-        }
-
-        let settings_state = SettingsState::from_settings(&settings);
-
-        let ai_client = if let Some(api_key) = &settings.openai_api_key {
-            match GameAI::new(api_key.clone()) {
-                Ok(client) => Some(client),
-                Err(e) => {
-                    eprintln!("Failed to initialize AI client: {:?}", e);
-                    None
-                }
-            }
-        } else {
-            None
+        let app = Self {
+            should_quit: false,
+            state: AppState::MainMenu,
+            main_menu_state,
+            ai_client: None, // We'll initialize this later when needed
+            current_game: None,
+            settings,
+            api_key_input: String::new(),
+            settings_state,
+            load_game_menu_state,
+            openai_api_key_valid,
+            save_name_input: String::new(),
+            available_saves,
+            game_content: Vec::new(),
+            game_content_scroll: 0,
+            user_input: String::new(),
+            cursor_position: 0,
+            debug_info: String::new(),
+            visible_messages: 0,
+            total_lines: 0,
+            visible_lines: 0,
+            message_line_counts: Vec::new(),
+            clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
+            command_sender,
+            ai_sender,
+            current_game_response: None,
+            last_user_message: None,
+            character_sheet: None,
+            is_character_creation: false,
+            is_waiting_for_name: false,
+            is_waiting_for_gender: false,
+            is_waiting_for_backstory: false,
         };
 
-        let mut load_game_menu_state = ListState::default();
-        load_game_menu_state.select(Some(0));
+        (app, command_receiver)
+    }
 
-        let available_saves = Self::scan_save_files();
-        (
-            Self {
-                should_quit: false,
-                state: AppState::MainMenu,
-                main_menu_state,
-                ai_client,
-                current_game: None,
-                settings,
-                api_key_input: String::new(),
-                openai_api_key_valid,
-                settings_state,
-                load_game_menu_state,
-                save_name_input: String::new(),
-                available_saves,
-                game_content: Vec::new(),
-                game_content_scroll: 0,
-                user_input: String::new(),
-                cursor_position: 0,
-                debug_info: String::new(),
-                visible_messages: 0,
-                total_lines: 0,
-                visible_lines: 0,
-                message_line_counts: Vec::new(),
-                clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
-                command_sender,
-                ai_sender,
-                current_game_response: None,
-                last_user_message: None,
-            },
-            command_receiver,
-        )
+    // Add this method to initialize the AI client when needed
+    pub async fn initialize_ai_client(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(api_key) = &self.settings.openai_api_key {
+            let ai_sender = self.ai_sender.clone();
+            let debug_callback = move |message: String| {
+                let _ = ai_sender.send(message::AIMessage::Debug(message));
+            };
+
+            self.ai_client = Some(GameAI::new(api_key.clone(), debug_callback)?);
+            Ok(())
+        } else {
+            Err("OpenAI API key not set".into())
+        }
     }
 
     pub fn on_key(&mut self, key: KeyEvent) {
@@ -133,6 +144,33 @@ impl App {
             AppState::Settings => self.handle_settings_input(key),
             AppState::InputApiKey => self.handle_api_key_input(key),
             AppState::InputSaveName => self.handle_save_name_input(key),
+        }
+    }
+
+    fn display_attributes(&mut self, sheet: &CharacterSheet) {
+        let attributes = vec![
+            ("Name", sheet.name.clone()),
+            ("Race", format!("{:?}", sheet.race)),
+            ("Gender", sheet.gender.clone()),
+            ("Backstory", sheet.backstory.clone()),
+            ("Body", sheet.body.to_string()),
+            ("Agility", sheet.agility.to_string()),
+            ("Reaction", sheet.reaction.to_string()),
+            ("Strength", sheet.strength.to_string()),
+            ("Willpower", sheet.willpower.to_string()),
+            ("Logic", sheet.logic.to_string()),
+            ("Intuition", sheet.intuition.to_string()),
+            ("Charisma", sheet.charisma.to_string()),
+            ("Edge", sheet.edge.to_string()),
+            ("Magic", sheet.magic.unwrap_or(0).to_string()),
+            ("Resonance", sheet.resonance.unwrap_or(0).to_string()),
+        ];
+
+        for (name, value) in attributes {
+            self.add_message(Message::new(
+                MessageType::System,
+                format!("{}: {}", name, value),
+            ));
         }
     }
 
@@ -254,7 +292,7 @@ impl App {
             }
             KeyCode::Char(c) => {
                 if let Some(digit) = c.to_digit(10) {
-                    if digit < 5 {
+                    if digit <= 5 {
                         self.settings_state.selected_setting = (digit - 1) as usize;
                         let current_setting = self.settings_state.selected_setting;
                         if current_setting == 1 {
@@ -265,7 +303,7 @@ impl App {
                                 self.settings_state.selected_options[current_setting];
                             let new_option = match current_setting {
                                 0 => (current_option + 1) % 3, // Language (3 options)
-                                2..=4 => 1 - current_option,   // Toggle settings (2 options)
+                                2..=5 => 1 - current_option,   // Toggle settings (2 options)
                                 _ => current_option,
                             };
                             self.settings_state.selected_options[current_setting] = new_option;
@@ -357,7 +395,7 @@ impl App {
         self.select_main_menu_option();
     }
 
-    fn handle_in_game_input(&mut self, key: KeyEvent) {
+    pub fn handle_in_game_input(&mut self, key: KeyEvent) {
         if key.kind != KeyEventKind::Press {
             return;
         }
@@ -376,7 +414,6 @@ impl App {
                     self.user_input.insert_str(self.cursor_position, "\n");
                     self.cursor_position += 1;
                 } else {
-                    // Submit the user input
                     self.submit_user_input();
                 }
             }
@@ -522,6 +559,17 @@ impl App {
         self.game_content_scroll = self.game_content_scroll.min(max_scroll);
     }
 
+    pub fn add_debug_message(&mut self, message: String) {
+        if !self.settings.debug_mode {
+            return;
+        }
+
+        self.add_message(Message::new(
+            MessageType::System,
+            format!("Debug: {}", message),
+        ));
+    }
+
     pub fn update_debug_info(&mut self) {
         self.debug_info = format!(
             "Scroll: {}/{}, Visible Lines: {}, Total Lines: {}, Messages: {}",
@@ -567,14 +615,95 @@ impl App {
     }
 
     pub fn handle_ai_response(&mut self, response: String) {
+        // Remove the "AI is thinking..." message if it exists
+        if let Some(last_message) = self.game_content.last() {
+            if last_message.content == "AI is thinking..."
+                && last_message.message_type == MessageType::System
+            {
+                self.game_content.pop();
+            }
+        }
+
+        // Attempt to parse the AI response as a GameMessage
         if let Ok(game_message) = serde_json::from_str::<GameMessage>(&response) {
-            self.current_game_response = Some(game_message);
+            self.current_game_response = Some(game_message.clone());
             self.add_message(Message::new(MessageType::Game, response));
         } else {
+            // If parsing fails, display the raw response
             self.add_message(Message::new(
                 MessageType::System,
-                format!("Failed to parse AI response: {}", response),
+                format!("Raw AI Response: {}", response),
             ));
+        }
+
+        // Check if we need to create a character
+        if self.character_sheet.is_none() {
+            self.create_character_with_ai();
+        }
+    }
+
+    pub fn create_character_with_ai(&mut self) {
+        self.add_debug_message("Initiating character creation process".to_string());
+        if self.ai_client.is_some() {
+            if let Err(e) = self.command_sender.send(AppCommand::CreateCharacter) {
+                self.add_debug_message(format!("Failed to send create character command: {:?}", e));
+            } else {
+                self.add_debug_message("CreateCharacter command sent successfully".to_string());
+            }
+        } else {
+            self.add_debug_message("AI client is not initialized".to_string());
+        }
+    }
+
+    // This method will be called in the main loop when AppCommand::CreateCharacter is received
+
+    pub async fn handle_create_character(&mut self) {
+        let mut debug_messages = vec!["Handling create character command".to_string()];
+
+        let ai_result = if let Some(ai) = self.ai_client.as_ref() {
+            debug_messages.push("Calling AI client to create character".to_string());
+            ai.create_character_with_ai().await
+        } else {
+            debug_messages.push("AI client is not available for character creation".to_string());
+            return;
+        };
+
+        match ai_result {
+            Ok(character_sheet) => {
+                debug_messages.push("Character sheet received from AI".to_string());
+                self.update_character_sheet(character_sheet);
+            }
+            Err(e) => {
+                debug_messages.push(format!("Failed to create character: {:?}", e));
+            }
+        }
+
+        // Add all debug messages at once
+        for message in debug_messages {
+            self.add_debug_message(message);
+        }
+    }
+
+    pub fn update_character_sheet(&mut self, character_sheet: CharacterSheet) {
+        self.add_debug_message("Updating character sheet".to_string());
+        self.character_sheet = Some(character_sheet);
+        self.add_message(Message::new(
+            MessageType::System,
+            "Character creation complete!".to_string(),
+        ));
+        self.display_character_sheet();
+    }
+
+    fn display_character_sheet(&mut self) {
+        if let Some(sheet) = &self.character_sheet {
+            self.add_message(Message::new(
+                MessageType::System,
+                format!(
+                    "Character Sheet:\nName: {}\nRace: {:?}\nGender: {}",
+                    sheet.name, sheet.race, sheet.gender
+                ),
+            ));
+            // Add more details as needed
         }
     }
 
@@ -603,32 +732,6 @@ impl App {
     // Add a new method to handle periodic updates
     pub fn on_tick(&mut self) {}
 
-    #[allow(dead_code)]
-    pub async fn start_new_conversation(&mut self, assistant_id: &str) -> Result<(), AIError> {
-        if let Some(ai) = &mut self.ai_client {
-            let initial_state = GameConversationState {
-                assistant_id: assistant_id.to_string(),
-                thread_id: String::new(),
-            };
-            ai.start_new_conversation(assistant_id, initial_state)
-                .await?;
-        }
-        Ok(())
-    }
-
-    #[allow(dead_code)]
-    pub async fn continue_conversation(
-        &mut self,
-        conversation_state: GameConversationState,
-    ) -> Result<(), AIError> {
-        if let Some(ai) = &mut self.ai_client {
-            ai.load_conversation(conversation_state).await;
-        }
-        Ok(())
-    }
-
-    // Update this method or create a new one to handle incoming AI responses
-
     pub async fn start_new_game(
         &mut self,
         save_name: String,
@@ -648,7 +751,7 @@ impl App {
             )
             .await?;
 
-            // Save the game immediately after starting
+            // Start the game and save the initial state
             self.save_game(&save_name)?;
         } else {
             return Err("AI client not initialized".into());
@@ -660,8 +763,7 @@ impl App {
             format!("New game '{}' started!", save_name),
         ));
 
-        // Send an initial message to the AI to start the game
-        self.send_message("Start the game in json".to_string())
+        self.send_message("Start the game. When necessary, please create a character sheet by calling the `create_character_sheet` function with the necessary details.".to_string())
             .await?;
 
         Ok(())
@@ -699,15 +801,6 @@ impl App {
         fs::File::create(&save_path)?; // Create the file if it does not exist
         game_state.save_to_file(&save_path)?;
         Ok(())
-    }
-
-    async fn initialize_ai_client(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        if let Some(api_key) = &self.settings.openai_api_key {
-            self.ai_client = Some(GameAI::new(api_key.clone())?);
-            Ok(())
-        } else {
-            Err("OpenAI API key not set".into())
-        }
     }
 
     pub fn scan_save_files() -> Vec<String> {
