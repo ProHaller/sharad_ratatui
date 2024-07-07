@@ -19,8 +19,8 @@ pub fn draw_load_game(f: &mut Frame, app: &App) {
                 Constraint::Max(3),
                 Constraint::Max(20),
                 Constraint::Max(7),
-                Constraint::Min(2),
-                Constraint::Min(6),
+                Constraint::Max(3),
+                Constraint::Min(app.available_saves.len() as u16),
                 Constraint::Max(3),
             ]
             .as_ref(),
@@ -45,7 +45,7 @@ fn render_console(f: &mut Frame, app: &App, area: Rect) {
     let console = Paragraph::new(console_text)
         .style(Style::default().fg(Color::Yellow))
         .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::NONE));
+        .block(Block::default().borders(Borders::ALL));
 
     f.render_widget(console, area);
 }
@@ -73,7 +73,7 @@ fn render_load_game_menu(f: &mut Frame, app: &App, area: Rect) {
     };
 
     let outer_block = Block::default()
-        .borders(Borders::NONE)
+        .borders(Borders::ALL)
         .style(Style::default().fg(Color::DarkGray));
 
     let menu_area = centered_rect(100, 100, area);
@@ -83,7 +83,7 @@ fn render_load_game_menu(f: &mut Frame, app: &App, area: Rect) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1),
-            Constraint::Min(1),
+            Constraint::Fill(1),
             Constraint::Length(1),
         ])
         .split(menu_area.inner(Margin {

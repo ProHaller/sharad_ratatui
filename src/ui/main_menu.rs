@@ -177,12 +177,11 @@ pub fn render_menu(f: &mut Frame, app: &App, area: Rect) {
 }
 
 pub fn render_status(f: &mut Frame, app: &App, area: Rect) {
-    let status_message = if app.state == AppState::MainMenu {
-        "Press q to quit"
-    } else {
-        "Press Esc to go back"
+    let status_message = match app.state {
+        AppState::MainMenu => "Press q to quit",
+        AppState::LoadMenu => "Press Enter to load save, Backspace to delete save, Esc to go back",
+        _ => "Press Esc to go back",
     };
-
     let status = Paragraph::new(status_message)
         .style(Style::default().fg(Color::DarkGray))
         .block(Block::default().borders(Borders::NONE))

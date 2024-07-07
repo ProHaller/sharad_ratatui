@@ -4,9 +4,9 @@
 pub enum AppState {
     MainMenu,
     InGame,
-    LoadGame,
+    LoadMenu,
     CreateImage,
-    Settings,
+    SettingsMenu,
     InputApiKey,
     InputSaveName,
 }

@@ -139,9 +139,9 @@ impl App {
         match self.state {
             AppState::MainMenu => self.handle_main_menu_input(key),
             AppState::InGame => self.handle_in_game_input(key),
-            AppState::LoadGame => self.handle_load_game_input(key),
+            AppState::LoadMenu => self.handle_load_game_input(key),
             AppState::CreateImage => self.handle_create_image_input(key),
-            AppState::Settings => self.handle_settings_input(key),
+            AppState::SettingsMenu => self.handle_settings_input(key),
             AppState::InputApiKey => self.handle_api_key_input(key),
             AppState::InputSaveName => self.handle_save_name_input(key),
         }
@@ -191,7 +191,7 @@ impl App {
                         let _ = sender.send(AppCommand::ApiKeyValidationResult(is_valid));
                     });
 
-                    self.state = AppState::Settings;
+                    self.state = AppState::SettingsMenu;
                 }
             }
             KeyCode::Char(c) => {
@@ -209,7 +209,7 @@ impl App {
             }
             KeyCode::Esc => {
                 self.api_key_input.clear();
-                self.state = AppState::Settings;
+                self.state = AppState::SettingsMenu;
             }
             _ => {}
         }
@@ -349,7 +349,7 @@ impl App {
                     }
                     Some(1) => {
                         // Load Game
-                        self.state = AppState::LoadGame;
+                        self.state = AppState::LoadMenu;
                         self.available_saves = Self::scan_save_files();
                         self.load_game_menu_state.select(Some(0));
                     }
@@ -357,7 +357,7 @@ impl App {
                         self.state = AppState::CreateImage;
                     }
                     Some(3) => {
-                        self.state = AppState::Settings;
+                        self.state = AppState::SettingsMenu;
                     }
                     _ => {}
                 }
@@ -382,9 +382,9 @@ impl App {
     fn select_main_menu_option(&mut self) {
         match self.main_menu_state.selected() {
             Some(0) => self.state = AppState::InputSaveName,
-            Some(1) => self.state = AppState::LoadGame,
+            Some(1) => self.state = AppState::LoadMenu,
             Some(2) => self.state = AppState::CreateImage,
-            Some(3) => self.state = AppState::Settings,
+            Some(3) => self.state = AppState::SettingsMenu,
             _ => {}
         }
     }
@@ -849,6 +849,9 @@ impl App {
             }
             KeyCode::Up => self.navigate_load_game_menu(-1),
             KeyCode::Down => self.navigate_load_game_menu(1),
+            KeyCode::Backspace => {
+                self.delete_save();
+            }
 
             KeyCode::Char(c) => {
                 if let Some(digit) = c.to_digit(10) {
@@ -869,6 +872,38 @@ impl App {
                 }
             }
             _ => {}
+        }
+    }
+
+    fn delete_save(&mut self) {
+        if let Some(selected) = self.load_game_menu_state.selected() {
+            let save_path = format!("./data/save/{}", self.available_saves[selected]);
+            match fs::remove_file(&save_path) {
+                Ok(_) => {
+                    self.add_message(Message::new(
+                        MessageType::System,
+                        format!(
+                            "Successfully deleted save file: {}",
+                            self.available_saves[selected]
+                        ),
+                    ));
+                    self.available_saves.remove(selected);
+
+                    // Update the selected state to ensure it remains within bounds
+                    let new_selected = if selected >= self.available_saves.len() {
+                        self.available_saves.len().saturating_sub(1)
+                    } else {
+                        selected
+                    };
+                    self.load_game_menu_state.select(Some(new_selected));
+                }
+                Err(e) => {
+                    self.add_message(Message::new(
+                        MessageType::System,
+                        format!("Failed to delete save file: {:?}", e),
+                    ));
+                }
+            }
         }
     }
 
