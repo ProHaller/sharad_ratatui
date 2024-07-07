@@ -142,12 +142,6 @@ async fn run_app(
                     AppCommand::ApiKeyValidationResult(is_valid) => {
                         app.handle_api_key_validation_result(is_valid);
                     }
-                    AppCommand::CreateCharacter => {
-                        app.handle_create_character().await;
-                    }
-                    AppCommand::UpdateCharacterSheet(character_sheet) => {
-                        app.update_character_sheet(character_sheet);
-                    }
                 }
             }
             Some(ai_message) = ai_receiver.recv() => {

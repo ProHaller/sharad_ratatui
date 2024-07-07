@@ -1,3 +1,4 @@
+use crate::app::App;
 use crate::character::{CharacterSheet, Quality, Race, Skills};
 use crate::message::{GameMessage, Message, MessageType};
 use async_openai::{
@@ -11,15 +12,17 @@ use async_openai::{
     Client,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Map};
+use serde_json::json;
+use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::time::{timeout, Duration, Instant};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GameConversationState {
     pub assistant_id: String,
     pub thread_id: String,
+    pub character_sheet: Option<CharacterSheet>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -46,12 +49,14 @@ pub struct GameAI {
     client: Client<OpenAIConfig>,
     pub conversation_state: Option<GameConversationState>,
     debug_callback: Arc<dyn Fn(String) + Send + Sync>,
+    app_ref: Option<Arc<Mutex<App>>>, // Add this line
 }
 
 impl GameAI {
     pub fn new(
         api_key: String,
         debug_callback: impl Fn(String) + Send + Sync + 'static,
+        app_ref: Arc<Mutex<App>>, // Add this line
     ) -> Result<Self, AIError> {
         let openai_config = OpenAIConfig::new().with_api_key(api_key);
         let client = Client::with_config(openai_config);
@@ -60,7 +65,13 @@ impl GameAI {
             client,
             conversation_state: None,
             debug_callback: Arc::new(debug_callback),
+            app_ref: Some(app_ref), // Add this line
         })
+    }
+
+    // Add a method to set the app reference after initialization
+    pub fn set_app_ref(&mut self, app_ref: Arc<Mutex<App>>) {
+        self.app_ref = Some(app_ref);
     }
 
     fn add_debug_message(&self, message: String) {
@@ -124,25 +135,25 @@ impl GameAI {
         self.conversation_state = Some(state);
     }
 
-    pub async fn send_message(&mut self, message: &str) -> Result<String, AIError> {
-        let state = self
-            .conversation_state
-            .as_ref()
-            .ok_or(AIError::ConversationNotInitialized)?;
+    pub async fn send_message(&mut self, message: &str) -> Result<GameMessage, AIError> {
+        // Extract necessary information from conversation_state
+        let (thread_id, assistant_id) = match &self.conversation_state {
+            Some(state) => (state.thread_id.clone(), state.assistant_id.clone()),
+            None => return Err(AIError::ConversationNotInitialized),
+        };
 
         // Check if there's an active run
         let active_runs = self
             .client
             .threads()
-            .runs(&state.thread_id)
+            .runs(&thread_id)
             .list(&[("limit", "1")])
             .await?;
 
         if let Some(run) = active_runs.data.first() {
             if run.status == RunStatus::InProgress || run.status == RunStatus::Queued {
                 // Wait for the active run to complete
-                self.wait_for_run_completion(&state.thread_id, &run.id)
-                    .await?;
+                self.wait_for_run_completion(&thread_id, &run.id).await?;
             }
         }
 
@@ -154,36 +165,43 @@ impl GameAI {
 
         self.client
             .threads()
-            .messages(&state.thread_id)
+            .messages(&thread_id)
             .create(message_request)
             .await?;
 
         let run_request = CreateRunRequestArgs::default()
-            .assistant_id(&state.assistant_id)
+            .assistant_id(&assistant_id)
             .build()?;
 
         let run = self
             .client
             .threads()
-            .runs(&state.thread_id)
+            .runs(&thread_id)
             .create(run_request)
             .await?;
 
         // Wait for the new run to complete
-        self.wait_for_run_completion(&state.thread_id, &run.id)
-            .await?;
+        self.wait_for_run_completion(&thread_id, &run.id).await?;
 
-        let response = self.get_latest_message(&state.thread_id).await?;
+        let response = self.get_latest_message(&thread_id).await?;
         self.update_game_state(&response)?;
 
-        Ok(response)
+        let game_message: GameMessage = serde_json::from_str(&response).map_err(|e| {
+            AIError::GameStateParseError(format!("Failed to parse GameMessage: {}", e))
+        })?;
+
+        Ok(game_message)
     }
 
-    async fn wait_for_run_completion(&self, thread_id: &str, run_id: &str) -> Result<(), AIError> {
+    async fn wait_for_run_completion(
+        &mut self,
+        thread_id: &str,
+        run_id: &str,
+    ) -> Result<(), AIError> {
         let timeout_duration = Duration::from_secs(300); // 5 minutes timeout
         let start_time = Instant::now();
         let mut requires_action_attempts = 0;
-        const MAX_REQUIRES_ACTION_ATTEMPTS: u32 = 3;
+        const MAX_REQUIRES_ACTION_ATTEMPTS: u32 = 5;
 
         loop {
             if start_time.elapsed() > timeout_duration {
@@ -253,7 +271,7 @@ impl GameAI {
     }
 
     async fn handle_required_action(
-        &self,
+        &mut self,
         thread_id: &str,
         run_id: &str,
         run: &RunObject,
@@ -276,6 +294,15 @@ impl GameAI {
                                     self.create_dummy_character()
                                 }
                             };
+
+                            // Update the conversation state with the new character sheet
+                            if let Some(state) = &mut self.conversation_state {
+                                state.character_sheet = Some(character_sheet.clone());
+                                self.add_debug_message(
+                                    "Character sheet updated in conversation state".to_string(),
+                                );
+                            }
+
                             self.submit_tool_output(
                                 thread_id,
                                 run_id,
@@ -358,148 +385,22 @@ impl GameAI {
     }
 
     fn update_game_state(&mut self, response: &str) -> Result<(), AIError> {
-        // This is a placeholder. You'll need to implement proper parsing based on your AI's response format.
-        if let Some(_state) = &mut self.conversation_state {
-            // Example parsing, adjust according to your actual AI response format
-        }
-        Ok(())
-    }
+        self.add_debug_message(format!("Updating game state with response: {}", response));
 
-    pub fn get_game_state(&self) -> Option<&GameConversationState> {
-        self.conversation_state.as_ref()
-    }
+        // Parse the response as a GameMessage
+        let mut game_message: GameMessage = serde_json::from_str(response).map_err(|e| {
+            AIError::GameStateParseError(format!("Failed to parse GameMessage: {}", e))
+        })?;
 
-    pub fn update_api_key(&mut self, new_api_key: String) {
-        let new_config = OpenAIConfig::new().with_api_key(new_api_key);
-        self.client = Client::with_config(new_config);
-    }
-
-    pub async fn create_character_with_ai(&self) -> Result<CharacterSheet, AIError> {
-        self.add_debug_message("Starting character creation with AI".to_string());
-        let state = self
-            .conversation_state
-            .as_ref()
-            .ok_or(AIError::ConversationNotInitialized)?;
-
-        self.add_debug_message("Creating run for character creation".to_string());
-        let create_character_sheet = AssistantTools::Function(AssistantToolsFunction {
-            function: FunctionObject {
-                name: "create_character_sheet".to_string(),
-                description: Some("Create a character sheet for a Shadowrun character".to_string()),
-                parameters: Some(json!({
-                    "type": "object",
-                    "properties": {
-                        "name": { "type": "string" },
-                        "race": { "type": "string", "enum": ["Human", "Elf", "Dwarf", "Ork", "Troll"] },
-                        "gender": { "type": "string" },
-                        "backstory": { "type": "string" },
-                        "attributes": {
-                            "type": "object",
-                            "properties": {
-                                "body": { "type": "integer", "minimum": 1, "maximum": 6 },
-                                "agility": { "type": "integer", "minimum": 1, "maximum": 6 },
-                                "reaction": { "type": "integer", "minimum": 1, "maximum": 6 },
-                                "strength": { "type": "integer", "minimum": 1, "maximum": 6 },
-                                "willpower": { "type": "integer", "minimum": 1, "maximum": 6 },
-                                "logic": { "type": "integer", "minimum": 1, "maximum": 6 },
-                                "intuition": { "type": "integer", "minimum": 1, "maximum": 6 },
-                                "charisma": { "type": "integer", "minimum": 1, "maximum": 6 },
-                                "edge": { "type": "integer", "minimum": 1, "maximum": 6 },
-                                "magic": { "type": "integer", "minimum": 0, "maximum": 6 },
-                                "resonance": { "type": "integer", "minimum": 0, "maximum": 6 }
-                            },
-                            "required": ["body", "agility", "reaction", "strength", "willpower", "logic", "intuition", "charisma", "edge"]
-                        },
-                        "skills": {
-                            "type": "object",
-                            "additionalProperties": { "type": "integer", "minimum": 0, "maximum": 6 }
-                        },
-                        "qualities": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "name": { "type": "string" },
-                                    "positive": { "type": "boolean" }
-                                },
-                                "required": ["name", "positive"]
-                            }
-                        }
-                    },
-                    "required": ["name", "race", "gender", "backstory", "attributes", "skills"]
-                })),
-            },
-        });
-
-        let request = CreateRunRequestArgs::default()
-            .assistant_id(&state.assistant_id)
-            .tools(vec![create_character_sheet])
-            .build()?;
-
-        let mut run = self
-            .client
-            .threads()
-            .runs(&state.thread_id)
-            .create(request)
-            .await?;
-
-        // Wait for the run to complete with a timeout
-        let timeout_duration = Duration::from_secs(30);
-        loop {
-            match timeout(
-                timeout_duration,
-                self.client
-                    .threads()
-                    .runs(&state.thread_id)
-                    .retrieve(&run.id),
-            )
-            .await
-            {
-                Ok(Ok(updated_run)) => {
-                    run = updated_run;
-                    if run.status == RunStatus::Completed {
-                        break;
-                    }
-                }
-                Ok(Err(e)) => return Err(AIError::OpenAI(e)),
-                Err(_) => return Err(AIError::Timeout),
-            }
-        }
-
-        // Retrieve the messages after the run is completed
-        let messages = self
-            .client
-            .threads()
-            .messages(&state.thread_id)
-            .list(&[("limit", "1"), ("order", "desc")])
-            .await?;
-
-        if let Some(message) = messages.data.first() {
-            if let Some(content) = message.content.first() {
-                if let MessageContent::Text(text) = content {
-                    // Try to parse the content as a CharacterSheet
-                    match serde_json::from_str::<CharacterSheet>(&text.text.value) {
-                        Ok(character_sheet) => Ok(character_sheet),
-                        Err(e) => Err(AIError::GameStateParseError(format!(
-                            "Failed to parse character sheet: {}. Raw JSON: {}",
-                            e, text.text.value
-                        ))),
-                    }
-                } else {
-                    Err(AIError::GameStateParseError(
-                        "Unexpected message content type".to_string(),
-                    ))
-                }
-            } else {
-                Err(AIError::GameStateParseError(
-                    "No content in message".to_string(),
-                ))
-            }
+        if let Some(state) = &self.conversation_state {
+            // Include the character sheet from the conversation state
+            game_message.character_sheet = state.character_sheet.clone();
+            self.add_debug_message("Character sheet included from conversation state".to_string());
         } else {
-            Err(AIError::GameStateParseError(
-                "No valid response found for character creation".to_string(),
-            ))
+            self.add_debug_message("No active conversation state".to_string());
         }
+
+        Ok(())
     }
 
     async fn submit_tool_output(
@@ -529,11 +430,11 @@ impl GameAI {
         Ok(())
     }
 
-    async fn create_character(&self, args: &serde_json::Value) -> Result<CharacterSheet, AIError> {
+    async fn create_character(&self, args: &Value) -> Result<CharacterSheet, AIError> {
         self.add_debug_message(format!("Creating character from args: {:?}", args));
 
         // Helper function to extract a string
-        fn extract_str(args: &serde_json::Value, field: &str) -> Result<String, AIError> {
+        fn extract_str(args: &Value, field: &str) -> Result<String, AIError> {
             args.get(field)
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| {
@@ -543,7 +444,7 @@ impl GameAI {
         }
 
         // Helper function to extract a u8
-        fn extract_u8(args: &serde_json::Value, field: &str) -> Result<u8, AIError> {
+        fn extract_u8(args: &Value, field: &str) -> Result<u8, AIError> {
             args.get(field)
                 .and_then(|v| v.as_u64())
                 .ok_or_else(|| {
@@ -573,29 +474,22 @@ impl GameAI {
         };
 
         // Extract attributes
-        let attributes_obj = args
+        let attributes = args
             .get("attributes")
+            .and_then(|v| v.as_object())
             .ok_or_else(|| AIError::GameStateParseError("Missing attributes".to_string()))?;
 
-        let body = extract_u8(attributes_obj, "body")?;
-        let agility = extract_u8(attributes_obj, "agility")?;
-        let reaction = extract_u8(attributes_obj, "reaction")?;
-        let strength = extract_u8(attributes_obj, "strength")?;
-        let willpower = extract_u8(attributes_obj, "willpower")?;
-        let logic = extract_u8(attributes_obj, "logic")?;
-        let intuition = extract_u8(attributes_obj, "intuition")?;
-        let charisma = extract_u8(attributes_obj, "charisma")?;
-        let edge = extract_u8(attributes_obj, "edge")?;
-        let magic = attributes_obj
-            .get("magic")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as u8)
-            .unwrap_or(0);
-        let resonance = attributes_obj
-            .get("resonance")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as u8)
-            .unwrap_or(0);
+        let body = extract_u8(&Value::Object(attributes.clone()), "body")?;
+        let agility = extract_u8(&Value::Object(attributes.clone()), "agility")?;
+        let reaction = extract_u8(&Value::Object(attributes.clone()), "reaction")?;
+        let strength = extract_u8(&Value::Object(attributes.clone()), "strength")?;
+        let willpower = extract_u8(&Value::Object(attributes.clone()), "willpower")?;
+        let logic = extract_u8(&Value::Object(attributes.clone()), "logic")?;
+        let intuition = extract_u8(&Value::Object(attributes.clone()), "intuition")?;
+        let charisma = extract_u8(&Value::Object(attributes.clone()), "charisma")?;
+        let edge = extract_u8(&Value::Object(attributes.clone()), "edge")?;
+        let magic = extract_u8(&Value::Object(attributes.clone()), "magic")?;
+        let resonance = extract_u8(&Value::Object(attributes.clone()), "resonance")?;
 
         // Extract skills
         let skills_obj = args
@@ -616,18 +510,17 @@ impl GameAI {
             ("social", &mut skills.social),
             ("technical", &mut skills.technical),
         ] {
-            let category_obj = skills_obj
+            let category_array = skills_obj
                 .get(category)
-                .and_then(|v| v.as_object())
+                .and_then(|v| v.as_array())
                 .ok_or_else(|| {
-                    AIError::GameStateParseError(format!("Missing {} skills", category))
+                    AIError::GameStateParseError(format!("Missing {} skills array", category))
                 })?;
 
-            for (skill_name, skill_value) in category_obj {
-                let value = skill_value.as_u64().ok_or_else(|| {
-                    AIError::GameStateParseError(format!("Invalid skill value for {}", skill_name))
-                })?;
-                skills_map.insert(skill_name.clone(), value as u8);
+            for skill in category_array {
+                let name = extract_str(skill, "name")?;
+                let rating = extract_u8(skill, "rating")?;
+                skills_map.insert(name, rating);
             }
         }
 
@@ -635,32 +528,37 @@ impl GameAI {
         let qualities = args
             .get("qualities")
             .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .map(|quality| {
-                        let name = extract_str(quality, "name")?;
-                        let positive = quality
-                            .get("positive")
-                            .and_then(|v| v.as_bool())
-                            .ok_or_else(|| {
-                                AIError::GameStateParseError(
-                                    "Missing or invalid 'positive' in quality".to_string(),
-                                )
-                            })?;
-                        Ok(Quality { name, positive })
-                    })
-                    .collect::<Result<Vec<Quality>, AIError>>()
+            .ok_or_else(|| AIError::GameStateParseError("Missing qualities".to_string()))?
+            .iter()
+            .map(|quality| {
+                let name = extract_str(quality, "name")?;
+                let positive = quality
+                    .get("positive")
+                    .and_then(|v| v.as_bool())
+                    .ok_or_else(|| {
+                        AIError::GameStateParseError(
+                            "Missing or invalid 'positive' in quality".to_string(),
+                        )
+                    })?;
+                Ok(Quality { name, positive })
             })
-            .unwrap_or_else(|| Ok(vec![]))?;
+            .collect::<Result<Vec<Quality>, AIError>>()?;
+
+        // Create base character sheet
+        let mut character = CharacterSheet::new(
+            name, race, gender, backstory, body, agility, reaction, strength, willpower, logic,
+            intuition, charisma, edge, magic, resonance, skills, qualities,
+        );
+
+        // Apply race modifiers and update derived attributes
+        character.apply_race_modifiers(character.race.clone());
+        character.update_derived_attributes();
 
         self.add_debug_message("Character creation successful".to_string());
 
-        // Create and return the CharacterSheet
-        Ok(CharacterSheet::new(
-            name, race, gender, backstory, body, agility, reaction, strength, willpower, logic,
-            intuition, charisma, edge, magic, resonance, skills, qualities,
-        ))
+        Ok(character)
     }
+
     fn create_dummy_character(&self) -> CharacterSheet {
         let dummy_skills = Skills {
             combat: [

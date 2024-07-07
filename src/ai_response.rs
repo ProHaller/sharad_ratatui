@@ -1,5 +1,5 @@
 // src/ai_response.rs
-
+use crate::character::CharacterSheet;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -12,10 +12,12 @@ pub struct UserMessage {
 pub struct SystemMessage {
     pub message: String,
 }
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct GameMessage {
     pub reasoning: String,
     pub narration: String,
+    pub character_sheet: Option<CharacterSheet>,
 }
 
 impl UserMessage {
@@ -50,6 +52,7 @@ impl GameMessage {
         GameMessage {
             reasoning,
             narration,
+            character_sheet: None,
         }
     }
 

@@ -31,7 +31,6 @@ pub struct CharacterSheet {
     pub race: Race,
     pub gender: String,
     pub backstory: String,
-    pub portrait_path: String,
 
     // Basic Attributes
     pub body: u8,
@@ -135,7 +134,6 @@ impl CharacterSheet {
             race: race.clone(),
             gender,
             backstory,
-            portrait_path: String::new(),
             body,
             agility,
             reaction,

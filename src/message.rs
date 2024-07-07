@@ -1,6 +1,7 @@
+use crate::character::CharacterSheet;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum MessageType {
     User,
     Game,
@@ -13,17 +14,26 @@ pub struct UserMessage {
     pub player_action: String,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct GameMessage {
     pub reasoning: String,
     pub narration: String,
-    // Add other fields for function calling when implemented
+    pub character_sheet: Option<CharacterSheet>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Message {
     pub message_type: MessageType,
     pub content: String, // This will store the raw JSON or error message
+}
+
+impl std::fmt::Debug for Message {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Message")
+            .field("message_type", &self.message_type)
+            .field("content", &self.content)
+            .finish()
+    }
 }
 
 #[derive(Clone)]

@@ -1,4 +1,5 @@
 use crate::app::App;
+use crate::character::CharacterSheet;
 use crate::message::MessageType;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -28,67 +29,122 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
         .constraints([Constraint::Percentage(80), Constraint::Percentage(20)])
         .split(size);
 
-    if app.is_character_creation {
-        draw_character_creation(f, app, chunks[0]);
-    } else {
-        draw_game_content(f, app, chunks[0]);
-    }
+    draw_game_content(f, app, chunks[0]);
     draw_user_input(f, app, chunks[1]);
 }
 
-fn draw_character_creation(f: &mut Frame, app: &mut App, area: Rect) {
+fn draw_character_sheet(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),  // Name, Race, Gender
+            Constraint::Length(10), // Attributes
+            Constraint::Length(2),  // Skills header
+            Constraint::Min(0),     // Skills
+            Constraint::Length(3),  // Qualities
+        ])
         .split(area);
 
-    draw_character_sheet(f, app, chunks[0]);
-}
+    // Basic Info
+    let basic_info = Paragraph::new(vec![
+        Line::from(vec![
+            Span::styled("Name: ", Style::default().fg(Color::Yellow)),
+            Span::raw(&sheet.name),
+        ]),
+        Line::from(vec![
+            Span::styled("Race: ", Style::default().fg(Color::Yellow)),
+            Span::raw(format!("{:?}", sheet.race)),
+        ]),
+        Line::from(vec![
+            Span::styled("Gender: ", Style::default().fg(Color::Yellow)),
+            Span::raw(&sheet.gender),
+        ]),
+    ]);
+    f.render_widget(basic_info, chunks[0]);
 
-fn draw_character_sheet(f: &mut Frame, app: &App, area: Rect) {
-    if let Some(sheet) = &app.character_sheet {
-        let attributes = vec![
-            ("Name", sheet.name.clone()),
-            ("Race", format!("{:?}", sheet.race)),
-            ("Gender", sheet.gender.clone()),
-            ("Body", sheet.body.to_string()),
-            ("Agility", sheet.agility.to_string()),
-            ("Reaction", sheet.reaction.to_string()),
-            ("Strength", sheet.strength.to_string()),
-            ("Willpower", sheet.willpower.to_string()),
-            ("Logic", sheet.logic.to_string()),
-            ("Intuition", sheet.intuition.to_string()),
-            ("Charisma", sheet.charisma.to_string()),
-            ("Edge", sheet.edge.to_string()),
-            ("Magic", sheet.magic.unwrap_or(0).to_string()),
-            ("Resonance", sheet.resonance.unwrap_or(0).to_string()),
-        ];
+    // Attributes
+    let attributes = vec![
+        ("Body", sheet.body),
+        ("Agility", sheet.agility),
+        ("Reaction", sheet.reaction),
+        ("Strength", sheet.strength),
+        ("Willpower", sheet.willpower),
+        ("Logic", sheet.logic),
+        ("Intuition", sheet.intuition),
+        ("Charisma", sheet.charisma),
+        ("Edge", sheet.edge),
+        ("Magic", sheet.magic.unwrap_or(0)),
+        ("Resonance", sheet.resonance.unwrap_or(0)),
+    ];
 
-        let header = Row::new(vec!["Attribute", "Value"]).style(Style::default().fg(Color::Cyan));
+    let attribute_rows: Vec<Row> = attributes
+        .iter()
+        .map(|(name, value)| {
+            Row::new(vec![
+                Cell::from(*name),
+                Cell::from(value.to_string()).style(Style::default().fg(Color::Yellow)),
+            ])
+        })
+        .collect();
 
-        let rows: Vec<Row> = attributes
-            .into_iter()
-            .map(|(name, value)| {
-                Row::new(vec![
-                    Cell::from(name),
-                    Cell::from(value).style(Style::default().fg(Color::Yellow)),
-                ])
-            })
-            .collect();
+    let attribute_widths = vec![Constraint::Percentage(100), Constraint::Percentage(100)];
 
-        let widths = vec![Constraint::Percentage(50), Constraint::Percentage(50)];
+    let attribute_table = Table::new(attribute_rows, attribute_widths)
+        .header(Row::new(vec!["Attribute", "Value"]).style(Style::default().fg(Color::Cyan)))
+        .widths(&[Constraint::Percentage(50), Constraint::Percentage(50)])
+        .column_spacing(1);
 
-        let table = Table::new(rows, widths).header(header).block(
-            Block::default()
-                .title("Character Sheet")
-                .borders(Borders::ALL),
-        );
+    f.render_widget(attribute_table, chunks[1]);
 
-        f.render_widget(table, area);
+    // Skills header
+    let skills_header = Paragraph::new("Skills")
+        .style(Style::default().fg(Color::Cyan))
+        .alignment(Alignment::Center);
+    f.render_widget(skills_header, chunks[2]);
+
+    // Skills
+    let mut skill_lines = Vec::new();
+    for (category, skills) in [
+        ("Combat", &sheet.skills.combat),
+        ("Physical", &sheet.skills.physical),
+        ("Social", &sheet.skills.social),
+        ("Technical", &sheet.skills.technical),
+    ] {
+        skill_lines.push(Line::from(Span::styled(
+            category,
+            Style::default().fg(Color::Yellow),
+        )));
+        for (skill, rating) in skills {
+            skill_lines.push(Line::from(vec![
+                Span::raw(format!("  {}: ", skill)),
+                Span::styled(rating.to_string(), Style::default().fg(Color::Green)),
+            ]));
+        }
     }
+
+    let skills_paragraph = Paragraph::new(skill_lines).wrap(Wrap { trim: true });
+    f.render_widget(skills_paragraph, chunks[3]);
+
+    // Qualities
+    let qualities: Vec<Line> = sheet
+        .qualities
+        .iter()
+        .map(|q| {
+            Line::from(vec![
+                Span::styled(
+                    if q.positive { "+" } else { "-" },
+                    Style::default().fg(if q.positive { Color::Green } else { Color::Red }),
+                ),
+                Span::raw(format!(" {}", q.name)),
+            ])
+        })
+        .collect();
+
+    let qualities_paragraph = Paragraph::new(qualities).wrap(Wrap { trim: true });
+    f.render_widget(qualities_paragraph, chunks[4]);
 }
 
-fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
+pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
@@ -100,7 +156,7 @@ fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
         .border_style(Style::default().fg(Color::Green));
 
     let game_info_block = Block::default()
-        .title("Game Info")
+        .title("Character Sheet")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan));
 
@@ -177,23 +233,23 @@ fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
 
     f.render_widget(content, narration_area);
 
-    let mut game_info_content = Vec::new();
-    for message in &app.game_content {
-        if let MessageType::Game = message.message_type {
-            if let Some(game_message) = message.parse_game_message() {
-                game_info_content.push(Line::from(vec![
-                    Span::styled("Reasoning: ", Style::default().fg(Color::Cyan)),
-                    Span::raw(game_message.reasoning),
-                ]));
-            }
+    if let Some(game_state) = &app.current_game {
+        if let Some(sheet) = &game_state.character_sheet {
+            draw_character_sheet(f, sheet, game_info_area);
+        } else {
+            let no_character = Paragraph::new("No character sheet available.".to_string())
+                .style(Style::default().fg(Color::Yellow))
+                .alignment(Alignment::Center);
+            f.render_widget(no_character, game_info_area);
         }
+    } else {
+        app.add_debug_message("No active game".to_string());
+        let no_game = Paragraph::new("No active game.")
+            .style(Style::default().fg(Color::Yellow))
+            .alignment(Alignment::Center);
+        f.render_widget(no_game, game_info_area);
     }
 
-    let game_info_paragraph = Paragraph::new(game_info_content)
-        .wrap(Wrap { trim: true })
-        .scroll((app.game_content_scroll as u16, 0));
-
-    f.render_widget(game_info_paragraph, game_info_area);
     app.visible_lines = max_height;
     app.update_scroll();
     app.update_debug_info();
