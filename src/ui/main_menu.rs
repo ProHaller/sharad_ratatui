@@ -180,7 +180,7 @@ pub fn render_status(f: &mut Frame, app: &App, area: Rect) {
     let status_message = match app.state {
         AppState::MainMenu => "Press q to quit",
         AppState::LoadMenu => {
-            "Press Enter to load save, Backspace twice to delete save, Esc to go back"
+            "Press Enter or number to load save, Backspace twice to delete save, Esc to go back"
         }
         _ => "Press Esc to go back",
     };

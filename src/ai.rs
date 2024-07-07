@@ -1,17 +1,18 @@
-use crate::character::{CharacterSheet, Quality};
+use crate::character::{CharacterSheet, Quality, Race, Skills};
 use crate::message::{GameMessage, Message, MessageType};
 use async_openai::{
     config::OpenAIConfig,
     types::{
         AssistantTools, AssistantToolsFunction, CreateAssistantRequestArgs,
         CreateMessageRequestArgs, CreateRunRequestArgs, CreateThreadRequestArgs, FunctionObject,
-        MessageContent, MessageRole, RunObject, RunStatus, ToolsOutputs,
+        MessageContent, MessageRole, RequiredAction, RunObject, RunStatus,
+        SubmitToolOutputsRunRequest, ToolsOutputs,
     },
     Client,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::json;
-use std::convert::TryInto;
+use serde_json::{json, Map};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::time::{timeout, Duration, Instant};
 
@@ -181,6 +182,8 @@ impl GameAI {
     async fn wait_for_run_completion(&self, thread_id: &str, run_id: &str) -> Result<(), AIError> {
         let timeout_duration = Duration::from_secs(300); // 5 minutes timeout
         let start_time = Instant::now();
+        let mut requires_action_attempts = 0;
+        const MAX_REQUIRES_ACTION_ATTEMPTS: u32 = 3;
 
         loop {
             if start_time.elapsed() > timeout_duration {
@@ -195,31 +198,117 @@ impl GameAI {
                 .retrieve(run_id)
                 .await?;
 
-            self.add_debug_message(format!("Run status: {:?}", run.status));
+            self.add_debug_message(format!(
+                "Run status, wait for run completion: {:?}",
+                run.status
+            ));
 
             match run.status {
                 RunStatus::Completed => {
                     self.add_debug_message("Run completed successfully".to_string());
+                    let response = self.get_latest_message(thread_id).await?;
+                    self.add_debug_message(format!("Completed run Status: {}", response));
                     return Ok(());
-                }
-                RunStatus::Failed | RunStatus::Cancelled | RunStatus::Expired => {
-                    self.add_debug_message(format!("Run failed with status: {:?}", run.status));
-                    return Err(AIError::GameStateParseError(format!(
-                        "Run failed with status: {:?}",
-                        run.status
-                    )));
                 }
                 RunStatus::RequiresAction => {
                     self.add_debug_message(
                         "Run requires action, handling function call".to_string(),
                     );
-                    self.handle_function_call(thread_id).await?;
+                    match self.handle_required_action(thread_id, run_id, &run).await {
+                        Ok(_) => {
+                            requires_action_attempts = 0;
+                        }
+                        Err(e) => {
+                            requires_action_attempts += 1;
+                            if requires_action_attempts >= MAX_REQUIRES_ACTION_ATTEMPTS {
+                                self.add_debug_message(
+                                    "Max attempts reached, creating dummy character".to_string(),
+                                );
+                                let dummy_character = self.create_dummy_character();
+                                self.submit_tool_output(
+                                    thread_id,
+                                    run_id,
+                                    "create_character_sheet",
+                                    &dummy_character,
+                                )
+                                .await?;
+                            } else {
+                                self.add_debug_message(format!(
+                                    "Error handling required action: {:?}",
+                                    e
+                                ));
+                            }
+                        }
+                    }
+                }
+                RunStatus::Failed | RunStatus::Cancelled | RunStatus::Expired => {
+                    let error_message = format!("Run failed with status: {:?}", run.status);
+                    self.add_debug_message(error_message.clone());
+                    return Err(AIError::GameStateParseError(error_message));
                 }
                 _ => {
                     self.add_debug_message("Run still in progress, waiting...".to_string());
                     tokio::time::sleep(Duration::from_secs(2)).await;
                 }
             }
+        }
+    }
+
+    async fn handle_required_action(
+        &self,
+        thread_id: &str,
+        run_id: &str,
+        run: &RunObject,
+    ) -> Result<(), AIError> {
+        if let Some(required_action) = &run.required_action {
+            if required_action.r#type == "submit_tool_outputs" {
+                for tool_call in &required_action.submit_tool_outputs.tool_calls {
+                    self.add_debug_message(format!("Processing tool call: {:?}", tool_call));
+                    match tool_call.function.name.as_str() {
+                        "create_character_sheet" => {
+                            let args: serde_json::Value =
+                                serde_json::from_str(&tool_call.function.arguments)?;
+                            self.add_debug_message(format!(
+                                "Character creation arguments: {:?}",
+                                args
+                            ));
+                            let character_sheet = match self.create_character(&args).await {
+                                Ok(sheet) => sheet,
+                                Err(e) => {
+                                    self.add_debug_message(format!(
+                                        "Error creating character: {:?}",
+                                        e
+                                    ));
+                                    self.create_dummy_character()
+                                }
+                            };
+                            self.submit_tool_output(
+                                thread_id,
+                                run_id,
+                                &tool_call.id,
+                                &character_sheet,
+                            )
+                            .await?;
+                        }
+                        _ => {
+                            return Err(AIError::GameStateParseError(format!(
+                                "Unknown function: {}",
+                                tool_call.function.name
+                            )))
+                        }
+                    }
+                }
+                Ok(())
+            } else {
+                Err(AIError::GameStateParseError(format!(
+                    "Unknown required action type: {}",
+                    required_action.r#type
+                )))
+            }
+        } else {
+            Err(AIError::GameStateParseError(
+                "No required action found".to_string(),
+            ))
         }
     }
 
@@ -268,7 +357,7 @@ impl GameAI {
 
         if let Some(latest_message) = messages.data.first() {
             if let Some(MessageContent::Text(text_content)) = latest_message.content.first() {
-                self.add_debug_message(text_content.text.value.clone());
+                self.add_debug_message(format!("latest_message: {:?}", text_content.clone()));
                 return Ok(text_content.text.value.clone());
             }
         }
@@ -420,106 +509,19 @@ impl GameAI {
         }
     }
 
-    async fn handle_function_call(&self, thread_id: &str) -> Result<(), AIError> {
-        let message = self.get_latest_message(thread_id).await?;
-        let json_message: serde_json::Value = serde_json::from_str(&message)?;
-
-        if let Some(function_call) = json_message.get("function_call") {
-            let function_name = function_call
-                .get("name")
-                .ok_or(AIError::NoMessageFound)?
-                .as_str()
-                .unwrap();
-            let function_args = function_call
-                .get("arguments")
-                .ok_or(AIError::NoMessageFound)?;
-
-            match function_name {
-                "create_character_sheet" => {
-                    let character_sheet = self.create_character(function_args).await?;
-                    self.submit_function_output(
-                        thread_id,
-                        "create_character_sheet",
-                        &character_sheet,
-                    )
-                    .await?;
-                    Ok(())
-                }
-                _ => Err(AIError::GameStateParseError(format!(
-                    "Unknown function: {}",
-                    function_name
-                ))),
-            }
-        } else {
-            // Attempt to extract the function call from within the message text
-            if let Some(reasoning) = json_message.get("reasoning") {
-                if reasoning.as_str().unwrap_or("").contains("function call") {
-                    let function_call_text = reasoning
-                        .as_str()
-                        .unwrap_or("")
-                        .split("function call")
-                        .nth(1)
-                        .unwrap_or("")
-                        .trim();
-                    let function_call_json: serde_json::Value =
-                        serde_json::from_str(function_call_text)?;
-
-                    if let Some(function_call) = function_call_json.get("function_call") {
-                        let function_name = function_call
-                            .get("name")
-                            .ok_or(AIError::NoMessageFound)?
-                            .as_str()
-                            .unwrap();
-                        let function_args = function_call
-                            .get("arguments")
-                            .ok_or(AIError::NoMessageFound)?;
-
-                        match function_name {
-                            "create_character_sheet" => {
-                                let character_sheet = self.create_character(function_args).await?;
-                                self.submit_function_output(
-                                    thread_id,
-                                    "create_character_sheet",
-                                    &character_sheet,
-                                )
-                                .await?;
-                                Ok(())
-                            }
-                            _ => Err(AIError::GameStateParseError(format!(
-                                "Unknown function: {}",
-                                function_name
-                            ))),
-                        }
-                    } else {
-                        Err(AIError::GameStateParseError(
-                            "No function call found".to_string(),
-                        ))
-                    }
-                } else {
-                    Err(AIError::GameStateParseError(
-                        "No function call found".to_string(),
-                    ))
-                }
-            } else {
-                Err(AIError::GameStateParseError(
-                    "No function call found".to_string(),
-                ))
-            }
-        }
-    }
-
-    pub async fn submit_function_output(
+    async fn submit_tool_output(
         &self,
         thread_id: &str,
-        function_name: &str,
+        run_id: &str,
+        tool_call_id: &str,
         output: &impl Serialize,
     ) -> Result<(), AIError> {
         let tool_output = serde_json::to_string(output)
             .map_err(|e| AIError::GameStateParseError(e.to_string()))?;
 
-        let submit_request = async_openai::types::SubmitToolOutputsRunRequest {
+        let submit_request = SubmitToolOutputsRunRequest {
             tool_outputs: vec![ToolsOutputs {
-                tool_call_id: Some(function_name.to_string()),
+                tool_call_id: Some(tool_call_id.to_string()),
                 output: Some(tool_output),
             }],
             stream: None,
@@ -528,156 +530,185 @@ impl GameAI {
         self.client
             .threads()
             .runs(thread_id)
-            .submit_tool_outputs(thread_id, submit_request)
+            .submit_tool_outputs(run_id, submit_request)
             .await?;
 
         Ok(())
     }
 
     async fn create_character(&self, args: &serde_json::Value) -> Result<CharacterSheet, AIError> {
-        fn extract_str_field<'a>(
-            args: &'a serde_json::Value,
-            field: &str,
-        ) -> Result<&'a str, AIError> {
+        self.add_debug_message(format!("Creating character from args: {:?}", args));
+
+        // Helper function to extract a string
+        fn extract_str(args: &serde_json::Value, field: &str) -> Result<String, AIError> {
             args.get(field)
+                .and_then(|v| v.as_str())
                 .ok_or_else(|| {
-                    AIError::GameStateParseError(format!("Missing '{}' argument", field))
-                })?
-                .as_str()
-                .ok_or_else(|| {
-                    AIError::GameStateParseError(format!("'{}' should be a string", field))
+                    AIError::GameStateParseError(format!("Missing or invalid {}", field))
                 })
+                .map(String::from)
         }
 
-        fn extract_i64_field(args: &serde_json::Value, field: &str) -> Result<u8, AIError> {
+        // Helper function to extract a u8
+        fn extract_u8(args: &serde_json::Value, field: &str) -> Result<u8, AIError> {
             args.get(field)
+                .and_then(|v| v.as_u64())
                 .ok_or_else(|| {
-                    AIError::GameStateParseError(format!("Missing '{}' attribute", field))
-                })?
-                .as_i64()
-                .ok_or_else(|| {
-                    AIError::GameStateParseError(format!("'{}' should be an integer", field))
+                    AIError::GameStateParseError(format!("Missing or invalid {}", field))
                 })
                 .and_then(|v| {
-                    v.try_into().map_err(|_| {
-                        AIError::GameStateParseError(format!("'{}' out of range", field))
+                    u8::try_from(v).map_err(|_| {
+                        AIError::GameStateParseError(format!("{} out of range", field))
                     })
                 })
         }
 
-        let name = extract_str_field(args, "name")?.to_string();
-        let race = extract_str_field(args, "race")?.to_string();
-        let gender = extract_str_field(args, "gender")?.to_string();
-        let backstory = extract_str_field(args, "backstory")?.to_string();
+        // Extract basic information
+        let name = extract_str(args, "name")?;
+        let race_str = extract_str(args, "race")?;
+        let gender = extract_str(args, "gender")?;
+        let backstory = extract_str(args, "backstory")?;
 
-        let attributes = args.get("attributes").ok_or(AIError::GameStateParseError(
-            "Missing 'attributes' argument".to_string(),
-        ))?;
-        let body = extract_i64_field(attributes, "body")?;
-        let agility = extract_i64_field(attributes, "agility")?;
-        let reaction = extract_i64_field(attributes, "reaction")?;
-        let strength = extract_i64_field(attributes, "strength")?;
-        let willpower = extract_i64_field(attributes, "willpower")?;
-        let logic = extract_i64_field(attributes, "logic")?;
-        let intuition = extract_i64_field(attributes, "intuition")?;
-        let charisma = extract_i64_field(attributes, "charisma")?;
-        let edge = extract_i64_field(attributes, "edge")?;
-        let magic = attributes.get("magic").map_or(Ok(0), |v| {
-            v.as_i64()
-                .unwrap_or(0)
-                .try_into()
-                .map_err(|_| AIError::GameStateParseError("'magic' out of range".to_string()))
-        })?;
-        let resonance = attributes.get("resonance").map_or(Ok(0), |v| {
-            v.as_i64()
-                .unwrap_or(0)
-                .try_into()
-                .map_err(|_| AIError::GameStateParseError("'resonance' out of range".to_string()))
-        })?;
+        // Parse race
+        let race = match race_str.as_str() {
+            "Human" => Race::Human,
+            "Elf" => Race::Elf,
+            "Dwarf" => Race::Dwarf,
+            "Ork" => Race::Ork,
+            "Troll" => Race::Troll,
+            _ => return Err(AIError::GameStateParseError("Invalid race".to_string())),
+        };
 
-        let skills = args
+        // Extract attributes
+        let attributes_obj = args
+            .get("attributes")
+            .ok_or_else(|| AIError::GameStateParseError("Missing attributes".to_string()))?;
+
+        let body = extract_u8(attributes_obj, "body")?;
+        let agility = extract_u8(attributes_obj, "agility")?;
+        let reaction = extract_u8(attributes_obj, "reaction")?;
+        let strength = extract_u8(attributes_obj, "strength")?;
+        let willpower = extract_u8(attributes_obj, "willpower")?;
+        let logic = extract_u8(attributes_obj, "logic")?;
+        let intuition = extract_u8(attributes_obj, "intuition")?;
+        let charisma = extract_u8(attributes_obj, "charisma")?;
+        let edge = extract_u8(attributes_obj, "edge")?;
+        let magic = attributes_obj
+            .get("magic")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u8)
+            .unwrap_or(0);
+        let resonance = attributes_obj
+            .get("resonance")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u8)
+            .unwrap_or(0);
+
+        // Extract skills
+        let skills_obj = args
             .get("skills")
-            .ok_or(AIError::GameStateParseError(
-                "Missing 'skills' argument".to_string(),
-            ))?
-            .as_object()
-            .ok_or(AIError::GameStateParseError(
-                "'skills' should be an object".to_string(),
-            ))?;
-        let skill_map = skills
-            .iter()
-            .map(|(k, v)| {
-                v.as_i64()
-                    .ok_or(AIError::GameStateParseError(format!(
-                        "'{}' skill value should be an integer",
-                        k
-                    )))
-                    .and_then(|val| {
-                        val.try_into()
-                            .map_err(|_| {
-                                AIError::GameStateParseError(format!(
-                                    "'{}' skill value out of range",
-                                    k
-                                ))
-                            })
-                            .map(|v| (k.clone(), v))
-                    })
-            })
-            .collect::<Result<std::collections::HashMap<_, _>, _>>()?;
+            .and_then(|v| v.as_object())
+            .ok_or_else(|| AIError::GameStateParseError("Missing skills".to_string()))?;
 
+        let mut skills = Skills {
+            combat: HashMap::new(),
+            physical: HashMap::new(),
+            social: HashMap::new(),
+            technical: HashMap::new(),
+        };
+
+        for (category, skills_map) in [
+            ("combat", &mut skills.combat),
+            ("physical", &mut skills.physical),
+            ("social", &mut skills.social),
+            ("technical", &mut skills.technical),
+        ] {
+            let category_obj = skills_obj
+                .get(category)
+                .and_then(|v| v.as_object())
+                .ok_or_else(|| {
+                    AIError::GameStateParseError(format!("Missing {} skills", category))
+                })?;
+
+            for (skill_name, skill_value) in category_obj {
+                let value = skill_value.as_u64().ok_or_else(|| {
+                    AIError::GameStateParseError(format!("Invalid skill value for {}", skill_name))
+                })?;
+                skills_map.insert(skill_name.clone(), value as u8);
+            }
+        }
+
+        // Extract qualities
         let qualities = args
             .get("qualities")
-            .ok_or(AIError::GameStateParseError(
-                "Missing 'qualities' argument".to_string(),
-            ))?
-            .as_array()
-            .ok_or(AIError::GameStateParseError(
-                "'qualities' should be an array".to_string(),
-            ))?;
-        let quality_list = qualities
-            .iter()
-            .map(|quality| {
-                let name = quality
-                    .get("name")
-                    .ok_or(AIError::GameStateParseError(
-                        "Missing 'name' in quality".to_string(),
-                    ))?
-                    .as_str()
-                    .ok_or(AIError::GameStateParseError(
-                        "'name' in quality should be a string".to_string(),
-                    ))?
-                    .to_string();
-                let positive = quality
-                    .get("positive")
-                    .ok_or(AIError::GameStateParseError(
-                        "Missing 'positive' in quality".to_string(),
-                    ))?
-                    .as_bool()
-                    .ok_or(AIError::GameStateParseError(
-                        "'positive' in quality should be a boolean".to_string(),
-                    ))?;
-                Ok(Quality { name, positive })
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .map(|quality| {
+                        let name = extract_str(quality, "name")?;
+                        let positive = quality
+                            .get("positive")
+                            .and_then(|v| v.as_bool())
+                            .ok_or_else(|| {
+                                AIError::GameStateParseError(
+                                    "Missing or invalid 'positive' in quality".to_string(),
+                                )
+                            })?;
+                        Ok(Quality { name, positive })
+                    })
+                    .collect::<Result<Vec<Quality>, AIError>>()
             })
-            .collect::<Result<Vec<Quality>, AIError>>()?;
+            .unwrap_or_else(|| Ok(vec![]))?;
 
+        self.add_debug_message("Character creation successful".to_string());
+
+        // Create and return the CharacterSheet
         Ok(CharacterSheet::new(
-            name,
-            race,
-            gender,
-            backstory,
-            body,
-            agility,
-            reaction,
-            strength,
-            willpower,
-            logic,
-            intuition,
-            charisma,
-            edge,
-            magic,
-            resonance,
-            skill_map,
-            quality_list,
+            name, race, gender, backstory, body, agility, reaction, strength, willpower, logic,
+            intuition, charisma, edge, magic, resonance, skills, qualities,
         ))
+    }
+    fn create_dummy_character(&self) -> CharacterSheet {
+        let dummy_skills = Skills {
+            combat: [
+                ("Unarmed Combat".to_string(), 1),
+                ("Pistols".to_string(), 1),
+            ]
+            .iter()
+            .cloned()
+            .collect(),
+            physical: [("Running".to_string(), 1), ("Sneaking".to_string(), 1)]
+                .iter()
+                .cloned()
+                .collect(),
+            social: [("Etiquette".to_string(), 1), ("Negotiation".to_string(), 1)]
+                .iter()
+                .cloned()
+                .collect(),
+            technical: [("Computer".to_string(), 1), ("First Aid".to_string(), 1)]
+                .iter()
+                .cloned()
+                .collect(),
+        };
+
+        CharacterSheet::new(
+            "Dummy Character".to_string(),
+            Race::Human,
+            "Unspecified".to_string(),
+            "This is a dummy character created as a fallback.".to_string(),
+            3, // body
+            3, // agility
+            3, // reaction
+            3, // strength
+            3, // willpower
+            3, // logic
+            3, // intuition
+            3, // charisma
+            3, // edge
+            0, // magic
+            0, // resonance
+            dummy_skills,
+            vec![], // qualities
+        )
     }
 }

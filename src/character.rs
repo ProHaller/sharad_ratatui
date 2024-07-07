@@ -1,14 +1,27 @@
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Race {
     Human,
     Elf,
     Dwarf,
-    Orc,
+    Ork,
     Troll,
+}
+
+impl fmt::Display for Race {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Race::Human => write!(f, "Human"),
+            Race::Elf => write!(f, "Elf"),
+            Race::Dwarf => write!(f, "Dwarf"),
+            Race::Ork => write!(f, "Ork"),
+            Race::Troll => write!(f, "Troll"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,7 +60,7 @@ pub struct CharacterSheet {
     pub social_limit: u8,
 
     // Skills
-    pub active_skills: HashMap<String, u8>,
+    pub skills: Skills,
     pub knowledge_skills: HashMap<String, u8>,
 
     // Other Attributes
@@ -59,6 +72,14 @@ pub struct CharacterSheet {
     pub bioware: Vec<String>,
     pub inventory: Vec<Item>,
     pub matrix_attributes: Option<MatrixAttributes>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Skills {
+    pub combat: HashMap<String, u8>,
+    pub physical: HashMap<String, u8>,
+    pub social: HashMap<String, u8>,
+    pub technical: HashMap<String, u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,7 +113,7 @@ pub struct MatrixAttributes {
 impl CharacterSheet {
     pub fn new(
         name: String,
-        race: String,
+        race: Race,
         gender: String,
         backstory: String,
         body: u8,
@@ -106,18 +127,9 @@ impl CharacterSheet {
         edge: u8,
         magic: u8,
         resonance: u8,
-        active_skills: HashMap<String, u8>,
+        skills: Skills,
         qualities: Vec<Quality>,
     ) -> Self {
-        let race = match race.as_str() {
-            "Human" => Race::Human,
-            "Elf" => Race::Elf,
-            "Dwarf" => Race::Dwarf,
-            "Orc" => Race::Orc,
-            "Troll" => Race::Troll,
-            _ => Race::Human,
-        };
-
         let mut sheet = CharacterSheet {
             name,
             race: race.clone(),
@@ -144,7 +156,7 @@ impl CharacterSheet {
             physical_limit: 1,
             mental_limit: 1,
             social_limit: 1,
-            active_skills,
+            skills,
             knowledge_skills: HashMap::new(),
             nuyen: 0,
             lifestyle: "Street".to_string(),
@@ -191,7 +203,7 @@ impl CharacterSheet {
                 self.strength = (self.strength + 2).min(8);
                 self.willpower = (self.willpower + 1).min(7);
             }
-            Race::Orc => {
+            Race::Ork => {
                 self.body = (self.body + 3).min(9);
                 self.strength = (self.strength + 2).min(8);
                 self.logic = self.logic.min(5);
@@ -218,5 +230,15 @@ impl CharacterSheet {
             ((self.logic * 2 + self.intuition + self.willpower) as f32 / 3.0).ceil() as u8;
         self.social_limit =
             ((self.charisma * 2 + self.willpower + self.essence as u8) as f32 / 3.0).ceil() as u8;
+    }
+
+    // Helper method to get all active skills
+    pub fn get_all_active_skills(&self) -> HashMap<String, u8> {
+        let mut all_skills = HashMap::new();
+        all_skills.extend(self.skills.combat.clone());
+        all_skills.extend(self.skills.physical.clone());
+        all_skills.extend(self.skills.social.clone());
+        all_skills.extend(self.skills.technical.clone());
+        all_skills
     }
 }
