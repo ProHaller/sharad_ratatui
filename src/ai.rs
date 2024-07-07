@@ -296,11 +296,6 @@ impl GameAI {
                                 }
                             };
 
-                            self.add_debug_message(format!(
-                                "Character sheet created: {:?}",
-                                character_sheet
-                            ));
-
                             // Update the conversation state with the new character sheet
                             if let Some(state) = &mut self.conversation_state {
                                 state.character_sheet = Some(character_sheet.clone());

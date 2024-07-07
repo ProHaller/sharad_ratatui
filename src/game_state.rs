@@ -10,6 +10,7 @@ pub struct GameState {
     pub character_sheet: Option<CharacterSheet>,
     #[serde(default)]
     pub message_history: Vec<Message>,
+    pub save_name: String,
 }
 
 impl std::fmt::Debug for GameState {

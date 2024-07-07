@@ -557,7 +557,7 @@ impl App {
 
     pub fn add_message(&mut self, message: Message) {
         self.game_content.push(message);
-        self.scroll_to_bottom();
+        self.update_scroll();
     }
 
     pub async fn send_message(
@@ -615,7 +615,7 @@ impl App {
     }
 
     fn scroll_to_bottom(&mut self) {
-        self.game_content_scroll = self.game_content.len().saturating_sub(self.visible_lines);
+        self.game_content_scroll = self.total_lines.saturating_sub(self.visible_lines);
         self.update_scroll();
     }
 
@@ -669,6 +669,7 @@ impl App {
                 thread_id,
                 character_sheet: None,
                 message_history: Vec::new(),
+                save_name: save_name.clone(),
             };
 
             // Set the current_game
@@ -717,8 +718,8 @@ impl App {
 
     pub fn save_current_game(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(game_state) = &self.current_game {
-            let save_name = game_state.assistant_id.clone(); // Clone the assistant_id
-            self.save_game(&save_name)?;
+            let save_name = &game_state.save_name; // Use save_name instead of assistant_id
+            self.save_game(save_name)?;
             self.add_debug_message(format!("Game saved with name: {}", save_name));
             Ok(())
         } else {
@@ -940,7 +941,15 @@ impl App {
     }
 
     pub async fn load_game(&mut self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let game_state = GameState::load_from_file(path)?;
+        let mut game_state = GameState::load_from_file(path)?;
+
+        // Extract the save name from the path
+        let save_name = Path::new(path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        game_state.save_name = save_name;
 
         if self.ai_client.is_none() {
             self.initialize_ai_client().await?;
@@ -964,7 +973,7 @@ impl App {
         // Add a system message indicating the game was loaded
         self.add_message(Message::new(
             MessageType::System,
-            "Game loaded successfully!".to_string(),
+            format!("Game '{}' loaded successfully!", game_state.save_name),
         ));
 
         // Store the game state
