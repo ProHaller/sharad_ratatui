@@ -62,7 +62,11 @@ fn render_load_game_menu(f: &mut Frame, app: &App, area: Rect) {
                     Line::from(Span::styled(
                         format!("{}. {}", (i + 1), save),
                         Style::default()
-                            .fg(Color::Yellow)
+                            .fg(if !app.backspace_counter {
+                                Color::Yellow
+                            } else {
+                                Color::Red
+                            })
                             .add_modifier(Modifier::BOLD),
                     ))
                 } else {

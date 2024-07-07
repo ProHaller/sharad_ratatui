@@ -58,6 +58,7 @@ pub struct App {
     pub is_waiting_for_name: bool,
     pub is_waiting_for_gender: bool,
     pub is_waiting_for_backstory: bool,
+    pub backspace_counter: bool,
 }
 
 impl App {
@@ -115,6 +116,7 @@ impl App {
             is_waiting_for_name: false,
             is_waiting_for_gender: false,
             is_waiting_for_backstory: false,
+            backspace_counter: false,
         };
 
         (app, command_receiver)
@@ -847,10 +849,21 @@ impl App {
             KeyCode::Esc => {
                 self.state = AppState::MainMenu;
             }
-            KeyCode::Up => self.navigate_load_game_menu(-1),
-            KeyCode::Down => self.navigate_load_game_menu(1),
+            KeyCode::Up => {
+                self.backspace_counter = false;
+                self.navigate_load_game_menu(-1)
+            }
+            KeyCode::Down => {
+                self.backspace_counter = false;
+                self.navigate_load_game_menu(1)
+            }
             KeyCode::Backspace => {
-                self.delete_save();
+                if self.backspace_counter {
+                    self.delete_save();
+                    self.backspace_counter = false;
+                } else {
+                    self.backspace_counter = true;
+                }
             }
 
             KeyCode::Char(c) => {
@@ -956,6 +969,27 @@ impl App {
         Ok(())
     }
 
+    fn handle_confirm_input(&mut self, origin: AppState, key: KeyEvent) -> bool {
+        if key.kind != KeyEventKind::Press {
+            {};
+        }
+        match key.code {
+            KeyCode::Backspace
+            | KeyCode::Esc
+            | KeyCode::Char('n')
+            | KeyCode::Char('N')
+            | KeyCode::Char('q')
+            | KeyCode::Char('Q') => {
+                self.state = origin;
+                return false;
+            }
+            KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
+                self.state = origin;
+                return true;
+            }
+            _ => false,
+        }
+    }
     fn handle_save_name_input(&mut self, key: KeyEvent) {
         if key.kind != KeyEventKind::Press {
             return;
