@@ -206,8 +206,6 @@ impl GameAI {
             match run.status {
                 RunStatus::Completed => {
                     self.add_debug_message("Run completed successfully".to_string());
-                    let response = self.get_latest_message(thread_id).await?;
-                    self.add_debug_message(format!("Completed run Status: {}", response));
                     return Ok(());
                 }
                 RunStatus::RequiresAction => {
@@ -268,10 +266,6 @@ impl GameAI {
                         "create_character_sheet" => {
                             let args: serde_json::Value =
                                 serde_json::from_str(&tool_call.function.arguments)?;
-                            self.add_debug_message(format!(
-                                "Character creation arguments: {:?}",
-                                args
-                            ));
                             let character_sheet = match self.create_character(&args).await {
                                 Ok(sheet) => sheet,
                                 Err(e) => {
@@ -357,7 +351,6 @@ impl GameAI {
 
         if let Some(latest_message) = messages.data.first() {
             if let Some(MessageContent::Text(text_content)) = latest_message.content.first() {
-                self.add_debug_message(format!("latest_message: {:?}", text_content.clone()));
                 return Ok(text_content.text.value.clone());
             }
         }
