@@ -572,13 +572,24 @@ impl App {
         if let Some(ai) = &mut self.ai_client {
             match ai.send_message(&formatted_message).await {
                 Ok(game_message) => {
+                    self.add_debug_message(format!(
+                        "Received game message from AI: {:?}",
+                        game_message
+                    ));
+
                     self.add_message(Message::new(
                         MessageType::Game,
                         game_message.narration.clone(),
                     ));
 
                     if let Some(character_sheet) = game_message.character_sheet {
+                        self.add_debug_message(format!(
+                            "Updating character sheet: {:?}",
+                            character_sheet
+                        ));
                         self.update_character_sheet(character_sheet);
+                    } else {
+                        self.add_debug_message("No character sheet in game message".to_string());
                     }
 
                     if self.settings.debug_mode {
@@ -597,9 +608,9 @@ impl App {
                 }
             }
         } else {
-            let error_msg = "AI client not initialized".to_string();
-            self.add_message(Message::new(MessageType::System, error_msg.clone()));
-            Err(error_msg.into())
+            let error_message = "AI client not initialized".to_string();
+            self.add_message(Message::new(MessageType::System, error_message.clone()));
+            Err(error_message.into())
         }
     }
 
@@ -682,7 +693,10 @@ impl App {
     }
 
     pub fn update_character_sheet(&mut self, character_sheet: CharacterSheet) {
-        self.add_debug_message(format!("Updating character sheet: {:?}", character_sheet));
+        self.add_debug_message(format!(
+            "Updating character sheet in App: {:?}",
+            character_sheet
+        ));
         if let Some(game_state) = &mut self.current_game {
             game_state.character_sheet = Some(character_sheet.clone());
             self.add_debug_message("Character sheet updated in game state".to_string());

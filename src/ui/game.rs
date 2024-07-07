@@ -237,7 +237,7 @@ pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
         if let Some(sheet) = &game_state.character_sheet {
             draw_character_sheet(f, sheet, game_info_area);
         } else {
-            let no_character = Paragraph::new("No character sheet available.".to_string())
+            let no_character = Paragraph::new("No character sheet available.")
                 .style(Style::default().fg(Color::Yellow))
                 .alignment(Alignment::Center);
             f.render_widget(no_character, game_info_area);

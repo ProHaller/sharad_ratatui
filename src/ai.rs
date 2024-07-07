@@ -184,11 +184,12 @@ impl GameAI {
         self.wait_for_run_completion(&thread_id, &run.id).await?;
 
         let response = self.get_latest_message(&thread_id).await?;
-        self.update_game_state(&response)?;
+        let game_message = self.update_game_state(&response)?;
 
-        let game_message: GameMessage = serde_json::from_str(&response).map_err(|e| {
-            AIError::GameStateParseError(format!("Failed to parse GameMessage: {}", e))
-        })?;
+        self.add_debug_message(format!(
+            "Final game message to be returned: {:?}",
+            game_message
+        ));
 
         Ok(game_message)
     }
@@ -295,11 +296,17 @@ impl GameAI {
                                 }
                             };
 
+                            self.add_debug_message(format!(
+                                "Character sheet created: {:?}",
+                                character_sheet
+                            ));
+
                             // Update the conversation state with the new character sheet
                             if let Some(state) = &mut self.conversation_state {
                                 state.character_sheet = Some(character_sheet.clone());
+                            } else {
                                 self.add_debug_message(
-                                    "Character sheet updated in conversation state".to_string(),
+                                    "No conversation state to update character sheet".to_string(),
                                 );
                             }
 
@@ -310,6 +317,11 @@ impl GameAI {
                                 &character_sheet,
                             )
                             .await?;
+
+                            self.add_debug_message(
+                                format!("Tool output submitted: {:?}", &character_sheet)
+                                    .to_string(),
+                            );
                         }
                         _ => {
                             return Err(AIError::GameStateParseError(format!(
@@ -384,7 +396,7 @@ impl GameAI {
         Err(AIError::NoMessageFound)
     }
 
-    fn update_game_state(&mut self, response: &str) -> Result<(), AIError> {
+    fn update_game_state(&mut self, response: &str) -> Result<GameMessage, AIError> {
         self.add_debug_message(format!("Updating game state with response: {}", response));
 
         // Parse the response as a GameMessage
@@ -393,14 +405,20 @@ impl GameAI {
         })?;
 
         if let Some(state) = &self.conversation_state {
-            // Include the character sheet from the conversation state
             game_message.character_sheet = state.character_sheet.clone();
-            self.add_debug_message("Character sheet included from conversation state".to_string());
+            self.add_debug_message(format!(
+                "Character sheet from conversation state: {:?}",
+                game_message.character_sheet
+            ));
         } else {
             self.add_debug_message("No active conversation state".to_string());
         }
 
-        Ok(())
+        self.add_debug_message(format!(
+            "Game message from updated state: {:?}",
+            game_message
+        ));
+        Ok(game_message)
     }
 
     async fn submit_tool_output(
