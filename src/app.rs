@@ -572,10 +572,10 @@ impl App {
         if let Some(ai) = &mut self.ai_client {
             match ai.send_message(&formatted_message).await {
                 Ok(game_message) => {
-                    self.add_debug_message(format!(
-                        "Received game message from AI: {:?}",
-                        game_message
-                    ));
+                    // self.add_debug_message(format!(
+                    //     "Received game message from AI: {:?}",
+                    //     game_message
+                    // ));
 
                     self.add_message(Message::new(
                         MessageType::Game,
@@ -583,10 +583,10 @@ impl App {
                     ));
 
                     if let Some(character_sheet) = game_message.character_sheet {
-                        self.add_debug_message(format!(
-                            "Updating character sheet: {:?}",
-                            character_sheet
-                        ));
+                        // self.add_debug_message(format!(
+                        //     "Updating character sheet: {:?}",
+                        //     character_sheet
+                        // ));
                         self.update_character_sheet(character_sheet);
                     } else {
                         self.add_debug_message("No character sheet in game message".to_string());
@@ -693,10 +693,10 @@ impl App {
     }
 
     pub fn update_character_sheet(&mut self, character_sheet: CharacterSheet) {
-        self.add_debug_message(format!(
-            "Updating character sheet in App: {:?}",
-            character_sheet
-        ));
+        // self.add_debug_message(format!(
+        //     "Updating character sheet in App: {:?}",
+        //     character_sheet
+        // ));
         if let Some(game_state) = &mut self.current_game {
             game_state.character_sheet = Some(character_sheet.clone());
             self.add_debug_message("Character sheet updated in game state".to_string());
@@ -746,7 +746,7 @@ impl App {
     // Update the handle_ai_response method
 
     pub fn handle_ai_response(&mut self, response: String) {
-        self.add_debug_message(format!("Received AI response: {}", response));
+        // self.add_debug_message(format!("Received AI response: {}", response));
 
         // Remove the "AI is thinking..." message if it exists
         if let Some(last_message) = self.game_content.last() {
@@ -760,7 +760,7 @@ impl App {
         // Attempt to parse the AI response as a GameMessage
         match serde_json::from_str::<GameMessage>(&response) {
             Ok(game_message) => {
-                self.add_debug_message(format!("Parsed GameMessage: {:?}", game_message));
+                // self.add_debug_message(format!("Parsed GameMessage: {:?}", game_message));
                 self.current_game_response = Some(game_message.clone());
 
                 // Add the narration to the game content
@@ -802,12 +802,12 @@ impl App {
             }
         }
 
-        // Debug: Print current game state
-        if let Some(game_state) = &self.current_game {
-            self.add_debug_message(format!("Current game state: {:?}", game_state));
-        } else {
-            self.add_debug_message("No current game state".to_string());
-        }
+        // // Debug: Print current game state
+        // if let Some(game_state) = &self.current_game {
+        //     self.add_debug_message(format!("Current game state: {:?}", game_state));
+        // } else {
+        //     self.add_debug_message("No current game state".to_string());
+        // }
     }
 
     pub fn scan_save_files() -> Vec<String> {

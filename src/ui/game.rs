@@ -3,7 +3,7 @@ use crate::character::CharacterSheet;
 use crate::message::MessageType;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::*,
     Frame,
@@ -34,35 +34,51 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
 }
 
 fn draw_character_sheet(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
+    // Define the main layout
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),  // Name, Race, Gender
-            Constraint::Length(10), // Attributes
-            Constraint::Length(2),  // Skills header
-            Constraint::Min(0),     // Skills
-            Constraint::Length(3),  // Qualities
+            Constraint::Length(12), // Attributes
+            Constraint::Min(0),     // Skills and Qualities
         ])
         .split(area);
 
-    // Basic Info
-    let basic_info = Paragraph::new(vec![
-        Line::from(vec![
-            Span::styled("Name: ", Style::default().fg(Color::Yellow)),
-            Span::raw(&sheet.name),
-        ]),
-        Line::from(vec![
-            Span::styled("Race: ", Style::default().fg(Color::Yellow)),
-            Span::raw(format!("{:?}", sheet.race)),
-        ]),
-        Line::from(vec![
-            Span::styled("Gender: ", Style::default().fg(Color::Yellow)),
-            Span::raw(&sheet.gender),
-        ]),
-    ]);
-    f.render_widget(basic_info, chunks[0]);
+    draw_basic_info(f, sheet, chunks[0]);
+    draw_attributes(f, sheet, chunks[1]);
+    draw_skills_and_qualities(f, sheet, chunks[2]);
+}
 
-    // Attributes
+// Helper function to create styled text
+fn styled_text<'a>(label: &'a str, value: &'a str, label_color: Color) -> Line<'a> {
+    Line::from(vec![
+        Span::styled(format!("{}: ", label), Style::default().fg(label_color)),
+        Span::raw(value),
+    ])
+}
+
+fn draw_basic_info(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
+    // Create a block for basic info
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title("Basic Information");
+
+    // Create the formatted race string
+    let race_string = format!("{:?}", sheet.race);
+
+    // Create the lines with proper lifetimes
+    let lines = vec![
+        styled_text("Name", &sheet.name, Color::Yellow),
+        styled_text("Race", &race_string, Color::Yellow),
+        styled_text("Gender", &sheet.gender, Color::Yellow),
+    ];
+
+    let basic_info = Paragraph::new(lines).block(block);
+
+    f.render_widget(basic_info, area);
+}
+
+fn draw_attributes(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     let attributes = vec![
         ("Body", sheet.body),
         ("Agility", sheet.agility),
@@ -81,51 +97,83 @@ fn draw_character_sheet(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
         .iter()
         .map(|(name, value)| {
             Row::new(vec![
-                Cell::from(*name),
+                Cell::from(format!("  {}", *name)),
                 Cell::from(value.to_string()).style(Style::default().fg(Color::Yellow)),
             ])
         })
         .collect();
 
     let attribute_widths = vec![Constraint::Percentage(100), Constraint::Percentage(100)];
-
     let attribute_table = Table::new(attribute_rows, attribute_widths)
-        .header(Row::new(vec!["Attribute", "Value"]).style(Style::default().fg(Color::Cyan)))
+        .header(
+            Row::new(vec!["Attribute", "Value"]).style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        )
+        .block(Block::default().borders(Borders::ALL).title("Attributes"))
         .widths(&[Constraint::Percentage(50), Constraint::Percentage(50)])
         .column_spacing(1);
 
-    f.render_widget(attribute_table, chunks[1]);
+    f.render_widget(attribute_table, area);
+}
 
-    // Skills header
-    let skills_header = Paragraph::new("Skills")
-        .style(Style::default().fg(Color::Cyan))
-        .alignment(Alignment::Center);
-    f.render_widget(skills_header, chunks[2]);
+fn draw_skills_and_qualities(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(0), Constraint::Length(7)])
+        .split(area);
 
-    // Skills
-    let mut skill_lines = Vec::new();
+    draw_skills(f, sheet, chunks[0]);
+    draw_qualities(f, sheet, chunks[1]);
+}
+
+fn draw_skills(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
+    let mut rows = Vec::new();
+
     for (category, skills) in [
         ("Combat", &sheet.skills.combat),
         ("Physical", &sheet.skills.physical),
         ("Social", &sheet.skills.social),
         ("Technical", &sheet.skills.technical),
     ] {
-        skill_lines.push(Line::from(Span::styled(
-            category,
-            Style::default().fg(Color::Yellow),
-        )));
+        // Add a category header
+        rows.push(Row::new(vec![
+            Cell::from(Span::styled(
+                category,
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Cell::from(""), // Empty cell for alignment
+        ]));
+
+        // Add skills for this category
         for (skill, rating) in skills {
-            skill_lines.push(Line::from(vec![
-                Span::raw(format!("  {}: ", skill)),
-                Span::styled(rating.to_string(), Style::default().fg(Color::Green)),
+            rows.push(Row::new(vec![
+                Cell::from(Span::raw(format!("  {}", skill))),
+                Cell::from(Span::styled(
+                    rating.to_string(),
+                    Style::default().fg(Color::Yellow),
+                )),
             ]));
         }
+
+        // Add an empty row for spacing between categories
+        rows.push(Row::new(vec![Cell::from(""), Cell::from("")]));
     }
+    let widths = vec![Constraint::Percentage(50), Constraint::Percentage(50)];
 
-    let skills_paragraph = Paragraph::new(skill_lines).wrap(Wrap { trim: true });
-    f.render_widget(skills_paragraph, chunks[3]);
+    let table = Table::new(rows, widths)
+        .block(Block::default().borders(Borders::ALL).title("Skills"))
+        .widths(&[Constraint::Percentage(50), Constraint::Percentage(50)])
+        .column_spacing(1);
 
-    // Qualities
+    f.render_widget(table, area);
+}
+
+fn draw_qualities(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     let qualities: Vec<Line> = sheet
         .qualities
         .iter()
@@ -140,8 +188,10 @@ fn draw_character_sheet(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
         })
         .collect();
 
-    let qualities_paragraph = Paragraph::new(qualities).wrap(Wrap { trim: true });
-    f.render_widget(qualities_paragraph, chunks[4]);
+    let qualities_paragraph = Paragraph::new(qualities)
+        .block(Block::default().borders(Borders::ALL).title("Qualities"))
+        .wrap(Wrap { trim: true });
+    f.render_widget(qualities_paragraph, area);
 }
 
 pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
