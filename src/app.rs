@@ -532,31 +532,35 @@ impl App {
     }
 
     pub fn add_debug_message(&mut self, message: String) {
-        // Always add the debug message to game content
-        self.add_message(Message::new(
-            MessageType::System,
-            format!("Debug: {}", message),
-        ));
-
-        // If debug mode is enabled, also update the debug_info field
         if self.settings.debug_mode {
             self.debug_info = message;
         }
     }
 
     pub fn update_debug_info(&mut self) {
-        self.debug_info = format!(
-            "Scroll: {}/{}, Visible Lines: {}, Total Lines: {}, Messages: {}",
-            self.game_content_scroll,
-            self.total_lines.saturating_sub(self.visible_lines),
-            self.visible_lines,
-            self.total_lines,
-            self.game_content.len()
-        );
+        if self.settings.debug_mode {
+            self.debug_info = format!(
+                "Scroll: {}/{}, Visible Lines: {}, Total Lines: {}, Messages: {}",
+                self.game_content_scroll,
+                self.total_lines.saturating_sub(self.visible_lines),
+                self.visible_lines,
+                self.total_lines,
+                self.game_content.len()
+            );
+        }
     }
 
     pub fn add_message(&mut self, message: Message) {
         self.game_content.push(message);
+        self.add_debug_message("pushed message to game_content".to_string());
+        self.total_lines = self
+            .game_content
+            .iter()
+            .map(|message| {
+                let wrapped_lines = textwrap::wrap(&message.content, self.visible_lines);
+                wrapped_lines.len()
+            })
+            .sum();
         self.update_scroll();
     }
 
@@ -577,6 +581,10 @@ impl App {
                     //     game_message
                     // ));
 
+                    self.add_message(Message::new(
+                        MessageType::Game,
+                        game_message.reasoning.clone(),
+                    ));
                     self.add_message(Message::new(
                         MessageType::Game,
                         game_message.narration.clone(),
@@ -611,28 +619,6 @@ impl App {
             let error_message = "AI client not initialized".to_string();
             self.add_message(Message::new(MessageType::System, error_message.clone()));
             Err(error_message.into())
-        }
-    }
-
-    fn scroll_to_bottom(&mut self) {
-        self.game_content_scroll = self.total_lines.saturating_sub(self.visible_lines);
-        self.update_scroll();
-    }
-
-    pub async fn check_openai_api_key(&mut self) {
-        if let Some(api_key) = &self.settings.openai_api_key {
-            let client = Client::with_config(OpenAIConfig::new().with_api_key(api_key));
-            let is_valid = client.models().list().await.is_ok();
-
-            if !is_valid {
-                self.settings.openai_api_key = None;
-                if let Err(e) = self.settings.save_to_file("settings.json") {
-                    eprintln!(
-                        "Failed to save settings after removing invalid API key: {:?}",
-                        e
-                    );
-                }
-            }
         }
     }
 
@@ -747,8 +733,6 @@ impl App {
     // Update the handle_ai_response method
 
     pub fn handle_ai_response(&mut self, response: String) {
-        // self.add_debug_message(format!("Received AI response: {}", response));
-
         // Remove the "AI is thinking..." message if it exists
         if let Some(last_message) = self.game_content.last() {
             if last_message.content == "AI is thinking..."
@@ -761,19 +745,15 @@ impl App {
         // Attempt to parse the AI response as a GameMessage
         match serde_json::from_str::<GameMessage>(&response) {
             Ok(game_message) => {
-                // self.add_debug_message(format!("Parsed GameMessage: {:?}", game_message));
-                self.current_game_response = Some(game_message.clone());
-
-                // Add the narration to the game content
+                // Add the reasoning and narration to the game content
+                self.add_message(Message::new(
+                    MessageType::Game,
+                    game_message.reasoning.clone(),
+                ));
                 self.add_message(Message::new(
                     MessageType::Game,
                     game_message.narration.clone(),
                 ));
-
-                // If debug mode is enabled, add the reasoning as a debug message
-                if self.settings.debug_mode {
-                    self.add_debug_message(format!("AI Reasoning: {}", game_message.reasoning));
-                }
 
                 // Check if the response contains a character sheet and update it
                 if let Some(character_sheet) = game_message.character_sheet {
@@ -781,6 +761,11 @@ impl App {
                     self.update_character_sheet(character_sheet);
                 } else {
                     self.add_debug_message("No character sheet in AI response".to_string());
+                }
+
+                // Add debug message for AI reasoning if debug mode is on
+                if self.settings.debug_mode {
+                    self.add_debug_message(format!("AI Reasoning: {}", game_message.reasoning));
                 }
 
                 // Save the game after processing the response
@@ -802,13 +787,6 @@ impl App {
                 ));
             }
         }
-
-        // // Debug: Print current game state
-        // if let Some(game_state) = &self.current_game {
-        //     self.add_debug_message(format!("Current game state: {:?}", game_state));
-        // } else {
-        //     self.add_debug_message("No current game state".to_string());
-        // }
     }
 
     pub fn scan_save_files() -> Vec<String> {
@@ -980,8 +958,26 @@ impl App {
         self.current_game = Some(game_state);
 
         self.state = AppState::InGame;
-        self.update_scroll(); // This will set the scroll position to show the most recent messages
+
+        // Calculate total lines after loading the game content
+        self.total_lines = self
+            .game_content
+            .iter()
+            .map(|message| {
+                let wrapped_lines = textwrap::wrap(&message.content, self.visible_lines);
+                wrapped_lines.len()
+            })
+            .sum();
+
+        // Scroll to the bottom after updating the scroll
+        self.scroll_to_bottom();
+
         Ok(())
+    }
+
+    fn scroll_to_bottom(&mut self) {
+        self.game_content_scroll = self.total_lines.saturating_sub(self.visible_lines);
+        self.update_scroll();
     }
 
     fn handle_save_name_input(&mut self, key: KeyEvent) {

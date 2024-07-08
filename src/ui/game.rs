@@ -11,6 +11,8 @@ use ratatui::{
 use textwrap::{core::display_width, wrap};
 use unicode_segmentation::UnicodeSegmentation;
 
+// In ui/game.rs
+
 pub fn draw_in_game(f: &mut Frame, app: &mut App) {
     let size = f.size();
     app.debug_info = format!("Terminal size: {}x{}", size.width, size.height);
@@ -31,6 +33,14 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
 
     draw_game_content(f, app, chunks[0]);
     draw_user_input(f, app, chunks[1]);
+
+    // Add this at the end of the function to display debug info
+    if app.settings.debug_mode {
+        let debug_area = Rect::new(size.x, size.bottom() - 1, size.width, 1);
+        let debug_text =
+            Paragraph::new(app.debug_info.clone()).style(Style::default().fg(Color::Gray));
+        f.render_widget(debug_text, debug_area);
+    }
 }
 
 fn draw_character_sheet(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
@@ -234,17 +244,11 @@ pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
                     continue;
                 }
             }
-            MessageType::Game => {
-                if let Some(game_message) = message.parse_game_message() {
-                    (
-                        game_message.narration,
-                        Style::default().fg(Color::Green),
-                        Alignment::Left,
-                    )
-                } else {
-                    continue;
-                }
-            }
+            MessageType::Game => (
+                message.content.clone(),
+                Style::default().fg(Color::Green),
+                Alignment::Left,
+            ),
             MessageType::System => (
                 message.content.clone(),
                 Style::default().fg(Color::Yellow),
