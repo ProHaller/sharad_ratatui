@@ -492,7 +492,7 @@ impl App {
     pub fn submit_user_input(&mut self) {
         let input = self.user_input.trim().to_string();
         if !input.is_empty() {
-            self.add_message(Message::new(MessageType::System, input.clone()));
+            self.add_message(Message::new(MessageType::User, input.clone()));
 
             // Send a command to process the message
             if let Err(e) = self.command_sender.send(AppCommand::ProcessMessage(input)) {
@@ -571,37 +571,22 @@ impl App {
         let user_message = create_user_message(&message);
         let formatted_message = serde_json::to_string(&user_message)?;
 
-        self.add_message(Message::new(MessageType::User, formatted_message.clone()));
+        self.add_message(Message::new(MessageType::User, message.clone()));
 
         if let Some(ai) = &mut self.ai_client {
             match ai.send_message(&formatted_message).await {
                 Ok(game_message) => {
-                    // self.add_debug_message(format!(
-                    //     "Received game message from AI: {:?}",
-                    //     game_message
-                    // ));
+                    self.add_debug_message(format!(
+                        "Received game message from AI: {:?}",
+                        game_message
+                    ));
 
-                    self.add_message(Message::new(
-                        MessageType::Game,
-                        game_message.reasoning.clone(),
-                    ));
-                    self.add_message(Message::new(
-                        MessageType::Game,
-                        game_message.narration.clone(),
-                    ));
+                    // Store the entire GameMessage as a single Message
+                    let game_message_json = serde_json::to_string(&game_message)?;
+                    self.add_message(Message::new(MessageType::Game, game_message_json));
 
                     if let Some(character_sheet) = game_message.character_sheet {
-                        // self.add_debug_message(format!(
-                        //     "Updating character sheet: {:?}",
-                        //     character_sheet
-                        // ));
                         self.update_character_sheet(character_sheet);
-                    } else {
-                        self.add_debug_message("No character sheet in game message".to_string());
-                    }
-
-                    if self.settings.debug_mode {
-                        self.add_debug_message(format!("AI Reasoning: {}", game_message.reasoning));
                     }
 
                     // Save the game after processing the response
@@ -622,8 +607,11 @@ impl App {
         }
     }
 
-    // Add a new method to handle periodic updates
-    pub fn on_tick(&mut self) {}
+    pub fn on_tick(&mut self) {
+        if self.settings.debug_mode {
+            self.update_debug_info();
+        }
+    }
 
     pub async fn start_new_game(
         &mut self,
@@ -733,6 +721,8 @@ impl App {
     // Update the handle_ai_response method
 
     pub fn handle_ai_response(&mut self, response: String) {
+        self.add_debug_message(format!("Received AI response: {}", response));
+
         // Remove the "AI is thinking..." message if it exists
         if let Some(last_message) = self.game_content.last() {
             if last_message.content == "AI is thinking..."
@@ -745,27 +735,24 @@ impl App {
         // Attempt to parse the AI response as a GameMessage
         match serde_json::from_str::<GameMessage>(&response) {
             Ok(game_message) => {
-                // Add the reasoning and narration to the game content
+                // Add the reasoning and narration separately
                 self.add_message(Message::new(
                     MessageType::Game,
-                    game_message.reasoning.clone(),
+                    format!("Reasoning: {}", game_message.reasoning),
                 ));
                 self.add_message(Message::new(
                     MessageType::Game,
-                    game_message.narration.clone(),
+                    format!("Narration: {}", game_message.narration),
                 ));
-
-                // Check if the response contains a character sheet and update it
-                if let Some(character_sheet) = game_message.character_sheet {
-                    self.add_debug_message("Updating character sheet".to_string());
-                    self.update_character_sheet(character_sheet);
-                } else {
-                    self.add_debug_message("No character sheet in AI response".to_string());
-                }
 
                 // Add debug message for AI reasoning if debug mode is on
                 if self.settings.debug_mode {
                     self.add_debug_message(format!("AI Reasoning: {}", game_message.reasoning));
+                }
+
+                // Update character sheet if present
+                if let Some(character_sheet) = game_message.character_sheet {
+                    self.update_character_sheet(character_sheet);
                 }
 
                 // Save the game after processing the response

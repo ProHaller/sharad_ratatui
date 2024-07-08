@@ -45,7 +45,7 @@ fn render_console(f: &mut Frame, app: &App, area: Rect) {
     let console = Paragraph::new(console_text)
         .style(Style::default().fg(Color::Yellow))
         .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::ALL));
+        .block(Block::default().borders(Borders::NONE));
 
     f.render_widget(console, area);
 }
@@ -77,7 +77,7 @@ fn render_load_game_menu(f: &mut Frame, app: &App, area: Rect) {
     };
 
     let outer_block = Block::default()
-        .borders(Borders::ALL)
+        .borders(Borders::NONE)
         .style(Style::default().fg(Color::DarkGray));
 
     let menu_area = centered_rect(100, 100, area);

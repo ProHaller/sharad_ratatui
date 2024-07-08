@@ -186,10 +186,10 @@ impl GameAI {
         let response = self.get_latest_message(&thread_id).await?;
         let game_message = self.update_game_state(&response)?;
 
-        // self.add_debug_message(format!(
-        //     "Final game message to be returned: {:?}",
-        //     game_message
-        // ));
+        self.add_debug_message(format!(
+            "Final game message to be returned: {:?}",
+            game_message
+        ));
 
         Ok(game_message)
     }
@@ -403,6 +403,7 @@ impl GameAI {
         let mut game_message: GameMessage = serde_json::from_str(response).map_err(|e| {
             AIError::GameStateParseError(format!("Failed to parse GameMessage: {}", e))
         })?;
+        self.add_debug_message(game_message.reasoning.to_string());
 
         if let Some(state) = &self.conversation_state {
             game_message.character_sheet = state.character_sheet.clone();
