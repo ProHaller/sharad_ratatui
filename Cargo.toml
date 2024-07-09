@@ -21,3 +21,6 @@ tokio = { version = "1.38.0", features = ["full"] }
 tui-textarea = "0.4.0"
 unicode-segmentation = "1.11.0"
 unicode-width = "0.1.13"
+unicode-segmentation = "1.11.0"
+unicode-width = "0.1.13"
+whatlang = "0.16.4"

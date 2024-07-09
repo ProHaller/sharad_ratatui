@@ -12,6 +12,7 @@ use async_openai::{config::OpenAIConfig, Client};
 use copypasta::{ClipboardContext, ClipboardProvider};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::widgets::ListState;
+use ropey::Rope;
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -35,7 +36,7 @@ pub struct App {
     pub api_key_input: String,
     pub openai_api_key_valid: bool,
     pub settings_state: SettingsState,
-    pub user_input: String,
+    pub user_input: Rope,
     pub cursor_position: usize,
     pub debug_info: String,
     clipboard: ClipboardContext,
@@ -93,7 +94,7 @@ impl App {
             available_saves,
             game_content: Vec::new(),
             game_content_scroll: 0,
-            user_input: String::new(),
+            user_input: Rope::new(),
             cursor_position: 0,
             debug_info: String::new(),
             visible_messages: 0,
@@ -383,7 +384,7 @@ impl App {
             KeyCode::Enter => {
                 if key.modifiers.contains(KeyModifiers::SHIFT) {
                     // Add a new line in the input
-                    self.user_input.insert_str(self.cursor_position, "\n");
+                    self.user_input.insert(self.cursor_position, "\n");
                     self.cursor_position += 1;
                 } else {
                     self.submit_user_input();
@@ -391,81 +392,30 @@ impl App {
             }
             KeyCode::Backspace => {
                 if self.cursor_position > 0 {
-                    let prev_char_start = self.user_input[..self.cursor_position]
-                        .grapheme_indices(true)
-                        .last()
-                        .map(|(i, _)| i)
-                        .unwrap_or(0);
                     self.user_input
-                        .replace_range(prev_char_start..self.cursor_position, "");
-                    self.cursor_position = prev_char_start;
+                        .remove(self.cursor_position - 1..self.cursor_position);
+                    self.cursor_position -= 1;
                 }
             }
             KeyCode::Delete => {
-                if self.cursor_position < self.user_input.len() {
-                    let next_char_end = self.user_input[self.cursor_position..]
-                        .grapheme_indices(true)
-                        .nth(1)
-                        .map(|(i, _)| i + self.cursor_position)
-                        .unwrap_or(self.user_input.len());
+                if self.cursor_position < self.user_input.len_chars() {
                     self.user_input
-                        .replace_range(self.cursor_position..next_char_end, "");
+                        .remove(self.cursor_position..self.cursor_position + 1);
                 }
             }
             KeyCode::Left => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    // Move cursor to the start of the previous word
-                    let words: Vec<&str> = self.user_input[..self.cursor_position]
-                        .unicode_words()
-                        .collect();
-                    self.cursor_position = words
-                        .iter()
-                        .take(words.len().saturating_sub(1))
-                        .map(|w| w.len())
-                        .sum();
-                } else if self.cursor_position > 0 {
-                    self.cursor_position = self.user_input[..self.cursor_position]
-                        .grapheme_indices(true)
-                        .last()
-                        .map(|(i, _)| i)
-                        .unwrap_or(0);
+                if self.cursor_position > 0 {
+                    self.cursor_position -= 1;
                 }
             }
             KeyCode::Right => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    // Move cursor to the start of the next word
-                    let words: Vec<&str> = self.user_input[self.cursor_position..]
-                        .unicode_words()
-                        .collect();
-                    self.cursor_position += words.first().map(|w| w.len()).unwrap_or(0);
-                    if self.cursor_position < self.user_input.len() {
-                        self.cursor_position += 1; // Move past the space
-                    }
-                } else if self.cursor_position < self.user_input.len() {
-                    self.cursor_position = self.user_input[self.cursor_position..]
-                        .grapheme_indices(true)
-                        .nth(1)
-                        .map(|(i, _)| i + self.cursor_position)
-                        .unwrap_or(self.user_input.len());
+                if self.cursor_position < self.user_input.len_chars() {
+                    self.cursor_position += 1;
                 }
             }
             KeyCode::Char(c) => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    match c {
-                        'a' => self.cursor_position = 0,
-                        'e' => self.cursor_position = self.user_input.len(),
-                        'k' => self.user_input.truncate(self.cursor_position),
-                        'u' => {
-                            self.user_input = self.user_input.split_off(self.cursor_position);
-                            self.cursor_position = 0;
-                        }
-                        _ => {}
-                    }
-                } else {
-                    self.user_input
-                        .insert_str(self.cursor_position, &c.to_string());
-                    self.cursor_position += c.len_utf8();
-                }
+                self.user_input.insert_char(self.cursor_position, c);
+                self.cursor_position += 1;
             }
             KeyCode::PageUp => {
                 for _ in 0..self.visible_lines {
@@ -490,7 +440,7 @@ impl App {
     }
 
     pub fn submit_user_input(&mut self) {
-        let input = self.user_input.trim().to_string();
+        let input = self.user_input.to_string().trim().to_string();
         if !input.is_empty() {
             self.add_message(Message::new(MessageType::User, input.clone()));
 
@@ -509,7 +459,7 @@ impl App {
             }
 
             // Clear the user input
-            self.user_input.clear();
+            self.user_input = Rope::new();
             self.cursor_position = 0;
         }
     }

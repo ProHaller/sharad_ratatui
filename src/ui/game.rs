@@ -1,6 +1,7 @@
 use crate::app::App;
 use crate::character::CharacterSheet;
 use crate::message::{GameMessage, MessageType, UserMessage};
+use hyphenation::{Language, Load, Standard};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -8,8 +9,9 @@ use ratatui::{
     widgets::*,
     Frame,
 };
-use textwrap::{core::display_width, wrap};
+use textwrap::{wrap, Options, WordSplitter};
 use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 // In ui/game.rs
 
@@ -431,50 +433,89 @@ fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
 
     let max_width = inner_area.width as usize - 2;
 
+    // Use Rope for handling the text buffer
+    let rope = &app.user_input;
+    let text = rope.to_string();
+
+    // Load hyphenation dictionary
+    let dictionary = Standard::from_embedded(Language::EnglishUS).unwrap();
+
+    // Configure textwrap options
+    let options = Options::new(max_width)
+        .word_splitter(WordSplitter::Hyphenation(dictionary))
+        .break_words(true);
+
     // Wrap the input text
-    let wrapped_input = wrap(&app.user_input, max_width);
-
-    let input = Paragraph::new(wrapped_input.join("\n"))
-        .style(Style::default().fg(Color::White))
-        .alignment(Alignment::Left)
-        .wrap(Wrap { trim: true });
-
-    f.render_widget(input, inner_area);
+    let wrapped_lines: Vec<String> = wrap(&text, &options)
+        .into_iter()
+        .map(|s| s.into_owned())
+        .collect();
 
     // Calculate cursor position
-    let mut current_line = 0;
-    let mut current_column = 0;
-    let mut last_word_start = 0;
+    let mut cursor_x = 0;
+    let mut cursor_y = 0;
+    let mut chars_processed = 0;
 
-    for (chars_processed, (_i, grapheme)) in app.user_input.graphemes(true).enumerate().enumerate()
-    {
-        if chars_processed == app.cursor_position {
+    for (line_idx, line) in wrapped_lines.iter().enumerate() {
+        let line_graphemes: Vec<&str> = line.graphemes(true).collect();
+        let line_width: usize = line_graphemes.iter().map(|g| g.width()).sum();
+
+        if chars_processed + line_graphemes.len() >= app.cursor_position {
+            cursor_y = line_idx;
+            let prefix_graphemes = &line_graphemes[..app.cursor_position - chars_processed];
+            cursor_x = prefix_graphemes.iter().map(|g| g.width()).sum();
+
+            // Count trailing spaces
+            let trailing_spaces = text[chars_processed + prefix_graphemes.len()..]
+                .chars()
+                .take_while(|&c| c == ' ')
+                .count();
+            cursor_x += trailing_spaces;
+
             break;
         }
 
-        let grapheme_width = display_width(grapheme);
-
-        if grapheme == " " {
-            last_word_start = current_column + grapheme_width.saturating_sub(1);
-        }
-
-        if current_column + grapheme_width > max_width {
-            current_line += 1;
-            if last_word_start > 0 {
-                current_column -= last_word_start;
-            } else {
-                current_column = 0;
-            }
-            last_word_start = 0;
-        } else {
-            current_column += grapheme_width;
+        chars_processed += line_graphemes.len();
+        if chars_processed < text.len() && text.as_bytes()[chars_processed] == b'\n' {
+            chars_processed += 1;
         }
     }
 
+    // Handle cursor at the end of the text
+    if app.cursor_position == text.len() {
+        cursor_y = wrapped_lines.len() - 1;
+        cursor_x = wrapped_lines
+            .last()
+            .map(|line| line.graphemes(true).map(|g| g.width()).sum())
+            .unwrap_or(0);
+
+        // Add trailing spaces at the end of the text
+        let trailing_spaces = text.chars().rev().take_while(|&c| c == ' ').count();
+        cursor_x += trailing_spaces;
+    }
+
+    let joined_lines = wrapped_lines.join("\n");
+
+    let input = Paragraph::new(joined_lines)
+        .style(Style::default().fg(Color::White))
+        .alignment(Alignment::Left)
+        .wrap(Wrap { trim: false });
+
+    f.render_widget(input, inner_area);
+
+    // Adjust cursor position if it's beyond the visible area
+    let visible_lines = inner_area.height as usize - 1;
+    if cursor_y >= visible_lines {
+        cursor_y = visible_lines - 1;
+    }
+
+    // Ensure cursor_x doesn't exceed the max width
+    cursor_x = cursor_x.min(max_width);
+
     // Set cursor
     f.set_cursor(
-        inner_area.x + current_column as u16,
-        inner_area.y + current_line as u16,
+        inner_area.x + cursor_x as u16,
+        inner_area.y + cursor_y as u16,
     );
 }
 
