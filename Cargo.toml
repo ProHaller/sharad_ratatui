@@ -1,6 +1,6 @@
 [package]
 name = "sharad_ratatui"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 
 [dependencies]
@@ -10,17 +10,17 @@ cleanup = "0.1.1"
 copypasta = "0.10.1"
 crossterm = "0.27.0"
 ctrlc = "3.4.4"
+hyphenation = "0.8.4"
 libc = "0.2.155"
 rand = "0.8.5"
 ratatui = "0.27.0"
+ropey = "1.6.1"
 serde = { version = "1.0.203", features = ["derive"] }
 serde_json = "1.0.118"
-textwrap = "0.16.1"
+textwrap = { version = "0.16.1", features = ["hyphenation"] }
 thiserror = "1.0.61"
 tokio = { version = "1.38.0", features = ["full"] }
 tui-textarea = "0.4.0"
-unicode-segmentation = "1.11.0"
-unicode-width = "0.1.13"
 unicode-segmentation = "1.11.0"
 unicode-width = "0.1.13"
 whatlang = "0.16.4"
