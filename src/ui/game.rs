@@ -13,13 +13,13 @@ use textwrap::{wrap, Options, WordSplitter};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-// In ui/game.rs
-
+// Main function for drawing in-game UI elements.
 pub fn draw_in_game(f: &mut Frame, app: &mut App) {
     let size = f.size();
+    // Storing terminal size information for debugging.
     app.debug_info = format!("Terminal size: {}x{}", size.width, size.height);
 
-    // Check if the terminal size is too small
+    // Conditionally display a warning if the terminal is too small.
     if size.width < 20 || size.height < 10 {
         let warning = Paragraph::new("Terminal too small. Please resize.")
             .style(Style::default().fg(Color::Red))
@@ -28,25 +28,24 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
         return;
     }
 
-    // First, split the screen vertically into two parts: left (70%) and right (30%)
+    // Layout setup: split the screen horizontally into main sections.
     let main_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
         .split(size);
 
-    // For the left part, split it vertically into game content (80%) and user input (20%)
+    // Further split the left section vertically for game content and user input.
     let left_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Percentage(80), Constraint::Percentage(20)])
         .split(main_chunks[0]);
 
+    // Draw dynamic game content and user input areas.
     draw_game_content(f, app, left_chunks[0]);
     draw_user_input(f, app, left_chunks[1]);
 
-    // The right part is entirely for the game info (character sheet)
+    // Handle the right section for displaying the character sheet.
     let game_info_area = main_chunks[1];
-
-    // Draw game info (character sheet)
     if let Some(game_state) = &app.current_game {
         if let Some(sheet) = &game_state.character_sheet {
             draw_character_sheet(f, sheet, game_info_area);
@@ -64,7 +63,7 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
         f.render_widget(no_game, game_info_area);
     }
 
-    // Add this at the end of the function to display debug info
+    // Display debug information if enabled in settings.
     if app.settings.debug_mode {
         let debug_area = Rect::new(size.x, size.bottom() - 1, size.width, 1);
         let debug_text =
@@ -73,7 +72,9 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
     }
 }
 
+// Function to draw the character sheet.
 fn draw_character_sheet(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
+    // Layout for different sections of the character sheet.
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -83,11 +84,13 @@ fn draw_character_sheet(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
         ])
         .split(area);
 
+    // Drawing individual sections of the character sheet.
     draw_basic_info(f, sheet, chunks[0]);
     draw_attributes_and_derived(f, sheet, chunks[1]);
     draw_skills_qualities_and_other(f, sheet, chunks[2]);
 }
 
+// Display basic information like name, race, and gender.
 fn draw_basic_info(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     let info = vec![
         Span::styled(
@@ -125,6 +128,7 @@ fn draw_basic_info(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     f.render_widget(basic_info, area);
 }
 
+// Display attributes and derived attributes.
 fn draw_attributes_and_derived(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -135,6 +139,7 @@ fn draw_attributes_and_derived(f: &mut Frame, sheet: &CharacterSheet, area: Rect
     draw_derived_attributes(f, sheet, chunks[1]);
 }
 
+// Display specific attributes.
 fn draw_attributes(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     let attributes = vec![
         ("BOD", sheet.body),
@@ -171,6 +176,7 @@ fn draw_attributes(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     f.render_widget(table, area);
 }
 
+// Display derived attributes like initiative and limits.
 fn draw_derived_attributes(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     let derived = vec![
         format!(
@@ -214,6 +220,7 @@ fn draw_derived_attributes(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     f.render_widget(table, area);
 }
 
+// Display skills, qualities, and other relevant information.
 fn draw_skills_qualities_and_other(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -229,6 +236,7 @@ fn draw_skills_qualities_and_other(f: &mut Frame, sheet: &CharacterSheet, area: 
     draw_other_info(f, sheet, chunks[2]);
 }
 
+// Specific function to handle the display of skills.
 fn draw_skills(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     let categories = [
         ("Combat", &sheet.skills.combat),
@@ -269,6 +277,7 @@ fn draw_skills(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     f.render_widget(table, area);
 }
 
+// Function to handle the display of qualities.
 fn draw_qualities(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     let qualities: Vec<Span> = sheet
         .qualities
@@ -285,6 +294,7 @@ fn draw_qualities(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     f.render_widget(qualities_paragraph, area);
 }
 
+// Function to display miscellaneous information.
 fn draw_other_info(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
@@ -310,6 +320,7 @@ fn draw_other_info(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     f.render_widget(right_table, chunks[1]);
 }
 
+// Helper function to create a styled table from given information.
 fn create_table<'a>(info: &'a [String], title: &'a str) -> Table<'a> {
     let rows: Vec<Row> = info
         .iter()
@@ -331,6 +342,7 @@ fn create_table<'a>(info: &'a [String], title: &'a str) -> Table<'a> {
         .column_spacing(1)
 }
 
+// Function to draw dynamic game content.
 pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
     let narration_block = Block::default()
         .title("Narration")
@@ -422,6 +434,7 @@ pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
     app.update_debug_info();
 }
 
+// Function to handle user input display and interaction.
 fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .title("Your Action")
@@ -519,6 +532,7 @@ fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
     );
 }
 
+// Function to parse markdown-like text to formatted spans.
 fn parse_markdown<'a>(line: String, base_style: Style) -> Line<'a> {
     let mut spans = Vec::new();
     let mut current_text = String::new();

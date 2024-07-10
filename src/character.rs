@@ -1,8 +1,10 @@
+// Import necessary modules from external crates.
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 
+// Define an enumeration for character races in a role-playing game.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Race {
     Human,
@@ -12,6 +14,7 @@ pub enum Race {
     Troll,
 }
 
+// Implement the Display trait for the Race enum to allow for easier printing.
 impl fmt::Display for Race {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -24,6 +27,7 @@ impl fmt::Display for Race {
     }
 }
 
+// Define a structure representing a character's information sheet in a role-playing game.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacterSheet {
     // Personal Information
@@ -46,7 +50,7 @@ pub struct CharacterSheet {
     pub resonance: Option<u8>,
 
     // Secondary Attributes
-    pub initiative: (u8, u8), // (Base, Dice)
+    pub initiative: (u8, u8), // Tuple representing base initiative and dice modifier.
     pub essence: f32,
     pub edge_points: u8,
     pub physical_monitor: u8,
@@ -58,12 +62,12 @@ pub struct CharacterSheet {
     pub mental_limit: u8,
     pub social_limit: u8,
 
-    // Skills
+    // Skills and Knowledge
     pub skills: Skills,
     pub knowledge_skills: HashMap<String, u8>,
 
-    // Other Attributes
-    pub nuyen: u32,
+    // Economic and Social Information
+    pub nuyen: u32, // In-game currency.
     pub lifestyle: String,
     pub contacts: Vec<Contact>,
     pub qualities: Vec<Quality>,
@@ -73,6 +77,7 @@ pub struct CharacterSheet {
     pub matrix_attributes: Option<MatrixAttributes>,
 }
 
+// Define a structure for categorizing different skills a character may have.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Skills {
     pub combat: HashMap<String, u8>,
@@ -81,6 +86,7 @@ pub struct Skills {
     pub technical: HashMap<String, u8>,
 }
 
+// Define a structure for contacts within the game, representing relationships and connections.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Contact {
     pub name: String,
@@ -88,12 +94,14 @@ pub struct Contact {
     pub connection: u8,
 }
 
+// Define a structure for character qualities, representing traits or special abilities.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Quality {
     pub name: String,
-    pub positive: bool,
+    pub positive: bool, // Indicates if the quality is advantageous.
 }
 
+// Define a structure for items that can be part of a character's inventory.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Item {
     pub name: String,
@@ -101,6 +109,7 @@ pub struct Item {
     pub description: String,
 }
 
+// Define a structure for matrix attributes, applicable if the character interacts with virtual environments.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MatrixAttributes {
     pub attack: u8,
@@ -109,7 +118,9 @@ pub struct MatrixAttributes {
     pub firewall: u8,
 }
 
+// Implementation of methods for the CharacterSheet struct.
 impl CharacterSheet {
+    // Constructor for creating a new character sheet.
     pub fn new(
         name: String,
         race: Race,
@@ -166,25 +177,13 @@ impl CharacterSheet {
             matrix_attributes: None,
         };
 
+        // Apply race-specific attribute modifiers and update derived attributes.
         sheet.apply_race_modifiers(sheet.race.clone());
         sheet.update_derived_attributes();
         sheet
     }
 
-    pub fn roll_attribute() -> u8 {
-        let mut rng = rand::thread_rng();
-        let mut total = 0;
-        for _ in 0..6 {
-            let mut roll = rng.gen_range(1..=6);
-            while roll == 6 {
-                total += 1;
-                roll = rng.gen_range(1..=6);
-            }
-            total += roll;
-        }
-        total.min(6) // Cap at 6 initially, race modifiers will be applied later
-    }
-
+    // Apply racial modifiers to attributes based on the character's race.
     pub fn apply_race_modifiers(&mut self, race: Race) {
         match race {
             Race::Human => {
@@ -218,6 +217,7 @@ impl CharacterSheet {
         }
     }
 
+    // Update derived attributes based on basic and secondary attributes.
     pub fn update_derived_attributes(&mut self) {
         self.initiative = (self.reaction + self.intuition, 1);
         self.physical_monitor = 8 + (self.body + 1) / 2;
@@ -230,7 +230,7 @@ impl CharacterSheet {
             ((self.charisma * 2 + self.willpower + self.essence as u8) as f32 / 3.0).ceil() as u8;
     }
 
-    // Helper method to get all active skills
+    // Retrieve all active skills combined from different skill categories.
     pub fn get_all_active_skills(&self) -> HashMap<String, u8> {
         let mut all_skills = HashMap::new();
         all_skills.extend(self.skills.combat.clone());
@@ -240,6 +240,7 @@ impl CharacterSheet {
         all_skills
     }
 
+    // Calculate the dice pool for an action based on attribute and skill levels.
     pub fn get_dice_pool(&self, attribute: &str, skill: &str) -> u8 {
         let attribute_value = match attribute.to_lowercase().as_str() {
             "body" => self.body,
@@ -262,6 +263,7 @@ impl CharacterSheet {
         attribute_value + skill_value
     }
 
+    // Get the maximum limit for an action based on the type of limit (physical, mental, social).
     pub fn get_limit(&self, limit_type: &str) -> u8 {
         match limit_type.to_lowercase().as_str() {
             "physical" => self.physical_limit,

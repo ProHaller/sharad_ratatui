@@ -299,7 +299,7 @@ impl App {
         self.settings.debug_mode = self.settings_state.selected_options[4] == 1;
 
         // Save settings to file
-        if let Err(e) = self.settings.save_to_file("settings.json") {
+        if let Err(e) = self.settings.save_to_file("./data/settings.json") {
             eprintln!("Failed to save settings: {:?}", e);
         }
     }

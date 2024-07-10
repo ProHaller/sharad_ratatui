@@ -1,7 +1,6 @@
+// Import necessary modules and data structures from other parts of the application and external crates.
 use crate::character::{CharacterSheet, Quality, Race, Skills};
-use crate::dice::{
-    dice_roll, perform_dice_roll, DiceRoll, DiceRollRequest, DiceRollResponse, EdgeAction,
-};
+use crate::dice::{perform_dice_roll, DiceRollRequest, DiceRollResponse};
 use crate::game_state::GameState;
 use crate::message::{GameMessage, Message, MessageType};
 use async_openai::{
@@ -19,85 +18,91 @@ use std::collections::HashMap;
 use thiserror::Error;
 use tokio::time::{Duration, Instant};
 
+// Define a struct to hold conversation state specific to the game.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GameConversationState {
-    pub assistant_id: String,
-    pub thread_id: String,
-    pub character_sheet: Option<CharacterSheet>,
+    pub assistant_id: String, // Unique identifier for the assistant.
+    pub thread_id: String,    // Unique identifier for the conversation thread.
+    pub character_sheet: Option<CharacterSheet>, // Optional character sheet for the active session.
 }
 
+// Enum for handling various application-level errors.
 #[derive(Debug, Error)]
 pub enum AppError {
     #[error("AI error: {0}")]
-    AI(#[from] AIError),
+    AI(#[from] AIError), // Errors related to AI operations.
 
     #[error("Game error: {0}")]
-    Game(#[from] GameError),
+    Game(#[from] GameError), // Errors specific to game logic or state.
 
     #[error("Serialization error: {0}")]
-    Serialization(#[from] serde_json::Error),
+    Serialization(#[from] serde_json::Error), // Errors related to data serialization.
 
     #[error("IO error: {0}")]
-    IO(#[from] std::io::Error),
+    IO(#[from] std::io::Error), // Input/output errors.
 
     #[error("AI client not initialized")]
-    AIClientNotInitialized,
+    AIClientNotInitialized, // Specific error when the AI client is not properly initialized.
 
     #[error("No current game")]
-    NoCurrentGame,
+    NoCurrentGame, // Error when no game session is active.
 
     #[error("OpenAI API error: {0}")]
-    OpenAI(#[from] async_openai::error::OpenAIError),
+    OpenAI(#[from] async_openai::error::OpenAIError), // Errors from the OpenAI API.
 
     #[error("Conversation not initialized")]
-    ConversationNotInitialized,
+    ConversationNotInitialized, // Error for uninitialized conversation state.
 
     #[error("Timeout occurred")]
-    Timeout,
+    Timeout, // Error when an operation exceeds its allotted time.
 
     #[error("No message found")]
-    NoMessageFound,
+    NoMessageFound, // Error when no message is found where one is expected.
 
     #[error("Failed to parse game state: {0}")]
-    GameStateParseError(String),
+    GameStateParseError(String), // Error for issues when parsing game state.
 }
 
+// Enum for game-specific errors.
 #[derive(Debug, Error)]
 pub enum GameError {
     #[error("Invalid game state: {0}")]
-    InvalidGameState(String),
+    InvalidGameState(String), // Error for invalid game state conditions.
 
     #[error("Character not found: {0}")]
-    CharacterNotFound(String),
-    // Add other game-specific errors
+    CharacterNotFound(String), // Error when a specified character cannot be found.
+                               // Potential additional game-specific errors could be defined here.
 }
 
-// Keep AIError as it was
+// Errors related to AI operations are separated into their own enum for clarity.
 #[derive(Debug, Error)]
 pub enum AIError {
     #[error("OpenAI API error: {0}")]
-    OpenAI(#[from] async_openai::error::OpenAIError),
+    OpenAI(#[from] async_openai::error::OpenAIError), // Errors from the OpenAI API.
 
     #[error("Conversation not initialized")]
-    ConversationNotInitialized,
+    ConversationNotInitialized, // Error for uninitialized conversation state.
 
     #[error("Timeout occurred")]
-    Timeout,
+    Timeout, // Error when an AI operation exceeds its time limit.
 
     #[error("No message found")]
-    NoMessageFound,
+    NoMessageFound, // Error when expected message content is not found.
 
     #[error("Failed to parse game state: {0}")]
-    GameStateParseError(String),
+    GameStateParseError(String), // Error during parsing of game state.
 }
 
+// Structure representing the game's AI component.
 pub struct GameAI {
-    client: Client<OpenAIConfig>,
-    pub conversation_state: Option<GameConversationState>,
-    debug_callback: Box<dyn Fn(String) + Send + Sync>,
+    client: Client<OpenAIConfig>, // OpenAI client configured with an API key.
+    pub conversation_state: Option<GameConversationState>, // Optional state of the ongoing conversation.
+    debug_callback: Box<dyn Fn(String) + Send + Sync>,     // Debug callback for logging purposes.
 }
 
+// Implementation of the GameAI structure.
 impl GameAI {
+    // Constructor to initialize a new GameAI instance.
     pub fn new(
         api_key: String,
         debug_callback: impl Fn(String) + Send + Sync + 'static,
@@ -112,11 +117,12 @@ impl GameAI {
         })
     }
 
+    // Method to add debug messages through the provided callback.
     fn add_debug_message(&self, message: String) {
         (self.debug_callback)(message);
     }
 
-    #[allow(dead_code)]
+    // Asynchronous method to create a game assistant using the OpenAI API.
     pub async fn create_game_assistant(
         &self,
         name: &str,
@@ -138,6 +144,7 @@ impl GameAI {
         Ok(assistant.id)
     }
 
+    // Asynchronous method to start a new conversation thread.
     pub async fn start_new_conversation(
         &mut self,
         assistant_id: &str,
@@ -169,10 +176,12 @@ impl GameAI {
         Ok(())
     }
 
+    // Asynchronous method to load an existing conversation state.
     pub async fn load_conversation(&mut self, state: GameConversationState) {
         self.conversation_state = Some(state);
     }
 
+    // Asynchronous method to send a message within the conversation, handling game state updates.
     pub async fn send_message(
         &mut self,
         message: &str,
@@ -195,7 +204,7 @@ impl GameAI {
         if let Some(run) = active_runs.data.first() {
             if run.status == RunStatus::InProgress || run.status == RunStatus::Queued {
                 // Wait for the active run to complete
-                self.wait_for_run_completion(&thread_id, &run.id, &mut game_state)
+                self.wait_for_run_completion(&thread_id, &run.id, game_state)
                     .await?;
             }
         }
@@ -224,7 +233,7 @@ impl GameAI {
             .await?;
 
         // Wait for the new run to complete
-        self.wait_for_run_completion(&thread_id, &run.id, &mut game_state)
+        self.wait_for_run_completion(&thread_id, &run.id, game_state)
             .await?;
 
         let response = self.get_latest_message(&thread_id).await?;
@@ -238,6 +247,7 @@ impl GameAI {
         Ok(game_message)
     }
 
+    // Asynchronous method to handle waiting for a run completion, performing necessary actions as required.
     async fn wait_for_run_completion(
         &mut self,
         thread_id: &str,
@@ -320,6 +330,7 @@ impl GameAI {
         }
     }
 
+    // Asynchronous method to handle required actions based on the status of an active run.
     async fn handle_required_action(
         &mut self,
         thread_id: &str,
@@ -418,6 +429,7 @@ impl GameAI {
         }
     }
 
+    // Asynchronous method to fetch all messages from a thread, ordered and formatted appropriately.
     pub async fn fetch_all_messages(&self, thread_id: &str) -> Result<Vec<Message>, AIError> {
         let mut all_messages = Vec::new();
         let mut before: Option<String> = None;
@@ -453,6 +465,7 @@ impl GameAI {
         Ok(all_messages)
     }
 
+    // Asynchronous method to retrieve the latest message from a conversation thread.
     async fn get_latest_message(&self, thread_id: &str) -> Result<String, AIError> {
         let messages = self
             .client
@@ -469,6 +482,7 @@ impl GameAI {
         Err(AIError::NoMessageFound)
     }
 
+    // Method to update the game state based on the latest AI response.
     fn update_game_state(&mut self, response: &str) -> Result<GameMessage, AIError> {
         self.add_debug_message(format!("Updating game state with response: {}", response));
 
@@ -499,6 +513,7 @@ impl GameAI {
         Ok(game_message)
     }
 
+    // Asynchronous method to submit output from a tool during a run.
     async fn submit_tool_output(
         &self,
         thread_id: &str,
@@ -526,6 +541,7 @@ impl GameAI {
         Ok(())
     }
 
+    // Asynchronous method to create a character based on provided arguments, handling attributes and skills.
     async fn create_character(&self, args: &Value) -> Result<CharacterSheet, AIError> {
         // self.add_debug_message(format!("Creating character from args: {:?}", args));
 
@@ -655,6 +671,7 @@ impl GameAI {
         Ok(character)
     }
 
+    // Method to create a dummy character as a fallback during error handling.
     fn create_dummy_character(&self) -> CharacterSheet {
         let dummy_skills = Skills {
             combat: [
@@ -698,41 +715,4 @@ impl GameAI {
             vec![], // qualities
         )
     }
-
-    async fn handle_dice_roll(
-        &self,
-        character: &CharacterSheet,
-        attribute: &str,
-        skill: &str,
-        limit_type: &str,
-        threshold: Option<u8>,
-        edge_action: Option<EdgeAction>,
-    ) -> Result<DiceRoll, AIError> {
-        let roll_result = ai_dice_roll(
-            character,
-            attribute,
-            skill,
-            limit_type,
-            threshold,
-            edge_action,
-        );
-
-        // You might want to log the roll result or update game state here
-
-        Ok(roll_result)
-    }
-}
-
-pub fn ai_dice_roll(
-    character: &CharacterSheet,
-    attribute: &str,
-    skill: &str,
-    limit_type: &str,
-    threshold: Option<u8>,
-    edge_action: Option<EdgeAction>,
-) -> DiceRoll {
-    let dice_pool = character.get_dice_pool(attribute, skill);
-    let limit = Some(character.get_limit(limit_type));
-
-    dice_roll(dice_pool, limit, threshold, edge_action)
 }
