@@ -8,11 +8,14 @@ use crate::message::{self, AIMessage, Message, MessageType};
 use crate::settings::Settings;
 use crate::settings_state::SettingsState;
 
+use chrono::Local;
 use copypasta::{ClipboardContext, ClipboardProvider};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::widgets::ListState;
 use ropey::Rope;
 use std::fs;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
@@ -481,7 +484,15 @@ impl App {
 
     pub fn add_debug_message(&mut self, message: String) {
         if self.settings.debug_mode {
-            self.debug_info = message;
+            self.debug_info = message.clone();
+            if let Ok(mut file) = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open("sharad_debug.log")
+            {
+                let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
+                let _ = writeln!(file, "[{}] {}", timestamp, message);
+            }
         }
     }
 

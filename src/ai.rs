@@ -121,7 +121,7 @@ impl GameAI {
 
         let initial_message = CreateMessageRequestArgs::default()
             .role(MessageRole::User)
-            .content("Start the game. Use the `create_character_sheet` function to create new characters. For any actions requiring dice rolls during gameplay, use the `perform_dice_roll` function. Answer in valid json")
+            .content("Start the game. Use the `create_character_sheet` function to create new characters. Always include the complete character sheet in your response after character creation. For any actions requiring dice rolls during gameplay, use the `perform_dice_roll` function. Answer in valid json")
             .build()?;
 
         self.client
@@ -282,10 +282,7 @@ impl GameAI {
         if let Some(required_action) = &run.required_action {
             if required_action.r#type == "submit_tool_outputs" {
                 for tool_call in &required_action.submit_tool_outputs.tool_calls {
-                    self.add_debug_message(format!(
-                        "Handling tool call: {}",
-                        tool_call.function.name
-                    ));
+                    self.add_debug_message(format!("Handling tool call: {:?}", tool_call));
                     match tool_call.function.name.as_str() {
                         "create_character_sheet" => {
                             // Existing character creation code
@@ -308,6 +305,11 @@ impl GameAI {
                                 &character_sheet,
                             )
                             .await?;
+                            if let Ok(character_sheet) = self.create_character(&args).await {
+                                if let Some(state) = &mut self.conversation_state {
+                                    state.character_sheet = Some(character_sheet.clone());
+                                }
+                            }
                         }
                         "perform_dice_roll" => {
                             let args: DiceRollRequest =
@@ -441,14 +443,18 @@ impl GameAI {
         })?;
         self.add_debug_message(game_message.reasoning.to_string());
 
-        if let Some(state) = &self.conversation_state {
-            game_message.character_sheet = state.character_sheet.clone();
-            // self.add_debug_message(format!(
-            //     "Character sheet from conversation state: {:?}",
-            //     game_message.character_sheet
-            // ));
-        } else {
-            self.add_debug_message("No active conversation state".to_string());
+        // If the AI response doesn't include a character sheet, use the one from the conversation state
+        if game_message.character_sheet.is_none() {
+            if let Some(state) = &self.conversation_state {
+                game_message.character_sheet = state.character_sheet.clone();
+            }
+        }
+
+        // If we now have a character sheet, update the conversation state
+        if let Some(ref sheet) = game_message.character_sheet {
+            if let Some(state) = &mut self.conversation_state {
+                state.character_sheet = Some(sheet.clone());
+            }
         }
 
         self.add_debug_message(format!(
