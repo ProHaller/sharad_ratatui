@@ -1,14 +1,13 @@
-use crate::ai::{AIError, GameAI, GameConversationState};
+use crate::ai::{GameAI, GameConversationState};
 use crate::ai_response::{create_user_message, GameMessage, UserMessage};
 use crate::app_state::AppState;
-use crate::character::{CharacterSheet, Race};
+use crate::character::CharacterSheet;
 use crate::cleanup::cleanup;
 use crate::game_state::GameState;
 use crate::message::{self, AIMessage, Message, MessageType};
 use crate::settings::Settings;
 use crate::settings_state::SettingsState;
 
-use async_openai::{config::OpenAIConfig, Client};
 use copypasta::{ClipboardContext, ClipboardProvider};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::widgets::ListState;
@@ -17,7 +16,6 @@ use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
-use unicode_segmentation::UnicodeSegmentation;
 
 pub enum AppCommand {
     LoadGame(String),
@@ -592,6 +590,7 @@ impl App {
                 assistant_id: assistant_id.to_string(),
                 thread_id,
                 character_sheet: None,
+                characters: Vec::new(),
                 message_history: Vec::new(),
                 save_name: save_name.clone(),
             };

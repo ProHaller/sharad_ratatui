@@ -239,4 +239,35 @@ impl CharacterSheet {
         all_skills.extend(self.skills.technical.clone());
         all_skills
     }
+
+    pub fn get_dice_pool(&self, attribute: &str, skill: &str) -> u8 {
+        let attribute_value = match attribute.to_lowercase().as_str() {
+            "body" => self.body,
+            "agility" => self.agility,
+            "reaction" => self.reaction,
+            "strength" => self.strength,
+            "willpower" => self.willpower,
+            "logic" => self.logic,
+            "intuition" => self.intuition,
+            "charisma" => self.charisma,
+            _ => 0,
+        };
+
+        let skill_value = self
+            .get_all_active_skills()
+            .get(skill)
+            .cloned()
+            .unwrap_or(0);
+
+        attribute_value + skill_value
+    }
+
+    pub fn get_limit(&self, limit_type: &str) -> u8 {
+        match limit_type.to_lowercase().as_str() {
+            "physical" => self.physical_limit,
+            "mental" => self.mental_limit,
+            "social" => self.social_limit,
+            _ => 0,
+        }
+    }
 }

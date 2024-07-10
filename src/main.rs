@@ -18,6 +18,7 @@ mod app;
 mod app_state;
 mod character;
 mod cleanup;
+mod dice;
 mod game_state;
 mod message;
 mod settings;

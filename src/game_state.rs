@@ -11,6 +11,7 @@ pub struct GameState {
     #[serde(default)]
     pub message_history: Vec<Message>,
     pub save_name: String,
+    pub characters: Vec<CharacterSheet>,
 }
 
 impl std::fmt::Debug for GameState {

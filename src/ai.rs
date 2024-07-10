@@ -1,22 +1,24 @@
 use crate::app::App;
 use crate::character::{CharacterSheet, Quality, Race, Skills};
+use crate::dice::{
+    dice_roll, perform_dice_roll, DiceRoll, DiceRollRequest, DiceRollResponse, EdgeAction,
+};
+use crate::game_state::GameState;
 use crate::message::{GameMessage, Message, MessageType};
 use async_openai::{
     config::OpenAIConfig,
     types::{
-        AssistantTools, AssistantToolsFunction, CreateAssistantRequestArgs,
-        CreateMessageRequestArgs, CreateRunRequestArgs, CreateThreadRequestArgs, FunctionObject,
-        MessageContent, MessageRole, RequiredAction, RunObject, RunStatus,
+        AssistantTools, CreateAssistantRequestArgs, CreateMessageRequestArgs, CreateRunRequestArgs,
+        CreateThreadRequestArgs, MessageContent, MessageRole, RunObject, RunStatus,
         SubmitToolOutputsRunRequest, ToolsOutputs,
     },
     Client,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use tokio::time::{timeout, Duration, Instant};
+use tokio::time::{Duration, Instant};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GameConversationState {
@@ -119,7 +121,7 @@ impl GameAI {
 
         let initial_message = CreateMessageRequestArgs::default()
             .role(MessageRole::User)
-            .content("Start a new game. Answer in valid json")
+            .content("Start the game. Use the `create_character_sheet` function to create new characters. For any actions requiring dice rolls during gameplay, use the `perform_dice_roll` function. Answer in valid json")
             .build()?;
 
         self.client
@@ -280,9 +282,13 @@ impl GameAI {
         if let Some(required_action) = &run.required_action {
             if required_action.r#type == "submit_tool_outputs" {
                 for tool_call in &required_action.submit_tool_outputs.tool_calls {
-                    // self.add_debug_message(format!("Processing tool call: {:?}", tool_call));
+                    self.add_debug_message(format!(
+                        "Handling tool call: {}",
+                        tool_call.function.name
+                    ));
                     match tool_call.function.name.as_str() {
                         "create_character_sheet" => {
+                            // Existing character creation code
                             let args: serde_json::Value =
                                 serde_json::from_str(&tool_call.function.arguments)?;
                             let character_sheet = match self.create_character(&args).await {
@@ -295,21 +301,6 @@ impl GameAI {
                                     self.create_dummy_character()
                                 }
                             };
-
-                            // self.add_debug_message(format!(
-                            //     "Character sheet created: {:?}",
-                            //     character_sheet
-                            // ));
-
-                            // Update the conversation state with the new character sheet
-                            if let Some(state) = &mut self.conversation_state {
-                                state.character_sheet = Some(character_sheet.clone());
-                            } else {
-                                self.add_debug_message(
-                                    "No conversation state to update character sheet".to_string(),
-                                );
-                            }
-
                             self.submit_tool_output(
                                 thread_id,
                                 run_id,
@@ -317,11 +308,43 @@ impl GameAI {
                                 &character_sheet,
                             )
                             .await?;
-
-                            // self.add_debug_message(
-                            //     format!("Tool output submitted: {:?}", &character_sheet)
-                            //         .to_string(),
-                            // );
+                        }
+                        "perform_dice_roll" => {
+                            let args: DiceRollRequest =
+                                serde_json::from_str(&tool_call.function.arguments)?;
+                            let game_state = self.get_game_state()?;
+                            match perform_dice_roll(args, &game_state) {
+                                Ok(response) => {
+                                    self.submit_tool_output(
+                                        thread_id,
+                                        run_id,
+                                        &tool_call.id,
+                                        &response,
+                                    )
+                                    .await?;
+                                }
+                                Err(e) => {
+                                    let error_response = DiceRollResponse {
+                                        hits: 0,
+                                        glitch: false,
+                                        critical_glitch: false,
+                                        critical_success: false,
+                                        dice_results: vec![],
+                                        success: false,
+                                    };
+                                    self.add_debug_message(format!(
+                                        "Error performing dice roll: {:?}",
+                                        e
+                                    ));
+                                    self.submit_tool_output(
+                                        thread_id,
+                                        run_id,
+                                        &tool_call.id,
+                                        &error_response,
+                                    )
+                                    .await?;
+                                }
+                            }
                         }
                         _ => {
                             return Err(AIError::GameStateParseError(format!(
@@ -343,6 +366,19 @@ impl GameAI {
                 "No required action found".to_string(),
             ))
         }
+    }
+
+    fn get_game_state(&self) -> Result<GameState, AIError> {
+        let app = self
+            .app_ref
+            .as_ref()
+            .ok_or_else(|| AIError::GameStateParseError("App reference not set".to_string()))?;
+        let app = app
+            .lock()
+            .map_err(|_| AIError::GameStateParseError("Failed to lock app mutex".to_string()))?;
+        app.current_game
+            .clone()
+            .ok_or_else(|| AIError::GameStateParseError("No current game".to_string()))
     }
 
     pub async fn fetch_all_messages(&self, thread_id: &str) -> Result<Vec<Message>, AIError> {
@@ -621,4 +657,41 @@ impl GameAI {
             vec![], // qualities
         )
     }
+
+    async fn handle_dice_roll(
+        &self,
+        character: &CharacterSheet,
+        attribute: &str,
+        skill: &str,
+        limit_type: &str,
+        threshold: Option<u8>,
+        edge_action: Option<EdgeAction>,
+    ) -> Result<DiceRoll, AIError> {
+        let roll_result = ai_dice_roll(
+            character,
+            attribute,
+            skill,
+            limit_type,
+            threshold,
+            edge_action,
+        );
+
+        // You might want to log the roll result or update game state here
+
+        Ok(roll_result)
+    }
+}
+
+pub fn ai_dice_roll(
+    character: &CharacterSheet,
+    attribute: &str,
+    skill: &str,
+    limit_type: &str,
+    threshold: Option<u8>,
+    edge_action: Option<EdgeAction>,
+) -> DiceRoll {
+    let dice_pool = character.get_dice_pool(attribute, skill);
+    let limit = Some(character.get_limit(limit_type));
+
+    dice_roll(dice_pool, limit, threshold, edge_action)
 }
