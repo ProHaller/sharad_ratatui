@@ -1,4 +1,3 @@
-use crate::app::App;
 use crate::character::{CharacterSheet, Quality, Race, Skills};
 use crate::dice::{
     dice_roll, perform_dice_roll, DiceRoll, DiceRollRequest, DiceRollResponse, EdgeAction,
@@ -17,7 +16,7 @@ use async_openai::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use thiserror::Error;
 use tokio::time::{Duration, Instant};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -27,53 +26,90 @@ pub struct GameConversationState {
     pub character_sheet: Option<CharacterSheet>,
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum AIError {
+#[derive(Debug, Error)]
+pub enum AppError {
+    #[error("AI error: {0}")]
+    AI(#[from] AIError),
+
+    #[error("Game error: {0}")]
+    Game(#[from] GameError),
+
+    #[error("Serialization error: {0}")]
+    Serialization(#[from] serde_json::Error),
+
+    #[error("IO error: {0}")]
+    IO(#[from] std::io::Error),
+
+    #[error("AI client not initialized")]
+    AIClientNotInitialized,
+
+    #[error("No current game")]
+    NoCurrentGame,
+
     #[error("OpenAI API error: {0}")]
     OpenAI(#[from] async_openai::error::OpenAIError),
+
     #[error("Conversation not initialized")]
     ConversationNotInitialized,
+
     #[error("Timeout occurred")]
     Timeout,
+
     #[error("No message found")]
     NoMessageFound,
+
     #[error("Failed to parse game state: {0}")]
     GameStateParseError(String),
 }
 
-impl From<serde_json::Error> for AIError {
-    fn from(err: serde_json::Error) -> AIError {
-        AIError::GameStateParseError(err.to_string())
-    }
+#[derive(Debug, Error)]
+pub enum GameError {
+    #[error("Invalid game state: {0}")]
+    InvalidGameState(String),
+
+    #[error("Character not found: {0}")]
+    CharacterNotFound(String),
+    // Add other game-specific errors
+}
+
+// Keep AIError as it was
+#[derive(Debug, Error)]
+pub enum AIError {
+    #[error("OpenAI API error: {0}")]
+    OpenAI(#[from] async_openai::error::OpenAIError),
+
+    #[error("Conversation not initialized")]
+    ConversationNotInitialized,
+
+    #[error("Timeout occurred")]
+    Timeout,
+
+    #[error("No message found")]
+    NoMessageFound,
+
+    #[error("Failed to parse game state: {0}")]
+    GameStateParseError(String),
 }
 
 pub struct GameAI {
     client: Client<OpenAIConfig>,
     pub conversation_state: Option<GameConversationState>,
-    debug_callback: Arc<dyn Fn(String) + Send + Sync>,
-    app_ref: Option<Arc<Mutex<App>>>, // Add this line
+    debug_callback: Box<dyn Fn(String) + Send + Sync>,
 }
 
 impl GameAI {
     pub fn new(
         api_key: String,
         debug_callback: impl Fn(String) + Send + Sync + 'static,
-        app_ref: Arc<Mutex<App>>, // Add this line
-    ) -> Result<Self, AIError> {
+    ) -> Result<Self, AppError> {
         let openai_config = OpenAIConfig::new().with_api_key(api_key);
         let client = Client::with_config(openai_config);
 
         Ok(Self {
             client,
             conversation_state: None,
-            debug_callback: Arc::new(debug_callback),
-            app_ref: Some(app_ref), // Add this line
+            debug_callback: Box::new(debug_callback),
         })
-    }
-
-    // Add a method to set the app reference after initialization
-    pub fn set_app_ref(&mut self, app_ref: Arc<Mutex<App>>) {
-        self.app_ref = Some(app_ref);
     }
 
     fn add_debug_message(&self, message: String) {
@@ -137,11 +173,15 @@ impl GameAI {
         self.conversation_state = Some(state);
     }
 
-    pub async fn send_message(&mut self, message: &str) -> Result<GameMessage, AIError> {
+    pub async fn send_message(
+        &mut self,
+        message: &str,
+        mut game_state: &mut GameState,
+    ) -> Result<GameMessage, AppError> {
         // Extract necessary information from conversation_state
         let (thread_id, assistant_id) = match &self.conversation_state {
             Some(state) => (state.thread_id.clone(), state.assistant_id.clone()),
-            None => return Err(AIError::ConversationNotInitialized),
+            None => return Err(AppError::ConversationNotInitialized),
         };
 
         // Check if there's an active run
@@ -155,7 +195,8 @@ impl GameAI {
         if let Some(run) = active_runs.data.first() {
             if run.status == RunStatus::InProgress || run.status == RunStatus::Queued {
                 // Wait for the active run to complete
-                self.wait_for_run_completion(&thread_id, &run.id).await?;
+                self.wait_for_run_completion(&thread_id, &run.id, &mut game_state)
+                    .await?;
             }
         }
 
@@ -183,7 +224,8 @@ impl GameAI {
             .await?;
 
         // Wait for the new run to complete
-        self.wait_for_run_completion(&thread_id, &run.id).await?;
+        self.wait_for_run_completion(&thread_id, &run.id, &mut game_state)
+            .await?;
 
         let response = self.get_latest_message(&thread_id).await?;
         let game_message = self.update_game_state(&response)?;
@@ -200,7 +242,8 @@ impl GameAI {
         &mut self,
         thread_id: &str,
         run_id: &str,
-    ) -> Result<(), AIError> {
+        game_state: &mut GameState,
+    ) -> Result<(), AppError> {
         let timeout_duration = Duration::from_secs(300); // 5 minutes timeout
         let start_time = Instant::now();
         let mut requires_action_attempts = 0;
@@ -209,7 +252,7 @@ impl GameAI {
         loop {
             if start_time.elapsed() > timeout_duration {
                 self.add_debug_message("Run timed out".to_string());
-                return Err(AIError::Timeout);
+                return Err(AppError::Timeout);
             }
 
             let run = self
@@ -233,10 +276,14 @@ impl GameAI {
                     self.add_debug_message(
                         "Run requires action, handling function call".to_string(),
                     );
-                    match self.handle_required_action(thread_id, run_id, &run).await {
+                    match self
+                        .handle_required_action(thread_id, run_id, &run, game_state)
+                        .await
+                    {
                         Ok(_) => {
                             requires_action_attempts = 0;
                         }
+                        // TODO: Handle this error to send a dummy dice result if needed.
                         Err(e) => {
                             requires_action_attempts += 1;
                             if requires_action_attempts >= MAX_REQUIRES_ACTION_ATTEMPTS {
@@ -263,7 +310,7 @@ impl GameAI {
                 RunStatus::Failed | RunStatus::Cancelled | RunStatus::Expired => {
                     let error_message = format!("Run failed with status: {:?}", run.status);
                     self.add_debug_message(error_message.clone());
-                    return Err(AIError::GameStateParseError(error_message));
+                    return Err(AppError::GameStateParseError(error_message));
                 }
                 _ => {
                     self.add_debug_message("Run still in progress, waiting...".to_string());
@@ -278,7 +325,8 @@ impl GameAI {
         thread_id: &str,
         run_id: &str,
         run: &RunObject,
-    ) -> Result<(), AIError> {
+        game_state: &mut GameState,
+    ) -> Result<(), AppError> {
         if let Some(required_action) = &run.required_action {
             if required_action.r#type == "submit_tool_outputs" {
                 for tool_call in &required_action.submit_tool_outputs.tool_calls {
@@ -306,6 +354,7 @@ impl GameAI {
                             )
                             .await?;
                             if let Ok(character_sheet) = self.create_character(&args).await {
+                                game_state.characters.push(character_sheet.clone());
                                 if let Some(state) = &mut self.conversation_state {
                                     state.character_sheet = Some(character_sheet.clone());
                                 }
@@ -314,8 +363,7 @@ impl GameAI {
                         "perform_dice_roll" => {
                             let args: DiceRollRequest =
                                 serde_json::from_str(&tool_call.function.arguments)?;
-                            let game_state = self.get_game_state()?;
-                            match perform_dice_roll(args, &game_state) {
+                            match perform_dice_roll(args, game_state) {
                                 Ok(response) => {
                                     self.submit_tool_output(
                                         thread_id,
@@ -349,7 +397,7 @@ impl GameAI {
                             }
                         }
                         _ => {
-                            return Err(AIError::GameStateParseError(format!(
+                            return Err(AppError::GameStateParseError(format!(
                                 "Unknown function: {}",
                                 tool_call.function.name
                             )))
@@ -358,29 +406,16 @@ impl GameAI {
                 }
                 Ok(())
             } else {
-                Err(AIError::GameStateParseError(format!(
+                Err(AppError::GameStateParseError(format!(
                     "Unknown required action type: {}",
                     required_action.r#type
                 )))
             }
         } else {
-            Err(AIError::GameStateParseError(
+            Err(AppError::GameStateParseError(
                 "No required action found".to_string(),
             ))
         }
-    }
-
-    fn get_game_state(&self) -> Result<GameState, AIError> {
-        let app = self
-            .app_ref
-            .as_ref()
-            .ok_or_else(|| AIError::GameStateParseError("App reference not set".to_string()))?;
-        let app = app
-            .lock()
-            .map_err(|_| AIError::GameStateParseError("Failed to lock app mutex".to_string()))?;
-        app.current_game
-            .clone()
-            .ok_or_else(|| AIError::GameStateParseError("No current game".to_string()))
     }
 
     pub async fn fetch_all_messages(&self, thread_id: &str) -> Result<Vec<Message>, AIError> {

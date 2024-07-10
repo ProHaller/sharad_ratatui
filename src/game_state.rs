@@ -31,7 +31,7 @@ impl GameState {
         Ok(game_state)
     }
 
-    pub fn save_to_file(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn save_to_file(&self, path: &str) -> Result<(), std::io::Error> {
         let file = std::fs::File::create(path)?;
         serde_json::to_writer_pretty(file, self)?;
         Ok(())
