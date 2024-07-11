@@ -145,7 +145,7 @@ impl GameAI {
 
         let initial_message = CreateMessageRequestArgs::default()
             .role(MessageRole::User)
-            .content("Start the game. Use the `create_character_sheet` function to create new characters. Always include the complete character sheet in your response after character creation. For any actions requiring dice rolls during gameplay, use the `perform_dice_roll` function. Answer in valid json")
+            .content("Start the game. Use the `create_character_sheet` function to create new characters. Always include the complete character sheet in your response after character creation. For any actions requiring dice rolls during gameplay, use the `perform_dice_roll` function. Any action that modifies the character sheet must use the `update_character_sheet` function. Answer in valid json")
             .build()?;
 
         self.client
@@ -163,86 +163,40 @@ impl GameAI {
     }
 
     // Asynchronous method to send a message within the conversation, handling game state updates.
+
     pub async fn send_message(
         &mut self,
         message: &str,
-        mut game_state: &mut GameState,
+        game_state: &mut GameState,
     ) -> Result<GameMessage, AppError> {
-        // Extract necessary information from conversation_state
-        let (thread_id, assistant_id) = match &self.conversation_state {
-            Some(state) => (state.thread_id.clone(), state.assistant_id.clone()),
-            None => return Err(AppError::ConversationNotInitialized),
-        };
+        let (thread_id, assistant_id) = self.get_conversation_ids()?;
 
-        // Check if there's an active run
-        let active_runs = self
-            .client
-            .threads()
-            .runs(&thread_id)
-            .list(&[("limit", "1")])
-            .await?;
+        // Add the user message
+        self.add_message_to_thread(&thread_id, message).await?;
 
-        if let Some(run) = active_runs.data.first() {
-            if run.status == RunStatus::InProgress || run.status == RunStatus::Queued {
-                // Wait for the active run to complete
-                self.wait_for_run_completion(&thread_id, &run.id, game_state)
-                    .await?;
-            }
-        }
-
-        // Now that we're sure no run is active, we can add a new message
-        let message_request = CreateMessageRequestArgs::default()
-            .role(MessageRole::User)
-            .content(message)
-            .build()?;
-
-        self.client
-            .threads()
-            .messages(&thread_id)
-            .create(message_request)
-            .await?;
-
-        let run_request = CreateRunRequestArgs::default()
-            .assistant_id(&assistant_id)
-            .build()?;
-
-        let run = self
-            .client
-            .threads()
-            .runs(&thread_id)
-            .create(run_request)
-            .await?;
-
-        // Wait for the new run to complete
+        // Create and wait for the run to complete
+        let run = self.create_run(&thread_id, &assistant_id).await?;
         self.wait_for_run_completion(&thread_id, &run.id, game_state)
             .await?;
 
+        // Get the latest message and update the game state
         let response = self.get_latest_message(&thread_id).await?;
-        let game_message = self.update_game_state(&response)?;
-
-        self.add_debug_message(format!(
-            "Final game message to be returned: {:?}",
-            game_message
-        ));
+        let game_message = self.update_game_state(game_state, &response)?;
 
         Ok(game_message)
     }
 
-    // Asynchronous method to handle waiting for a run completion, performing necessary actions as required.
     async fn wait_for_run_completion(
         &mut self,
         thread_id: &str,
         run_id: &str,
         game_state: &mut GameState,
     ) -> Result<(), AppError> {
-        let timeout_duration = Duration::from_secs(300); // 5 minutes timeout
+        let timeout_duration = Duration::from_secs(300);
         let start_time = Instant::now();
-        let mut requires_action_attempts = 0;
-        const MAX_REQUIRES_ACTION_ATTEMPTS: u32 = 5;
 
         loop {
             if start_time.elapsed() > timeout_duration {
-                self.add_debug_message("Run timed out".to_string());
                 self.cancel_run(thread_id, run_id).await?;
                 return Err(AppError::Timeout);
             }
@@ -254,55 +208,59 @@ impl GameAI {
                 .retrieve(run_id)
                 .await?;
 
-            self.add_debug_message(format!(
-                "Run status, wait for run completion: {:?}",
-                run.status
-            ));
-
             match run.status {
-                RunStatus::Completed => {
-                    self.add_debug_message("Run completed successfully".to_string());
-                    return Ok(());
-                }
+                RunStatus::Completed => return Ok(()),
                 RunStatus::RequiresAction => {
-                    self.add_debug_message(
-                        "Run requires action, handling function call".to_string(),
-                    );
-                    match self
-                        .handle_required_action(thread_id, run_id, &run, game_state)
-                        .await
-                    {
-                        Ok(_) => {
-                            requires_action_attempts = 0;
-                        }
-                        Err(e) => {
-                            requires_action_attempts += 1;
-                            if requires_action_attempts >= MAX_REQUIRES_ACTION_ATTEMPTS {
-                                self.add_debug_message(
-                                    "Max attempts reached, cancelling run".to_string(),
-                                );
-                                self.cancel_run(thread_id, run_id).await?;
-                                return Err(AppError::MaxAttemptsReached);
-                            } else {
-                                self.add_debug_message(format!(
-                                    "Error handling required action: {:?}",
-                                    e
-                                ));
-                            }
-                        }
-                    }
+                    self.handle_required_action(thread_id, run_id, &run, game_state)
+                        .await?;
                 }
                 RunStatus::Failed | RunStatus::Cancelled | RunStatus::Expired => {
-                    let error_message = format!("Run failed with status: {:?}", run.status);
-                    self.add_debug_message(error_message.clone());
-                    return Err(AppError::GameStateParseError(error_message));
+                    return Err(AppError::GameStateParseError(format!(
+                        "Run failed with status: {:?}",
+                        run.status
+                    )));
                 }
-                _ => {
-                    self.add_debug_message("Run still in progress, waiting...".to_string());
-                    tokio::time::sleep(Duration::from_secs(2)).await;
-                }
+                _ => tokio::time::sleep(Duration::from_secs(2)).await,
             }
         }
+    }
+
+    fn update_game_state(
+        &mut self,
+        game_state: &mut GameState,
+        response: &str,
+    ) -> Result<GameMessage, AppError> {
+        let game_message: GameMessage = serde_json::from_str(response).map_err(|e| {
+            AppError::GameStateParseError(format!("Failed to parse GameMessage: {}", e))
+        })?;
+
+        if let Some(new_character_sheet) = game_message.character_sheet.clone() {
+            self.update_character_sheet(game_state, new_character_sheet)?;
+        }
+
+        Ok(game_message)
+    }
+
+    fn update_character_sheet(
+        &self,
+        game_state: &mut GameState,
+        new_sheet: CharacterSheet,
+    ) -> Result<(), AppError> {
+        // Update the main character sheet
+        game_state.character_sheet = Some(new_sheet.clone());
+
+        // Update or add the character in the characters vector
+        if let Some(existing_character) = game_state
+            .characters
+            .iter_mut()
+            .find(|c| c.name == new_sheet.name)
+        {
+            *existing_character = new_sheet;
+        } else {
+            game_state.characters.push(new_sheet);
+        }
+
+        Ok(())
     }
 
     async fn cancel_run(&self, thread_id: &str, run_id: &str) -> Result<(), AppError> {
@@ -348,8 +306,9 @@ impl GameAI {
                             };
                             if let Ok(character_sheet) = self.create_character(&args).await {
                                 game_state.characters.push(character_sheet.clone());
+                                game_state.character_sheet = Some(character_sheet.clone()); //That's gonna be an issue if we have multiple characters
                                 if let Some(state) = &mut self.conversation_state {
-                                    state.character_sheet = Some(character_sheet.clone());
+                                    state.character_sheet = Some(character_sheet);
                                 }
                             }
                             serde_json::to_string(&character_sheet)?
@@ -358,7 +317,13 @@ impl GameAI {
                             let args: DiceRollRequest =
                                 serde_json::from_str(&tool_call.function.arguments)?;
                             let response = match perform_dice_roll(args, game_state) {
-                                Ok(response) => response,
+                                Ok(response) => {
+                                    self.add_debug_message(format!(
+                                        "Dice roll response: {:?}",
+                                        response
+                                    ));
+                                    response
+                                }
                                 Err(e) => {
                                     self.add_debug_message(format!(
                                         "Error performing dice roll: {:?}",
@@ -510,35 +475,37 @@ impl GameAI {
         Err(AIError::NoMessageFound)
     }
 
-    // Method to update the game state based on the latest AI response.
-    fn update_game_state(&mut self, response: &str) -> Result<GameMessage, AIError> {
-        self.add_debug_message(format!("Updating game state with response: {}", response));
+    // Helper methods
+    fn get_conversation_ids(&self) -> Result<(String, String), AppError> {
+        self.conversation_state
+            .as_ref()
+            .map(|state| (state.thread_id.clone(), state.assistant_id.clone()))
+            .ok_or(AppError::ConversationNotInitialized)
+    }
 
-        // Parse the response as a GameMessage
-        let mut game_message: GameMessage = serde_json::from_str(response).map_err(|e| {
-            AIError::GameStateParseError(format!("Failed to parse GameMessage: {}", e))
-        })?;
-        self.add_debug_message(game_message.reasoning.to_string());
+    async fn add_message_to_thread(&self, thread_id: &str, message: &str) -> Result<(), AppError> {
+        let message_request = CreateMessageRequestArgs::default()
+            .role(MessageRole::User)
+            .content(message)
+            .build()?;
+        self.client
+            .threads()
+            .messages(thread_id)
+            .create(message_request)
+            .await?;
+        Ok(())
+    }
 
-        // If the AI response doesn't include a character sheet, use the one from the conversation state
-        if game_message.character_sheet.is_none() {
-            if let Some(state) = &self.conversation_state {
-                game_message.character_sheet = state.character_sheet.clone();
-            }
-        }
-
-        // If we now have a character sheet, update the conversation state
-        if let Some(ref sheet) = game_message.character_sheet {
-            if let Some(state) = &mut self.conversation_state {
-                state.character_sheet = Some(sheet.clone());
-            }
-        }
-
-        self.add_debug_message(format!(
-            "Game message from updated state: {:?}",
-            game_message
-        ));
-        Ok(game_message)
+    async fn create_run(&self, thread_id: &str, assistant_id: &str) -> Result<RunObject, AppError> {
+        let run_request = CreateRunRequestArgs::default()
+            .assistant_id(assistant_id)
+            .build()?;
+        Ok(self
+            .client
+            .threads()
+            .runs(thread_id)
+            .create(run_request)
+            .await?)
     }
 
     // Asynchronous method to submit output from a tool during a run.
@@ -736,35 +703,5 @@ impl GameAI {
             dummy_skills,
             vec![], // qualities
         )
-    }
-
-    async fn update_character_sheet(
-        &self,
-        game_state: &mut GameState,
-        update: CharacterSheetUpdate,
-    ) -> Result<(), AppError> {
-        if let Some(character_sheet) = &mut game_state.character_sheet {
-            character_sheet
-                .apply_update(update.clone())
-                .map_err(|e| AppError::Game(GameError::InvalidGameState(e)))?;
-
-            // Also update the character in the characters vector
-            if let Some(character) = game_state
-                .characters
-                .iter_mut()
-                .find(|c| c.name == character_sheet.name)
-            {
-                character
-                    .apply_update(update)
-                    .map_err(|e| AppError::Game(GameError::InvalidGameState(e)))?;
-            }
-
-            self.add_debug_message(format!("Character sheet updated: {:?}", character_sheet));
-            Ok(())
-        } else {
-            Err(AppError::Game(GameError::CharacterNotFound(
-                "No character sheet found in the current game state".to_string(),
-            )))
-        }
     }
 }
