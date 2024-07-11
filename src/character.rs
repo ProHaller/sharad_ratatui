@@ -1,5 +1,4 @@
 // Import necessary modules from external crates.
-use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
@@ -50,7 +49,7 @@ pub struct CharacterSheet {
     pub resonance: Option<u8>,
 
     // Secondary Attributes
-    pub initiative: (u8, u8), // Tuple representing base initiative and dice modifier.
+    pub initiative: (u8, u8),
     pub essence: f32,
     pub edge_points: u8,
     pub physical_monitor: u8,
@@ -67,13 +66,16 @@ pub struct CharacterSheet {
     pub knowledge_skills: HashMap<String, u8>,
 
     // Economic and Social Information
-    pub nuyen: u32, // In-game currency.
+    #[serde(default)]
+    pub nuyen: u32,
     pub lifestyle: String,
-    pub contacts: Vec<Contact>,
+    #[serde(default)]
+    pub contacts: HashMap<String, Contact>,
     pub qualities: Vec<Quality>,
     pub cyberware: Vec<String>,
     pub bioware: Vec<String>,
-    pub inventory: Vec<Item>,
+    #[serde(default)]
+    pub inventory: HashMap<String, Item>,
     pub matrix_attributes: Option<MatrixAttributes>,
 }
 
@@ -84,6 +86,14 @@ pub struct Skills {
     pub physical: HashMap<String, u8>,
     pub social: HashMap<String, u8>,
     pub technical: HashMap<String, u8>,
+}
+
+// Define a structure for items that can be part of a character's inventory.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Item {
+    pub name: String,
+    pub quantity: u32,
+    pub description: String,
 }
 
 // Define a structure for contacts within the game, representing relationships and connections.
@@ -99,14 +109,6 @@ pub struct Contact {
 pub struct Quality {
     pub name: String,
     pub positive: bool, // Indicates if the quality is advantageous.
-}
-
-// Define a structure for items that can be part of a character's inventory.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Item {
-    pub name: String,
-    pub quantity: u32,
-    pub description: String,
 }
 
 // Define a structure for matrix attributes, applicable if the character interacts with virtual environments.
@@ -169,11 +171,11 @@ impl CharacterSheet {
             knowledge_skills: HashMap::new(),
             nuyen: 0,
             lifestyle: "Street".to_string(),
-            contacts: Vec::new(),
+            contacts: HashMap::new(),
             qualities,
             cyberware: Vec::new(),
             bioware: Vec::new(),
-            inventory: Vec::new(),
+            inventory: HashMap::new(),
             matrix_attributes: None,
         };
 
@@ -272,4 +274,141 @@ impl CharacterSheet {
             _ => 0,
         }
     }
+
+    pub fn apply_update(&mut self, update: CharacterSheetUpdate) -> Result<(), String> {
+        match update {
+            CharacterSheetUpdate::UpdateNuyen { amount } => {
+                if amount >= 0 {
+                    self.nuyen = self.nuyen.saturating_add(amount as u32);
+                } else {
+                    self.nuyen = self.nuyen.saturating_sub(amount.abs() as u32);
+                }
+            }
+            CharacterSheetUpdate::AddContact {
+                name,
+                loyalty,
+                connection,
+            } => {
+                self.contacts.insert(
+                    name.clone(),
+                    Contact {
+                        name,
+                        loyalty,
+                        connection,
+                    },
+                );
+            }
+            CharacterSheetUpdate::RemoveContact { name } => {
+                self.contacts.remove(&name);
+            }
+            CharacterSheetUpdate::AddInventoryItem {
+                name,
+                quantity,
+                description,
+            } => {
+                self.inventory
+                    .entry(name.clone())
+                    .and_modify(|item| item.quantity += quantity)
+                    .or_insert(Item {
+                        name,
+                        quantity,
+                        description,
+                    });
+            }
+            CharacterSheetUpdate::RemoveInventoryItem { name } => {
+                if let Some(item) = self.inventory.get_mut(&name) {
+                    item.quantity = item.quantity.saturating_sub(1);
+                    if item.quantity == 0 {
+                        self.inventory.remove(&name);
+                    }
+                }
+            }
+            CharacterSheetUpdate::AddCyberware { name } => {
+                self.cyberware.push(name);
+            }
+            CharacterSheetUpdate::RemoveCyberware { name } => {
+                self.cyberware.retain(|c| c != &name);
+            }
+            CharacterSheetUpdate::AddBioware { name } => {
+                self.bioware.push(name);
+            }
+            CharacterSheetUpdate::RemoveBioware { name } => {
+                self.bioware.retain(|b| b != &name);
+            }
+            CharacterSheetUpdate::UpdateAttribute { attribute, value } => {
+                match attribute.to_lowercase().as_str() {
+                    "body" => self.body = value,
+                    "agility" => self.agility = value,
+                    "reaction" => self.reaction = value,
+                    "strength" => self.strength = value,
+                    "willpower" => self.willpower = value,
+                    "logic" => self.logic = value,
+                    "intuition" => self.intuition = value,
+                    "charisma" => self.charisma = value,
+                    "edge" => self.edge = value,
+                    _ => return Err(format!("Invalid attribute: {}", attribute)),
+                }
+                self.update_derived_attributes();
+            }
+            CharacterSheetUpdate::UpdateSkill {
+                category,
+                skill,
+                value,
+            } => {
+                let skill_map = match category.to_lowercase().as_str() {
+                    "combat" => &mut self.skills.combat,
+                    "physical" => &mut self.skills.physical,
+                    "social" => &mut self.skills.social,
+                    "technical" => &mut self.skills.technical,
+                    _ => return Err(format!("Invalid skill category: {}", category)),
+                };
+                skill_map.insert(skill, value);
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum CharacterSheetUpdate {
+    UpdateNuyen {
+        amount: i32,
+    },
+    AddContact {
+        name: String,
+        loyalty: u8,
+        connection: u8,
+    },
+    RemoveContact {
+        name: String,
+    },
+    AddInventoryItem {
+        name: String,
+        quantity: u32,
+        description: String,
+    },
+    RemoveInventoryItem {
+        name: String,
+    },
+    AddCyberware {
+        name: String,
+    },
+    RemoveCyberware {
+        name: String,
+    },
+    AddBioware {
+        name: String,
+    },
+    RemoveBioware {
+        name: String,
+    },
+    UpdateAttribute {
+        attribute: String,
+        value: u8,
+    },
+    UpdateSkill {
+        category: String,
+        skill: String,
+        value: u8,
+    },
 }

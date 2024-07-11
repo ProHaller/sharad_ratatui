@@ -65,7 +65,7 @@ impl App {
         let mut main_menu_state = ListState::default();
         main_menu_state.select(Some(0));
 
-        let settings = Settings::load_from_file("settings.json").unwrap_or_default();
+        let settings = Settings::load_from_file("./data/settings.json").unwrap_or_default();
         let settings_state = SettingsState::from_settings(&settings);
 
         let mut load_game_menu_state = ListState::default();
@@ -195,7 +195,7 @@ impl App {
         } else {
             self.openai_api_key_valid = true;
         }
-        if let Err(e) = self.settings.save_to_file("settings.json") {
+        if let Err(e) = self.settings.save_to_file("./data/settings.json") {
             eprintln!("Failed to save settings: {:?}", e);
         }
     }
@@ -523,8 +523,6 @@ impl App {
         let user_message = create_user_message(&message);
         let formatted_message = serde_json::to_string(&user_message)?;
 
-        self.add_message(Message::new(MessageType::User, message.clone()));
-
         match (&mut self.ai_client, &mut self.current_game) {
             (Some(ai), Some(game_state)) => {
                 let game_message = ai.send_message(&formatted_message, game_state).await?;
@@ -534,6 +532,8 @@ impl App {
                     game_message
                 ));
 
+                // Add the user message and AI response to game content
+                self.add_message(Message::new(MessageType::User, message.clone()));
                 let game_message_json = serde_json::to_string(&game_message)?;
                 self.add_message(Message::new(MessageType::Game, game_message_json));
 
@@ -611,14 +611,21 @@ impl App {
         }
     }
 
-    pub fn update_character_sheet(&mut self, character_sheet: CharacterSheet) {
-        // self.add_debug_message(format!(
-        //     "Updating character sheet in App: {:?}",
-        //     character_sheet
-        // ));
+    pub fn update_character_sheet(&mut self, mut character_sheet: CharacterSheet) {
         if let Some(game_state) = &mut self.current_game {
+            // Update the main character sheet
             game_state.character_sheet = Some(character_sheet.clone());
-            self.add_debug_message("Character sheet updated in game state".to_string());
+
+            // Update the character in the characters vector
+            if let Some(existing_character) = game_state
+                .characters
+                .iter_mut()
+                .find(|c| c.name == character_sheet.name)
+            {
+                *existing_character = character_sheet;
+            } else {
+                game_state.characters.push(character_sheet);
+            }
 
             // Save the updated game state
             if let Err(e) = self.save_current_game() {
@@ -855,6 +862,7 @@ impl App {
 
     pub async fn load_game(&mut self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
         let mut game_state = GameState::load_from_file(path)?;
+        self.add_debug_message(format!("Game state loade: {:?}", game_state));
 
         // Extract the save name from the path
         let save_name = Path::new(path)
@@ -961,3 +969,8 @@ impl App {
         }
     }
 }
+
+// TODO: Double display of user message
+// TODO: double display of User message
+// TODO: Character sheet refreshment
+// TODO: L+

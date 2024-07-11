@@ -1,5 +1,5 @@
 // Import necessary modules and data structures from other parts of the application and external crates.
-use crate::character::{CharacterSheet, Quality, Race, Skills};
+use crate::character::{CharacterSheet, CharacterSheetUpdate, Quality, Race, Skills};
 use crate::dice::{perform_dice_roll, DiceRollRequest, DiceRollResponse};
 use crate::game_state::GameState;
 use crate::message::{GameMessage, Message, MessageType};
@@ -58,6 +58,9 @@ pub enum AppError {
 
     #[error("No message found")]
     NoMessageFound, // Error when no message is found where one is expected.
+
+    #[error("Max Attempts Reached")]
+    MaxAttemptsReached,
 
     #[error("Failed to parse game state: {0}")]
     GameStateParseError(String), // Error for issues when parsing game state.
@@ -120,28 +123,6 @@ impl GameAI {
     // Method to add debug messages through the provided callback.
     fn add_debug_message(&self, message: String) {
         (self.debug_callback)(message);
-    }
-
-    // Asynchronous method to create a game assistant using the OpenAI API.
-    pub async fn create_game_assistant(
-        &self,
-        name: &str,
-        instructions: &str,
-    ) -> Result<String, AIError> {
-        let assistant = self
-            .client
-            .assistants()
-            .create(
-                CreateAssistantRequestArgs::default()
-                    .name(name)
-                    .instructions(instructions)
-                    .model("gpt-4o")
-                    .tools(vec![AssistantTools::CodeInterpreter])
-                    .build()?,
-            )
-            .await?;
-
-        Ok(assistant.id)
     }
 
     // Asynchronous method to start a new conversation thread.
@@ -262,6 +243,7 @@ impl GameAI {
         loop {
             if start_time.elapsed() > timeout_duration {
                 self.add_debug_message("Run timed out".to_string());
+                self.cancel_run(thread_id, run_id).await?;
                 return Err(AppError::Timeout);
             }
 
@@ -293,21 +275,14 @@ impl GameAI {
                         Ok(_) => {
                             requires_action_attempts = 0;
                         }
-                        // TODO: Handle this error to send a dummy dice result if needed.
                         Err(e) => {
                             requires_action_attempts += 1;
                             if requires_action_attempts >= MAX_REQUIRES_ACTION_ATTEMPTS {
                                 self.add_debug_message(
-                                    "Max attempts reached, creating dummy character".to_string(),
+                                    "Max attempts reached, cancelling run".to_string(),
                                 );
-                                let dummy_character = self.create_dummy_character();
-                                self.submit_tool_output(
-                                    thread_id,
-                                    run_id,
-                                    "create_character_sheet",
-                                    &dummy_character,
-                                )
-                                .await?;
+                                self.cancel_run(thread_id, run_id).await?;
+                                return Err(AppError::MaxAttemptsReached);
                             } else {
                                 self.add_debug_message(format!(
                                     "Error handling required action: {:?}",
@@ -330,7 +305,19 @@ impl GameAI {
         }
     }
 
+    async fn cancel_run(&self, thread_id: &str, run_id: &str) -> Result<(), AppError> {
+        self.client
+            .threads()
+            .runs(thread_id)
+            .cancel(run_id)
+            .await
+            .map_err(|e| AppError::OpenAI(e))?;
+        self.add_debug_message(format!("Run {} cancelled", run_id));
+        Ok(())
+    }
+
     // Asynchronous method to handle required actions based on the status of an active run.
+
     async fn handle_required_action(
         &mut self,
         thread_id: &str,
@@ -340,9 +327,11 @@ impl GameAI {
     ) -> Result<(), AppError> {
         if let Some(required_action) = &run.required_action {
             if required_action.r#type == "submit_tool_outputs" {
+                let mut tool_outputs = Vec::new();
+
                 for tool_call in &required_action.submit_tool_outputs.tool_calls {
                     self.add_debug_message(format!("Handling tool call: {:?}", tool_call));
-                    match tool_call.function.name.as_str() {
+                    let output = match tool_call.function.name.as_str() {
                         "create_character_sheet" => {
                             // Existing character creation code
                             let args: serde_json::Value =
@@ -357,55 +346,84 @@ impl GameAI {
                                     self.create_dummy_character()
                                 }
                             };
-                            self.submit_tool_output(
-                                thread_id,
-                                run_id,
-                                &tool_call.id,
-                                &character_sheet,
-                            )
-                            .await?;
                             if let Ok(character_sheet) = self.create_character(&args).await {
                                 game_state.characters.push(character_sheet.clone());
                                 if let Some(state) = &mut self.conversation_state {
                                     state.character_sheet = Some(character_sheet.clone());
                                 }
                             }
+                            serde_json::to_string(&character_sheet)?
                         }
                         "perform_dice_roll" => {
                             let args: DiceRollRequest =
                                 serde_json::from_str(&tool_call.function.arguments)?;
-                            match perform_dice_roll(args, game_state) {
-                                Ok(response) => {
-                                    self.submit_tool_output(
-                                        thread_id,
-                                        run_id,
-                                        &tool_call.id,
-                                        &response,
-                                    )
-                                    .await?;
-                                }
+                            let response = match perform_dice_roll(args, game_state) {
+                                Ok(response) => response,
                                 Err(e) => {
-                                    let error_response = DiceRollResponse {
+                                    self.add_debug_message(format!(
+                                        "Error performing dice roll: {:?}",
+                                        e
+                                    ));
+                                    DiceRollResponse {
                                         hits: 0,
                                         glitch: false,
                                         critical_glitch: false,
                                         critical_success: false,
                                         dice_results: vec![],
                                         success: false,
-                                    };
-                                    self.add_debug_message(format!(
-                                        "Error performing dice roll: {:?}",
-                                        e
-                                    ));
-                                    self.submit_tool_output(
-                                        thread_id,
-                                        run_id,
-                                        &tool_call.id,
-                                        &error_response,
-                                    )
-                                    .await?;
+                                    }
                                 }
+                            };
+                            serde_json::to_string(&response)?
+                        }
+                        "update_character_sheet" => {
+                            let args: serde_json::Value =
+                                serde_json::from_str(&tool_call.function.arguments)?;
+                            let character_name =
+                                args["character_name"].as_str().ok_or_else(|| {
+                                    AppError::GameStateParseError(
+                                        "Missing character_name".to_string(),
+                                    )
+                                })?;
+                            let update: CharacterSheetUpdate =
+                                serde_json::from_value(args["update"].clone())?;
+
+                            // Find the character in the game state
+                            let character = game_state
+                                .characters
+                                .iter_mut()
+                                .find(|c| c.name == character_name)
+                                .ok_or_else(|| {
+                                    AppError::Game(GameError::CharacterNotFound(
+                                        character_name.to_string(),
+                                    ))
+                                })?;
+
+                            // Apply the update
+                            if let Err(e) = character.apply_update(update) {
+                                self.add_debug_message(format!(
+                                    "Failed to apply character sheet update: {}",
+                                    e
+                                ));
+                                return Err(AppError::Game(GameError::InvalidGameState(e)));
                             }
+
+                            // If the character being updated is the main character, update the game state's character sheet
+                            if game_state
+                                .character_sheet
+                                .as_ref()
+                                .map(|cs| cs.name == character_name)
+                                .unwrap_or(false)
+                            {
+                                game_state.character_sheet = Some(character.clone());
+                            }
+
+                            let response = format!(
+                                "Character '{}' sheet updated successfully : {:?}",
+                                character_name, game_state.character_sheet
+                            );
+                            self.add_debug_message(response.clone());
+                            response
                         }
                         _ => {
                             return Err(AppError::GameStateParseError(format!(
@@ -413,8 +431,18 @@ impl GameAI {
                                 tool_call.function.name
                             )))
                         }
-                    }
+                    };
+
+                    tool_outputs.push(ToolsOutputs {
+                        tool_call_id: Some(tool_call.id.clone()),
+                        output: Some(output),
+                    });
                 }
+
+                // Submit all tool outputs at once
+                self.submit_tool_outputs(thread_id, run_id, tool_outputs)
+                    .await?;
+
                 Ok(())
             } else {
                 Err(AppError::GameStateParseError(format!(
@@ -514,21 +542,15 @@ impl GameAI {
     }
 
     // Asynchronous method to submit output from a tool during a run.
-    async fn submit_tool_output(
+
+    async fn submit_tool_outputs(
         &self,
         thread_id: &str,
         run_id: &str,
-        tool_call_id: &str,
-        output: &impl Serialize,
-    ) -> Result<(), AIError> {
-        let tool_output = serde_json::to_string(output)
-            .map_err(|e| AIError::GameStateParseError(e.to_string()))?;
-
+        tool_outputs: Vec<ToolsOutputs>,
+    ) -> Result<(), AppError> {
         let submit_request = SubmitToolOutputsRunRequest {
-            tool_outputs: vec![ToolsOutputs {
-                tool_call_id: Some(tool_call_id.to_string()),
-                output: Some(tool_output),
-            }],
+            tool_outputs,
             stream: None,
         };
 
@@ -714,5 +736,35 @@ impl GameAI {
             dummy_skills,
             vec![], // qualities
         )
+    }
+
+    async fn update_character_sheet(
+        &self,
+        game_state: &mut GameState,
+        update: CharacterSheetUpdate,
+    ) -> Result<(), AppError> {
+        if let Some(character_sheet) = &mut game_state.character_sheet {
+            character_sheet
+                .apply_update(update.clone())
+                .map_err(|e| AppError::Game(GameError::InvalidGameState(e)))?;
+
+            // Also update the character in the characters vector
+            if let Some(character) = game_state
+                .characters
+                .iter_mut()
+                .find(|c| c.name == character_sheet.name)
+            {
+                character
+                    .apply_update(update)
+                    .map_err(|e| AppError::Game(GameError::InvalidGameState(e)))?;
+            }
+
+            self.add_debug_message(format!("Character sheet updated: {:?}", character_sheet));
+            Ok(())
+        } else {
+            Err(AppError::Game(GameError::CharacterNotFound(
+                "No character sheet found in the current game state".to_string(),
+            )))
+        }
     }
 }

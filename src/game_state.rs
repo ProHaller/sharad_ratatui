@@ -1,19 +1,20 @@
 // Import necessary modules from the local crate and external crates.
-use crate::character::CharacterSheet;
+use crate::character::{CharacterSheet, CharacterSheetUpdate};
 use crate::message::Message;
+use chrono::Local;
 use serde::{Deserialize, Serialize};
+use std::fs::OpenOptions;
+use std::io::Write;
 
 // Define a struct to manage the state of a game session, with serialization and deserialization.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct GameState {
-    pub assistant_id: String, // Identifier for the assistant managing the game.
-    pub thread_id: String,    // Identifier for the specific game thread or session.
-    #[serde(default)] // Use default value if not provided during deserialization.
-    pub character_sheet: Option<CharacterSheet>, // Optional character sheet, if applicable to the game session.
-    #[serde(default)] // Ensure that an empty vector is used if not provided.
-    pub message_history: Vec<Message>, // History of messages within the game session.
-    pub save_name: String, // The name under which this game state is saved.
-    pub characters: Vec<CharacterSheet>, // List of character sheets for all characters in the game.
+    pub assistant_id: String,
+    pub thread_id: String,
+    pub character_sheet: Option<CharacterSheet>,
+    pub message_history: Vec<Message>,
+    pub save_name: String,
+    pub characters: Vec<CharacterSheet>,
 }
 
 // Implement the Debug trait manually to control what information is shown when debug printed.
@@ -33,9 +34,18 @@ impl std::fmt::Debug for GameState {
 impl GameState {
     // Function to load a game state from a specified JSON file.
     pub fn load_from_file(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let file = std::fs::File::open(path)?; // Attempt to open the specified file.
-        let game_state: GameState = serde_json::from_reader(file)?; // Deserialize the JSON into a GameState object.
-        Ok(game_state) // Return the deserialized game state.
+        let file = std::fs::File::open(path)?;
+        let game_state: GameState = serde_json::from_reader(file)?;
+
+        if let Ok(mut file) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("sharad_debug.log")
+        {
+            let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
+            let _ = writeln!(file, "[{}] load_from_file:\n {:?}", timestamp, game_state);
+        }
+        Ok(game_state)
     }
 
     // Function to save the current game state to a specified file in JSON format.
@@ -43,5 +53,33 @@ impl GameState {
         let file = std::fs::File::create(path)?; // Create or overwrite the file at the specified path.
         serde_json::to_writer_pretty(file, self)?; // Serialize the GameState into JSON and write to the file.
         Ok(()) // Return success if the file is written without errors.
+    }
+
+    pub fn save(&self) -> Result<(), std::io::Error> {
+        let save_dir = "./data/save";
+        std::fs::create_dir_all(save_dir)?;
+        let save_path = format!("{}/{}.json", save_dir, self.save_name);
+        let serialized = serde_json::to_string_pretty(self)?;
+        std::fs::write(save_path, serialized)?;
+        Ok(())
+    }
+
+    pub fn update_character_sheet(&mut self, update: CharacterSheetUpdate) -> Result<(), String> {
+        if let Some(ref mut sheet) = self.character_sheet {
+            sheet.apply_update(update.clone())?;
+        }
+
+        if let Some(character) = self.characters.iter_mut().find(|c| {
+            c.name
+                == self
+                    .character_sheet
+                    .as_ref()
+                    .map(|cs| cs.name.clone())
+                    .unwrap_or_default()
+        }) {
+            character.apply_update(update)?;
+        }
+
+        Ok(())
     }
 }
