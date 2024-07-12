@@ -304,26 +304,22 @@ impl GameAI {
                                     self.create_dummy_character()
                                 }
                             };
-                            if let Ok(character_sheet) = self.create_character(&args).await {
-                                game_state.characters.push(character_sheet.clone());
-                                game_state.character_sheet = Some(character_sheet.clone()); //That's gonna be an issue if we have multiple characters
-                                if let Some(state) = &mut self.conversation_state {
-                                    state.character_sheet = Some(character_sheet);
-                                }
+                            game_state.characters.push(character_sheet.clone());
+                            game_state.character_sheet = Some(character_sheet.clone());
+                            if let Some(state) = &mut self.conversation_state {
+                                state.character_sheet = Some(character_sheet.clone());
                             }
+                            self.add_debug_message(format!(
+                                "Character sheet: {:?}",
+                                character_sheet.clone()
+                            ));
                             serde_json::to_string(&character_sheet)?
                         }
                         "perform_dice_roll" => {
                             let args: DiceRollRequest =
                                 serde_json::from_str(&tool_call.function.arguments)?;
                             let response = match perform_dice_roll(args, game_state) {
-                                Ok(response) => {
-                                    self.add_debug_message(format!(
-                                        "Dice roll response: {:?}",
-                                        response
-                                    ));
-                                    response
-                                }
+                                Ok(response) => response,
                                 Err(e) => {
                                     self.add_debug_message(format!(
                                         "Error performing dice roll: {:?}",

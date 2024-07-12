@@ -100,12 +100,13 @@ pub struct Item {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Contact {
     pub name: String,
+    pub description: String,
     pub loyalty: u8,
     pub connection: u8,
 }
 
 // Define a structure for character qualities, representing traits or special abilities.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Quality {
     pub name: String,
     pub positive: bool, // Indicates if the quality is advantageous.
@@ -286,6 +287,7 @@ impl CharacterSheet {
             }
             CharacterSheetUpdate::AddContact {
                 name,
+                description,
                 loyalty,
                 connection,
             } => {
@@ -293,6 +295,7 @@ impl CharacterSheet {
                     name.clone(),
                     Contact {
                         name,
+                        description,
                         loyalty,
                         connection,
                     },
@@ -364,6 +367,12 @@ impl CharacterSheet {
                 };
                 skill_map.insert(skill, value);
             }
+            CharacterSheetUpdate::AddQuality { name, positive } => {
+                self.qualities.push(Quality { name, positive });
+            }
+            CharacterSheetUpdate::RemoveQuality { name } => {
+                self.qualities.retain(|c| c.name != name);
+            }
         }
         Ok(())
     }
@@ -376,6 +385,7 @@ pub enum CharacterSheetUpdate {
     },
     AddContact {
         name: String,
+        description: String,
         loyalty: u8,
         connection: u8,
     },
@@ -410,5 +420,12 @@ pub enum CharacterSheetUpdate {
         category: String,
         skill: String,
         value: u8,
+    },
+    AddQuality {
+        name: String,
+        positive: bool,
+    },
+    RemoveQuality {
+        name: String,
     },
 }
