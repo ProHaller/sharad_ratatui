@@ -532,8 +532,6 @@ impl App {
                     game_message
                 ));
 
-                // Add the user message and AI response to game content
-                self.add_message(Message::new(MessageType::User, message.clone()));
                 let game_message_json = serde_json::to_string(&game_message)?;
                 self.add_message(Message::new(MessageType::Game, game_message_json));
 
@@ -918,7 +916,7 @@ impl App {
         Ok(())
     }
 
-    fn scroll_to_bottom(&mut self) {
+    pub fn scroll_to_bottom(&mut self) {
         self.game_content_scroll = self.total_lines.saturating_sub(self.visible_lines);
         self.update_scroll();
     }

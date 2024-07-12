@@ -147,6 +147,7 @@ async fn run_app(
                         if let Err(e) = app.send_message(message).await {
                             app.add_message(Message::new( MessageType::System, format!("Failed to process message: {:?}", e)));
                         }
+                            app.scroll_to_bottom();
                     },
                     AppCommand::ApiKeyValidationResult(is_valid) => {
                         app.handle_api_key_validation_result(is_valid);

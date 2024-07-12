@@ -459,6 +459,7 @@ pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 // Function to handle user input display and interaction.
+
 fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .title("Your Action")
@@ -491,43 +492,46 @@ fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
     // Calculate cursor position
     let mut cursor_x = 0;
     let mut cursor_y = 0;
-    let mut chars_processed = 0;
+    let mut graphemes_processed = 0;
+
+    let text_graphemes: Vec<&str> = text.graphemes(true).collect();
 
     for (line_idx, line) in wrapped_lines.iter().enumerate() {
         let line_graphemes: Vec<&str> = line.graphemes(true).collect();
-        let line_width: usize = line_graphemes.iter().map(|g| g.width()).sum();
 
-        if chars_processed + line_graphemes.len() >= app.cursor_position {
+        if graphemes_processed + line_graphemes.len() >= app.cursor_position {
             cursor_y = line_idx;
-            let prefix_graphemes = &line_graphemes[..app.cursor_position - chars_processed];
-            cursor_x = prefix_graphemes.iter().map(|g| g.width()).sum();
+            let prefix_graphemes = &line_graphemes[..app.cursor_position - graphemes_processed];
+            cursor_x = prefix_graphemes.join("").width(); // Changed this line
 
             // Count trailing spaces
-            let trailing_spaces = text[chars_processed + prefix_graphemes.len()..]
-                .chars()
-                .take_while(|&c| c == ' ')
+            let trailing_spaces = text_graphemes[graphemes_processed + prefix_graphemes.len()..]
+                .iter()
+                .take_while(|&&g| g == " ")
                 .count();
             cursor_x += trailing_spaces;
 
             break;
         }
 
-        chars_processed += line_graphemes.len();
-        if chars_processed < text.len() && text.as_bytes()[chars_processed] == b'\n' {
-            chars_processed += 1;
+        graphemes_processed += line_graphemes.len();
+        if graphemes_processed < text_graphemes.len() && text_graphemes[graphemes_processed] == "\n"
+        {
+            graphemes_processed += 1;
         }
     }
 
     // Handle cursor at the end of the text
-    if app.cursor_position == text.len() {
+    if app.cursor_position == text_graphemes.len() {
         cursor_y = wrapped_lines.len() - 1;
-        cursor_x = wrapped_lines
-            .last()
-            .map(|line| line.graphemes(true).map(|g| g.width()).sum())
-            .unwrap_or(0);
+        cursor_x = wrapped_lines.last().map_or(0, |line| line.width()); // Changed this line
 
         // Add trailing spaces at the end of the text
-        let trailing_spaces = text.chars().rev().take_while(|&c| c == ' ').count();
+        let trailing_spaces = text_graphemes
+            .iter()
+            .rev()
+            .take_while(|&&g| g == " ")
+            .count();
         cursor_x += trailing_spaces;
     }
 
