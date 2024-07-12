@@ -295,11 +295,17 @@ fn draw_qualities(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
 }
 
 // Function to display miscellaneous information.
+
 fn draw_other_info(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+        .split(area);
+
+    let top_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(area);
+        .split(chunks[0]);
 
     let left_info = vec![
         format!("Nuyen: {}", sheet.nuyen),
@@ -310,14 +316,32 @@ fn draw_other_info(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     let right_info = vec![
         format!("Cyberware: {}", sheet.cyberware.len()),
         format!("Bioware: {}", sheet.bioware.len()),
-        format!("Inventory: {}", sheet.inventory.len()),
     ];
 
     let left_table = create_table(&left_info, "Resources & Contacts");
-    let right_table = create_table(&right_info, "Augmentations & Inventory");
+    let right_table = create_table(&right_info, "Augmentations");
 
-    f.render_widget(left_table, chunks[0]);
-    f.render_widget(right_table, chunks[1]);
+    f.render_widget(left_table, top_chunks[0]);
+    f.render_widget(right_table, top_chunks[1]);
+
+    // Create inventory list
+    let inventory_items: Vec<Row> = sheet
+        .inventory
+        .values()
+        .map(|item| {
+            Row::new(vec![Cell::from(format!(
+                "{} (x{})",
+                item.name, item.quantity,
+            ))])
+        })
+        .collect();
+
+    let inventory_table = Table::new(inventory_items, vec![Constraint::Percentage(100)])
+        .block(Block::default().borders(Borders::ALL).title("Inventory"))
+        .widths(&[Constraint::Percentage(100)])
+        .column_spacing(1);
+
+    f.render_widget(inventory_table, chunks[1]);
 }
 
 // Helper function to create a styled table from given information.
