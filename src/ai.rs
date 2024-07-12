@@ -319,7 +319,10 @@ impl GameAI {
                             let args: DiceRollRequest =
                                 serde_json::from_str(&tool_call.function.arguments)?;
                             let response = match perform_dice_roll(args, game_state) {
-                                Ok(response) => response,
+                                Ok(response) => {
+                                    self.add_debug_message(format!("Dice roll: {:?}", response));
+                                    response
+                                }
                                 Err(e) => {
                                     self.add_debug_message(format!(
                                         "Error performing dice roll: {:?}",
