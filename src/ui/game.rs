@@ -361,7 +361,7 @@ fn draw_contacts(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
         .iter()
         .map(|(name, contact)| {
             let cells = vec![
-                Cell::from(name.clone()),
+                Cell::from(name.split_whitespace().next().unwrap()),
                 Cell::from(contact.loyalty.to_string()),
                 Cell::from(contact.connection.to_string()),
             ];
