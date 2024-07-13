@@ -34,6 +34,7 @@ pub struct CharacterSheet {
     pub race: Race,
     pub gender: String,
     pub backstory: String,
+    pub main: bool,
 
     // Basic Attributes
     pub body: u8,
@@ -129,6 +130,7 @@ impl CharacterSheet {
         race: Race,
         gender: String,
         backstory: String,
+        main: bool,
         body: u8,
         agility: u8,
         reaction: u8,
@@ -142,12 +144,14 @@ impl CharacterSheet {
         resonance: u8,
         skills: Skills,
         qualities: Vec<Quality>,
+        nuyen: u32,
     ) -> Self {
         let mut sheet = CharacterSheet {
             name,
             race: race.clone(),
             gender,
             backstory,
+            main,
             body,
             agility,
             reaction,
@@ -170,7 +174,7 @@ impl CharacterSheet {
             social_limit: 1,
             skills,
             knowledge_skills: HashMap::new(),
-            nuyen: 0,
+            nuyen,
             lifestyle: "Street".to_string(),
             contacts: HashMap::new(),
             qualities,

@@ -139,6 +139,8 @@ async fn run_app(
                         }
                     },
                     AppCommand::StartNewGame(save_name) => {
+
+
                         if let Err(e) = app.start_new_game(save_name).await {
                             app.add_message(Message::new( MessageType::System, format!("Failed to start new game: {:?}", e)));
                         }

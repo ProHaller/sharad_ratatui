@@ -928,6 +928,9 @@ impl App {
         match key.code {
             KeyCode::Enter => {
                 if !self.save_name_input.is_empty() {
+                    // Clear the game content
+                    self.game_content.clear();
+                    self.current_game = None;
                     // Start a new game with the given save name
                     if let Err(e) = self
                         .command_sender

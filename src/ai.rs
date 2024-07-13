@@ -1,5 +1,5 @@
 // Import necessary modules and data structures from other parts of the application and external crates.
-use crate::character::{CharacterSheet, CharacterSheetUpdate, Quality, Race, Skills};
+use crate::character::{self, CharacterSheet, CharacterSheetUpdate, Quality, Race, Skills};
 use crate::dice::{perform_dice_roll, DiceRollRequest, DiceRollResponse};
 use crate::game_state::GameState;
 use crate::message::{GameMessage, Message, MessageType};
@@ -304,8 +304,10 @@ impl GameAI {
                                     self.create_dummy_character()
                                 }
                             };
+                            if character_sheet.main {
+                                game_state.character_sheet = Some(character_sheet.clone());
+                            }
                             game_state.characters.push(character_sheet.clone());
-                            game_state.character_sheet = Some(character_sheet.clone());
                             if let Some(state) = &mut self.conversation_state {
                                 state.character_sheet = Some(character_sheet.clone());
                             }
@@ -562,6 +564,8 @@ impl GameAI {
         let race_str = extract_str(args, "race")?;
         let gender = extract_str(args, "gender")?;
         let backstory = extract_str(args, "backstory")?;
+        // TODO: Extract main
+        let main: bool = args.get("main").and_then(|v| v.as_bool()).unwrap_or(false);
 
         // Parse race
         let race = match race_str.as_str() {
@@ -644,10 +648,15 @@ impl GameAI {
             })
             .collect::<Result<Vec<Quality>, AIError>>()?;
 
+        // TODO: Extract nuyen
+        let nuyen = args.get("nuyen").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+        // TODO: Extract inventory
+        // TODO: Extract Contacts
+
         // Create base character sheet
         let mut character = CharacterSheet::new(
-            name, race, gender, backstory, body, agility, reaction, strength, willpower, logic,
-            intuition, charisma, edge, magic, resonance, skills, qualities,
+            name, race, gender, backstory, main, body, agility, reaction, strength, willpower,
+            logic, intuition, charisma, edge, magic, resonance, skills, qualities, nuyen,
         );
 
         // Apply race modifiers and update derived attributes
@@ -688,6 +697,7 @@ impl GameAI {
             Race::Human,
             "Unspecified".to_string(),
             "This is a dummy character created as a fallback.".to_string(),
+            false,
             3, // body
             3, // agility
             3, // reaction
@@ -701,6 +711,7 @@ impl GameAI {
             0, // resonance
             dummy_skills,
             vec![], // qualities
+            5000,   //nuyen
         )
     }
 }
