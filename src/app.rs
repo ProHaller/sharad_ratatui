@@ -196,7 +196,7 @@ impl App {
             self.openai_api_key_valid = true;
         }
         if let Err(e) = self.settings.save_to_file("./data/settings.json") {
-            eprintln!("Failed to save settings: {:?}", e);
+            self.add_debug_message(format!("Failed to save settings: {:?}", e));
         }
     }
 

@@ -298,33 +298,95 @@ fn draw_qualities(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
 
 fn draw_other_info(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(50), // Left column: Resources and Augmentations
+            Constraint::Percentage(50), // Right column: Contacts and Inventory
+        ])
         .split(area);
 
-    let top_chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+    let left_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage(50), // Resources
+            Constraint::Percentage(50), // Augmentations
+        ])
         .split(chunks[0]);
 
-    let left_info = vec![
+    let right_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage(50), // Contacts
+            Constraint::Percentage(50), // Inventory
+        ])
+        .split(chunks[1]);
+
+    draw_resources(f, sheet, left_chunks[0]);
+    draw_augmentations(f, sheet, right_chunks[0]);
+    draw_contacts(f, sheet, left_chunks[1]);
+    draw_inventory(f, sheet, right_chunks[1]);
+}
+
+fn draw_resources(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
+    let info = vec![
         format!("Nuyen: {}", sheet.nuyen),
         format!("Lifestyle: {}", sheet.lifestyle),
-        format!("Contacts: {}", sheet.contacts.len()),
     ];
 
-    let right_info = vec![
+    let resources_table = create_table(&info, "Resources");
+    f.render_widget(resources_table, area);
+}
+
+fn draw_augmentations(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
+    let info = vec![
         format!("Cyberware: {}", sheet.cyberware.len()),
         format!("Bioware: {}", sheet.bioware.len()),
     ];
 
-    let left_table = create_table(&left_info, "Resources & Contacts");
-    let right_table = create_table(&right_info, "Augmentations");
+    let augmentations_table = create_table(&info, "Augmentations");
+    f.render_widget(augmentations_table, area);
+}
 
-    f.render_widget(left_table, top_chunks[0]);
-    f.render_widget(right_table, top_chunks[1]);
+fn draw_contacts(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
+    let header_cells = ["Name", "Loyalty", "Connection"]
+        .iter()
+        .map(|h| Cell::from(*h).style(Style::default().fg(Color::Yellow)));
+    let header = Row::new(header_cells)
+        .style(Style::default())
+        .height(1)
+        .bottom_margin(0);
 
-    // Create inventory list
+    let rows: Vec<Row> = sheet
+        .contacts
+        .iter()
+        .map(|(name, contact)| {
+            let cells = vec![
+                Cell::from(name.clone()),
+                Cell::from(contact.loyalty.to_string()),
+                Cell::from(contact.connection.to_string()),
+            ];
+            Row::new(cells).height(1).bottom_margin(0)
+        })
+        .collect();
+
+    let widths = vec![
+        Constraint::Percentage(20),
+        Constraint::Percentage(30),
+        Constraint::Percentage(50),
+    ];
+    let table = Table::new(rows, widths)
+        .header(header)
+        .block(Block::default().borders(Borders::ALL).title("Contacts"))
+        .widths(&[
+            Constraint::Percentage(20),
+            Constraint::Percentage(30),
+            Constraint::Percentage(50),
+        ]);
+
+    f.render_widget(table, area);
+}
+
+fn draw_inventory(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     let inventory_items: Vec<Row> = sheet
         .inventory
         .values()
@@ -336,12 +398,13 @@ fn draw_other_info(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
         })
         .collect();
 
-    let inventory_table = Table::new(inventory_items, vec![Constraint::Percentage(100)])
+    let widths = vec![Constraint::Percentage(100)];
+    let inventory_table = Table::new(inventory_items, widths)
         .block(Block::default().borders(Borders::ALL).title("Inventory"))
         .widths(&[Constraint::Percentage(100)])
         .column_spacing(1);
 
-    f.render_widget(inventory_table, chunks[1]);
+    f.render_widget(inventory_table, area);
 }
 
 // Helper function to create a styled table from given information.
@@ -492,47 +555,21 @@ fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
     // Calculate cursor position
     let mut cursor_x = 0;
     let mut cursor_y = 0;
-    let mut graphemes_processed = 0;
-
-    let text_graphemes: Vec<&str> = text.graphemes(true).collect();
+    let mut chars_processed = 0;
 
     for (line_idx, line) in wrapped_lines.iter().enumerate() {
-        let line_graphemes: Vec<&str> = line.graphemes(true).collect();
-
-        if graphemes_processed + line_graphemes.len() >= app.cursor_position {
+        if chars_processed + line.len() >= app.cursor_position {
             cursor_y = line_idx;
-            let prefix_graphemes = &line_graphemes[..app.cursor_position - graphemes_processed];
-            cursor_x = prefix_graphemes.join("").width(); // Changed this line
-
-            // Count trailing spaces
-            let trailing_spaces = text_graphemes[graphemes_processed + prefix_graphemes.len()..]
-                .iter()
-                .take_while(|&&g| g == " ")
-                .count();
-            cursor_x += trailing_spaces;
-
+            cursor_x = app.cursor_position - chars_processed;
             break;
         }
-
-        graphemes_processed += line_graphemes.len();
-        if graphemes_processed < text_graphemes.len() && text_graphemes[graphemes_processed] == "\n"
-        {
-            graphemes_processed += 1;
-        }
+        chars_processed += line.len() + 1; // +1 for the newline
     }
 
     // Handle cursor at the end of the text
-    if app.cursor_position == text_graphemes.len() {
+    if app.cursor_position == text.len() {
         cursor_y = wrapped_lines.len() - 1;
-        cursor_x = wrapped_lines.last().map_or(0, |line| line.width()); // Changed this line
-
-        // Add trailing spaces at the end of the text
-        let trailing_spaces = text_graphemes
-            .iter()
-            .rev()
-            .take_while(|&&g| g == " ")
-            .count();
-        cursor_x += trailing_spaces;
+        cursor_x = wrapped_lines.last().map_or(0, |line| line.len());
     }
 
     let joined_lines = wrapped_lines.join("\n");
@@ -550,8 +587,13 @@ fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
         cursor_y = visible_lines - 1;
     }
 
+    // Convert cursor_x from char index to width
+    let line = &wrapped_lines[cursor_y];
+    let prefix = &line[..cursor_x];
+    let prefix_width = UnicodeWidthStr::width(prefix);
+
     // Ensure cursor_x doesn't exceed the max width
-    cursor_x = cursor_x.min(max_width);
+    let cursor_x = prefix_width.min(max_width);
 
     // Set cursor
     f.set_cursor(

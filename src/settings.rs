@@ -55,6 +55,9 @@ impl Settings {
     // Save current settings to a specified file path.
     pub fn save_to_file(&self, path: &str) -> io::Result<()> {
         let data = serde_json::to_string_pretty(self)?; // Serialize settings into pretty JSON format.
+        if let Some(parent) = std::path::Path::new(path).parent() {
+            fs::create_dir_all(parent)?; // Create the directory if it doesn't exist.
+        }
         let mut file = fs::File::create(path)?; // Create or overwrite the file.
         file.write_all(data.as_bytes())?; // Write the serialized data to the file.
         Ok(())
