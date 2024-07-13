@@ -300,16 +300,16 @@ fn draw_other_info(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(50), // Left column: Resources and Augmentations
-            Constraint::Percentage(50), // Right column: Contacts and Inventory
+            Constraint::Percentage(40), // Left column: Resources and Augmentations
+            Constraint::Percentage(60), // Right column: Contacts and Inventory
         ])
         .split(area);
 
     let left_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage(50), // Resources
-            Constraint::Percentage(50), // Augmentations
+            Constraint::Percentage(30), // Resources
+            Constraint::Percentage(70), // Augmentations
         ])
         .split(chunks[0]);
 
@@ -323,14 +323,14 @@ fn draw_other_info(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
 
     draw_resources(f, sheet, left_chunks[0]);
     draw_augmentations(f, sheet, right_chunks[0]);
-    draw_contacts(f, sheet, left_chunks[1]);
-    draw_inventory(f, sheet, right_chunks[1]);
+    draw_contacts(f, sheet, right_chunks[1]);
+    draw_inventory(f, sheet, left_chunks[1]);
 }
 
 fn draw_resources(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     let info = vec![
-        format!("Nuyen: {}", sheet.nuyen),
         format!("Lifestyle: {}", sheet.lifestyle),
+        format!("Nuyen: {}", sheet.nuyen),
     ];
 
     let resources_table = create_table(&info, "Resources");

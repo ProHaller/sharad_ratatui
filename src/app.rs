@@ -168,7 +168,7 @@ impl App {
                 if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'v' {
                     // Handle paste
                     if let Ok(contents) = self.clipboard.get_contents() {
-                        self.api_key_input.push_str(&contents);
+                        self.api_key_input = contents;
                     }
                 } else {
                     self.api_key_input.push(c);
@@ -411,8 +411,15 @@ impl App {
                 }
             }
             KeyCode::Char(c) => {
-                self.user_input.insert_char(self.cursor_position, c);
-                self.cursor_position += 1;
+                if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'v' {
+                    // Handle paste
+                    if let Ok(contents) = self.clipboard.get_contents() {
+                        self.user_input = Rope::from(contents);
+                    }
+                } else {
+                    self.user_input.insert_char(self.cursor_position, c);
+                    self.cursor_position += 1;
+                }
             }
             KeyCode::PageUp => {
                 for _ in 0..self.visible_lines {
@@ -946,7 +953,15 @@ impl App {
                 }
             }
             KeyCode::Char(c) => {
-                self.save_name_input.push(c);
+                if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'v' {
+                    if let Ok(contents) = self.clipboard.get_contents() {
+                        self.save_name_input = contents;
+                    } else {
+                        self.save_name_input.push(c);
+                    }
+                } else {
+                    self.save_name_input.push(c);
+                }
             }
             KeyCode::Backspace => {
                 self.save_name_input.pop();
