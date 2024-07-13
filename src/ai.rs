@@ -1,14 +1,15 @@
 // Import necessary modules and data structures from other parts of the application and external crates.
-use crate::character::{self, CharacterSheet, CharacterSheetUpdate, Quality, Race, Skills};
+use crate::character::{
+    CharacterSheet, CharacterSheetUpdate, Contact, Item, Quality, Race, Skills,
+};
 use crate::dice::{perform_dice_roll, DiceRollRequest, DiceRollResponse};
 use crate::game_state::GameState;
 use crate::message::{GameMessage, Message, MessageType};
 use async_openai::{
     config::OpenAIConfig,
     types::{
-        AssistantTools, CreateAssistantRequestArgs, CreateMessageRequestArgs, CreateRunRequestArgs,
-        CreateThreadRequestArgs, MessageContent, MessageRole, RunObject, RunStatus,
-        SubmitToolOutputsRunRequest, ToolsOutputs,
+        CreateMessageRequestArgs, CreateRunRequestArgs, CreateThreadRequestArgs, MessageContent,
+        MessageRole, RunObject, RunStatus, SubmitToolOutputsRunRequest, ToolsOutputs,
     },
     Client,
 };
@@ -648,15 +649,67 @@ impl GameAI {
             })
             .collect::<Result<Vec<Quality>, AIError>>()?;
 
-        // TODO: Extract nuyen
+        // Extract nuyen
         let nuyen = args.get("nuyen").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-        // TODO: Extract inventory
-        // TODO: Extract Contacts
+
+        // Extract inventory
+        let inventory = args
+            .get("inventory")
+            .and_then(|v| v.get("items"))
+            .and_then(|items| items.as_array())
+            .map(|items_array| {
+                items_array
+                    .iter()
+                    .filter_map(|item| {
+                        let name = item.get("name")?.as_str()?;
+                        let quantity = item.get("quantity")?.as_u64()? as u32;
+                        let description = item.get("description")?.as_str()?.to_string();
+
+                        Some((
+                            name.to_string(),
+                            Item {
+                                name: name.to_string(),
+                                quantity,
+                                description,
+                            },
+                        ))
+                    })
+                    .collect::<HashMap<String, Item>>()
+            })
+            .unwrap_or_else(HashMap::new);
+
+        // Extract contacts
+        let contacts = args
+            .get("contacts")
+            .and_then(|v| v.as_array())
+            .map(|contacts_array| {
+                contacts_array
+                    .iter()
+                    .filter_map(|contact| {
+                        let name = contact.get("name")?.as_str()?.to_string();
+                        let description = contact.get("description")?.as_str()?.to_string();
+                        let loyalty = contact.get("loyalty")?.as_u64()? as u8;
+                        let connection = contact.get("connection")?.as_u64()? as u8;
+
+                        Some((
+                            name.clone(),
+                            Contact {
+                                name,
+                                description,
+                                loyalty,
+                                connection,
+                            },
+                        ))
+                    })
+                    .collect::<HashMap<String, Contact>>()
+            })
+            .unwrap_or_else(HashMap::new);
 
         // Create base character sheet
         let mut character = CharacterSheet::new(
             name, race, gender, backstory, main, body, agility, reaction, strength, willpower,
             logic, intuition, charisma, edge, magic, resonance, skills, qualities, nuyen,
+            inventory, contacts,
         );
 
         // Apply race modifiers and update derived attributes
@@ -697,21 +750,23 @@ impl GameAI {
             Race::Human,
             "Unspecified".to_string(),
             "This is a dummy character created as a fallback.".to_string(),
-            false,
-            3, // body
-            3, // agility
-            3, // reaction
-            3, // strength
-            3, // willpower
-            3, // logic
-            3, // intuition
-            3, // charisma
-            3, // edge
-            0, // magic
-            0, // resonance
+            false, // main
+            3,     // body
+            3,     // agility
+            3,     // reaction
+            3,     // strength
+            3,     // willpower
+            3,     // logic
+            3,     // intuition
+            3,     // charisma
+            3,     // edge
+            0,     // magic
+            0,     // resonance
             dummy_skills,
-            vec![], // qualities
-            5000,   //nuyen
+            vec![],         // qualities
+            5000,           //nuyen
+            HashMap::new(), // inventory
+            HashMap::new(), // contacts
         )
     }
 }

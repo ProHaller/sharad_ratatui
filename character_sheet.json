@@ -1,6 +1,6 @@
 {
   "name": "create_character_sheet",
-  "description": "Create a character sheet for a Shadowrun main character, including personal details, attributes, and skills.",
+  "description": "Create a character sheet for a Shadowrun main character, including personal details, attributes, skills, inventory, and contacts.",
   "parameters": {
     "properties": {
       "attributes": {
@@ -246,6 +246,67 @@
         "minimum": 6000,
         "maximum": 450000,
         "type": "integer"
+      },
+      "inventory": {
+        "description": "Items that the character possesses at the start, including weapons, gear, and other personal items.",
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Name of the item."
+            },
+            "quantity": {
+              "type": "integer",
+              "description": "Quantity of the item."
+            },
+            "description": {
+              "type": "string",
+              "description": "Description of the item."
+            }
+          },
+          "required": [
+            "name",
+            "quantity",
+            "description"
+          ]
+        }
+      },
+      "contacts": {
+        "description": "A list of contacts the character has, representing relationships and connections.",
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Name of the contact."
+            },
+            "description": {
+              "type": "string",
+              "description": "Description of the contact."
+            },
+            "loyalty": {
+              "type": "integer",
+              "description": "Loyalty level of the contact, representing the strength of the relationship.",
+              "minimum": 1,
+              "maximum": 6
+            },
+            "connection": {
+              "type": "integer",
+              "description": "Connection level of the contact, indicating the influence or resource level of the contact.",
+              "minimum": 1,
+              "maximum": 6
+            }
+          },
+          "required": [
+            "name",
+            "description",
+            "loyalty",
+            "connection"
+          ]
+        }
       }
     },
     "required": [
@@ -253,10 +314,13 @@
       "race",
       "gender",
       "backstory",
+      "main",
       "attributes",
       "skills",
       "qualities",
-      "nuyen"
+      "nuyen",
+      "inventory",
+      "contacts"
     ],
     "type": "object"
   }

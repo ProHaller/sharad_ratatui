@@ -145,6 +145,8 @@ impl CharacterSheet {
         skills: Skills,
         qualities: Vec<Quality>,
         nuyen: u32,
+        inventory: HashMap<String, Item>,
+        contacts: HashMap<String, Contact>,
     ) -> Self {
         let mut sheet = CharacterSheet {
             name,
@@ -176,12 +178,12 @@ impl CharacterSheet {
             knowledge_skills: HashMap::new(),
             nuyen,
             lifestyle: "Street".to_string(),
-            contacts: HashMap::new(),
+            contacts,
             qualities,
             cyberware: Vec::new(),
             bioware: Vec::new(),
-            inventory: HashMap::new(),
             matrix_attributes: None,
+            inventory,
         };
 
         // Apply race-specific attribute modifiers and update derived attributes.
