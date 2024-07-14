@@ -37,7 +37,7 @@
             "type": "integer"
           },
           "logic": {
-            "description": "Character's reasoning and memory capabilities.",
+            "description": "Character's crunch and memory capabilities.",
             "maximum": 6,
             "minimum": 1,
             "type": "integer"
@@ -138,7 +138,7 @@
         "type": "string"
       },
       "skills": {
-        "description": "Collection of skills categorized into combat, physical, social, and technical skills.",
+        "description": "Collection of skills categorized into combat, physical, social, technical skills and knowledge skills.",
         "properties": {
           "combat": {
             "description": "Combat-related skills of the character.",
@@ -231,13 +231,37 @@
               "type": "object"
             },
             "type": "array"
+          },
+          "knowledge": {
+            "description": "Knowledge skills of the character, such as academic fields, street knowledge, professional expertise, and even hobbies.",
+            "items": {
+              "properties": {
+                "name": {
+                  "description": "Name of the knowledge skill.",
+                  "type": "string"
+                },
+                "rating": {
+                  "description": "Proficiency level of the knowledge skill.",
+                  "maximum": 6,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "name",
+                "rating"
+              ],
+              "type": "object"
+            },
+            "type": "array"
           }
         },
         "required": [
           "combat",
           "physical",
           "social",
-          "technical"
+          "technical",
+          "knowledge"
         ],
         "type": "object"
       },

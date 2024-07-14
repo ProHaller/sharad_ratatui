@@ -243,6 +243,7 @@ fn draw_skills(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
         ("Physical", &sheet.skills.physical),
         ("Social", &sheet.skills.social),
         ("Technical", &sheet.skills.technical),
+        ("Knowledge", &sheet.knowledge_skills),
     ];
 
     let rows: Vec<Row> = categories
@@ -282,9 +283,18 @@ fn draw_qualities(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     let qualities: Vec<Span> = sheet
         .qualities
         .iter()
-        .map(|q| {
+        .enumerate()
+        .map(|(i, q)| {
             let color = if q.positive { Color::Green } else { Color::Red };
-            Span::styled(format!("{}, ", q.name), Style::default().fg(color))
+            let separator = if i == sheet.qualities.len() - 1 {
+                ""
+            } else {
+                ", "
+            };
+            Span::styled(
+                format!("{}{}", q.name, separator),
+                Style::default().fg(color),
+            )
         })
         .collect();
 
@@ -361,7 +371,11 @@ fn draw_contacts(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
         .iter()
         .map(|(name, contact)| {
             let cells = vec![
-                Cell::from(name.split_whitespace().next().unwrap()),
+                Cell::from(if name.split_whitespace().next().unwrap().len() > 3 {
+                    name.split_whitespace().next().unwrap()
+                } else {
+                    name
+                }),
                 Cell::from(contact.loyalty.to_string()),
                 Cell::from(contact.connection.to_string()),
             ];
@@ -370,18 +384,13 @@ fn draw_contacts(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
         .collect();
 
     let widths = vec![
-        Constraint::Percentage(20),
         Constraint::Percentage(30),
-        Constraint::Percentage(50),
+        Constraint::Percentage(30),
+        Constraint::Percentage(40),
     ];
     let table = Table::new(rows, widths)
         .header(header)
-        .block(Block::default().borders(Borders::ALL).title("Contacts"))
-        .widths(&[
-            Constraint::Percentage(20),
-            Constraint::Percentage(30),
-            Constraint::Percentage(50),
-        ]);
+        .block(Block::default().borders(Borders::ALL).title("Contacts"));
 
     f.render_widget(table, area);
 }
@@ -431,17 +440,17 @@ fn create_table<'a>(info: &'a [String], title: &'a str) -> Table<'a> {
 
 // Function to draw dynamic game content.
 pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
-    let narration_block = Block::default()
-        .title("Narration")
+    let fluff_block = Block::default()
+        .title("fluff")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Green));
 
-    f.render_widget(&narration_block, area);
+    f.render_widget(&fluff_block, area);
 
-    let narration_area = narration_block.inner(area);
+    let fluff_area = fluff_block.inner(area);
 
-    let max_width = narration_area.width.saturating_sub(2) as usize;
-    let max_height = narration_area.height.saturating_sub(2) as usize;
+    let max_width = fluff_area.width.saturating_sub(2) as usize;
+    let max_height = fluff_area.height.saturating_sub(2) as usize;
 
     let mut all_lines = Vec::new();
 
@@ -451,8 +460,8 @@ pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
                 if let Ok(game_message) = serde_json::from_str::<GameMessage>(&message.content) {
                     (
                         format!(
-                            "Reasoning:\n{}\n\nNarration:\n{}",
-                            game_message.reasoning, game_message.narration
+                            "crunch:\n{}\n\nfluff:\n{}",
+                            game_message.crunch, game_message.fluff
                         ),
                         Style::default().fg(Color::Green),
                         Alignment::Left,
@@ -514,7 +523,7 @@ pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
         .block(Block::default().borders(Borders::NONE))
         .wrap(Wrap { trim: true });
 
-    f.render_widget(content, narration_area);
+    f.render_widget(content, fluff_area);
 
     app.visible_lines = max_height;
     app.update_scroll();

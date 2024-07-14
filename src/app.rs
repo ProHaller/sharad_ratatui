@@ -693,19 +693,19 @@ impl App {
         // Attempt to parse the AI response as a GameMessage
         match serde_json::from_str::<GameMessage>(&response) {
             Ok(game_message) => {
-                // Add the reasoning and narration separately
+                // Add the crunch and fluff separately
                 self.add_message(Message::new(
                     MessageType::Game,
-                    format!("Reasoning: {}", game_message.reasoning),
+                    format!("Crunch: {}", game_message.crunch),
                 ));
                 self.add_message(Message::new(
                     MessageType::Game,
-                    format!("Narration: {}", game_message.narration),
+                    format!("Fluff: {}", game_message.fluff),
                 ));
 
-                // Add debug message for AI reasoning if debug mode is on
+                // Add debug message for AI crunch if debug mode is on
                 if self.settings.debug_mode {
-                    self.add_debug_message(format!("AI Reasoning: {}", game_message.reasoning));
+                    self.add_debug_message(format!("AI crunch: {}", game_message.crunch));
                 }
 
                 // Update character sheet if present

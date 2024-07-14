@@ -565,7 +565,7 @@ impl GameAI {
         let race_str = extract_str(args, "race")?;
         let gender = extract_str(args, "gender")?;
         let backstory = extract_str(args, "backstory")?;
-        // TODO: Extract main
+        // Extract main
         let main: bool = args.get("main").and_then(|v| v.as_bool()).unwrap_or(false);
 
         // Parse race
@@ -627,6 +627,17 @@ impl GameAI {
                 let rating = extract_u8(skill, "rating")?;
                 skills_map.insert(name, rating);
             }
+        }
+        let mut knowledge = HashMap::new();
+        let knowledge_skills = skills_obj
+            .get("knowledge")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| AIError::GameStateParseError("Missing knowledge skills".to_string()))?;
+
+        for skill in knowledge_skills {
+            let name = extract_str(skill, "name")?;
+            let rating = extract_u8(skill, "rating")?;
+            knowledge.insert(name, rating);
         }
 
         // Extract qualities
@@ -708,8 +719,8 @@ impl GameAI {
         // Create base character sheet
         let mut character = CharacterSheet::new(
             name, race, gender, backstory, main, body, agility, reaction, strength, willpower,
-            logic, intuition, charisma, edge, magic, resonance, skills, qualities, nuyen,
-            inventory, contacts,
+            logic, intuition, charisma, edge, magic, resonance, skills, knowledge, qualities,
+            nuyen, inventory, contacts,
         );
 
         // Apply race modifiers and update derived attributes
@@ -744,6 +755,7 @@ impl GameAI {
                 .cloned()
                 .collect(),
         };
+        let dummy_knowledge = HashMap::new();
 
         CharacterSheet::new(
             "Dummy Character".to_string(),
@@ -763,6 +775,7 @@ impl GameAI {
             0,     // magic
             0,     // resonance
             dummy_skills,
+            dummy_knowledge,
             vec![],         // qualities
             5000,           //nuyen
             HashMap::new(), // inventory

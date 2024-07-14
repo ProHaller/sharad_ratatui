@@ -143,6 +143,7 @@ impl CharacterSheet {
         magic: u8,
         resonance: u8,
         skills: Skills,
+        knowledge_skills: HashMap<String, u8>,
         qualities: Vec<Quality>,
         nuyen: u32,
         inventory: HashMap<String, Item>,
@@ -175,7 +176,7 @@ impl CharacterSheet {
             mental_limit: 1,
             social_limit: 1,
             skills,
-            knowledge_skills: HashMap::new(),
+            knowledge_skills,
             nuyen,
             lifestyle: "Street".to_string(),
             contacts,
@@ -369,6 +370,7 @@ impl CharacterSheet {
                     "physical" => &mut self.skills.physical,
                     "social" => &mut self.skills.social,
                     "technical" => &mut self.skills.technical,
+                    "knowledge" => &mut self.knowledge_skills,
                     _ => return Err(format!("Invalid skill category: {}", category)),
                 };
                 skill_map.insert(skill, value);
