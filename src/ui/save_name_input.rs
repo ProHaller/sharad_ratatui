@@ -12,7 +12,7 @@ use ratatui::{
 pub fn draw_save_name_input(f: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .margin(2)
+        .margin(f.size().height / 3)
         .constraints(
             [
                 Constraint::Length(3),

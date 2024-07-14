@@ -20,7 +20,7 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
     app.debug_info = format!("Terminal size: {}x{}", size.width, size.height);
 
     // Conditionally display a warning if the terminal is too small.
-    if size.width < 20 || size.height < 10 {
+    if size.width < 50 || size.height < 50 {
         let warning = Paragraph::new("Terminal too small. Please resize.")
             .style(Style::default().fg(Color::Red))
             .alignment(Alignment::Center);
@@ -441,7 +441,10 @@ fn create_table<'a>(info: &'a [String], title: &'a str) -> Table<'a> {
 // Function to draw dynamic game content.
 pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
     let fluff_block = Block::default()
-        .title("fluff")
+        .title(app.current_game.as_ref().map_or_else(
+            || "Game will start momentarily".to_string(),
+            |game| game.save_name.clone(),
+        ))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Green));
 

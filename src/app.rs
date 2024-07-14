@@ -49,7 +49,7 @@ pub struct App {
     pub game_content_scroll: usize,
     pub visible_lines: usize,
     pub total_lines: usize,
-    pub message_line_counts: Vec<usize>, // Store the number of lines for each message
+    pub message_line_counts: Vec<usize>,
     pub save_name_input: String,
     pub current_game_response: Option<GameMessage>,
     pub last_user_message: Option<UserMessage>,
@@ -168,7 +168,8 @@ impl App {
                 if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'v' {
                     // Handle paste
                     if let Ok(contents) = self.clipboard.get_contents() {
-                        self.api_key_input = contents;
+                        self.api_key_input
+                            .insert_str(self.cursor_position, &contents);
                     }
                 } else {
                     self.api_key_input.push(c);
@@ -351,7 +352,13 @@ impl App {
 
     fn select_main_menu_option(&mut self) {
         match self.main_menu_state.selected() {
-            Some(0) => self.state = AppState::InputSaveName,
+            Some(0) => {
+                self.state = if self.openai_api_key_valid {
+                    AppState::InputSaveName
+                } else {
+                    AppState::InputApiKey
+                }
+            }
             Some(1) => self.state = AppState::LoadMenu,
             Some(2) => self.state = AppState::CreateImage,
             Some(3) => self.state = AppState::SettingsMenu,
@@ -414,7 +421,7 @@ impl App {
                 if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'v' {
                     // Handle paste
                     if let Ok(contents) = self.clipboard.get_contents() {
-                        self.user_input = Rope::from(contents);
+                        self.user_input.insert(self.cursor_position, &contents);
                     }
                 } else {
                     self.user_input.insert_char(self.cursor_position, c);
@@ -527,7 +534,7 @@ impl App {
     }
 
     pub async fn send_message(&mut self, message: String) -> Result<(), AppError> {
-        let user_message = create_user_message(&message);
+        let user_message = create_user_message(&self.settings.language, &message);
         let formatted_message = serde_json::to_string(&user_message)?;
 
         match (&mut self.ai_client, &mut self.current_game) {
@@ -607,7 +614,7 @@ impl App {
                 format!("New game '{}' started!", save_name),
             ));
 
-            self.send_message("Start the game. When necessary, please create a character sheet by calling the `create_character_sheet` function with the necessary details.".to_string())
+            self.send_message(format!("Start the game. When necessary, create a character sheet by calling the `create_character_sheet` function with the necessary details including the inventory. Respond only in the following language: {}", self.settings.language).to_string())
             .await?;
 
             Ok(())
@@ -693,31 +700,46 @@ impl App {
         // Attempt to parse the AI response as a GameMessage
         match serde_json::from_str::<GameMessage>(&response) {
             Ok(game_message) => {
-                // Add the crunch and fluff separately
-                self.add_message(Message::new(
-                    MessageType::Game,
-                    format!("Crunch: {}", game_message.crunch),
-                ));
-                self.add_message(Message::new(
-                    MessageType::Game,
-                    format!("Fluff: {}", game_message.fluff),
-                ));
-
-                // Add debug message for AI crunch if debug mode is on
-                if self.settings.debug_mode {
-                    self.add_debug_message(format!("AI crunch: {}", game_message.crunch));
+                // Add crunch and fluff messages if they're not empty
+                if !game_message.crunch.is_empty() {
+                    self.add_message(Message::new(
+                        MessageType::Game,
+                        format!("Crunch: {}", game_message.crunch),
+                    ));
+                }
+                if !game_message.fluff.is_empty() {
+                    self.add_message(Message::new(
+                        MessageType::Game,
+                        format!("Fluff: {}", game_message.fluff),
+                    ));
                 }
 
-                // Update character sheet if present
-                if let Some(character_sheet) = game_message.character_sheet {
+                if let Some(character_sheet) = game_message.character_sheet.clone() {
+                    // Add a message for the character creation or update
+                    self.add_message(Message::new(
+                        MessageType::Game,
+                        format!("Character created or updated: {}", character_sheet.name),
+                    ));
+
+                    // Update character sheet
                     self.update_character_sheet(character_sheet);
-                }
 
-                // Save the game after processing the response
-                if let Err(e) = self.save_current_game() {
+                    // Add debug message for AI response if debug mode is on
+                    if self.settings.debug_mode {
+                        self.add_debug_message(format!("Parsed AI response: {:?}", game_message));
+                    }
+
+                    // Save the game after processing the response
+                    if let Err(e) = self.save_current_game() {
+                        self.add_message(Message::new(
+                            MessageType::System,
+                            format!("Failed to save game after AI response: {:?}", e),
+                        ));
+                    }
+                } else {
                     self.add_message(Message::new(
                         MessageType::System,
-                        format!("Failed to save game after AI response: {:?}", e),
+                        "Received response from AI without character sheet".to_string(),
                     ));
                 }
             }
@@ -755,6 +777,9 @@ impl App {
     }
 
     fn handle_load_game_input(&mut self, key: KeyEvent) {
+        if key.kind != KeyEventKind::Press {
+            return;
+        }
         match key.code {
             KeyCode::Enter => {
                 if let Some(selected) = self.load_game_menu_state.selected() {
@@ -985,8 +1010,3 @@ impl App {
         }
     }
 }
-
-// TODO: Double display of user message
-// TODO: double display of User message
-// TODO: Character sheet refreshment
-// TODO: L+

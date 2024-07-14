@@ -146,7 +146,7 @@ impl GameAI {
 
         let initial_message = CreateMessageRequestArgs::default()
             .role(MessageRole::User)
-            .content("Start the game. Use the `create_character_sheet` function to create new characters. Always include the complete character sheet in your response after character creation. For any actions requiring dice rolls during gameplay, use the `perform_dice_roll` function. Any action that modifies the character sheet must use the `update_character_sheet` function. Answer in valid json")
+            .content("Start the game. Use the `create_character_sheet` function to create new characters. Always include the complete character sheet in your response after character creation including inventory. For any actions requiring dice rolls during gameplay, use the `perform_dice_roll` function. Any action that modifies the character sheet must use the `update_character_sheet` function. Answer in valid json")
             .build()?;
 
         self.client

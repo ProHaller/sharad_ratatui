@@ -3,3 +3,9 @@ settings.json
 data
 sharad_debug.log
 character.json
+.env
+.python-version
+check.py
+results.txt
+temp.rs
+todo.rs

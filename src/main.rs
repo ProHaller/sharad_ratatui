@@ -29,7 +29,7 @@ mod ui;
 
 // Constants for minimum terminal size.
 const MIN_WIDTH: u16 = 90;
-const MIN_HEIGHT: u16 = 50;
+const MIN_HEIGHT: u16 = 70;
 
 // Function to ensure the terminal size meets minimum requirements.
 fn ensure_minimum_terminal_size() -> io::Result<()> {
@@ -96,7 +96,7 @@ async fn run_app(
     mut command_receiver: mpsc::UnboundedReceiver<AppCommand>,
     mut ai_receiver: mpsc::UnboundedReceiver<AIMessage>,
 ) -> io::Result<()> {
-    let tick_rate = Duration::from_millis(50); // Duration for each tick in the main loop.
+    let tick_rate = Duration::from_millis(10); // Duration for each tick in the main loop.
     let mut last_tick = Instant::now(); // Timestamp of the last tick.
 
     loop {

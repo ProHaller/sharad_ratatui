@@ -12,7 +12,7 @@ use ratatui::{
 pub fn draw_api_key_input(f: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .margin(2)
+        .margin(f.size().height / 3)
         .constraints(
             [
                 Constraint::Length(3),
@@ -24,7 +24,7 @@ pub fn draw_api_key_input(f: &mut Frame, app: &App) {
         )
         .split(f.size());
 
-    let title = Paragraph::new("Enter OpenAI API Key")
+    let title = Paragraph::new("Enter a valid OpenAI API Key")
         .style(Style::default().fg(Color::Cyan))
         .alignment(Alignment::Center);
     f.render_widget(title, chunks[0]);

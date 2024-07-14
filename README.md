@@ -2,7 +2,7 @@
 
 Welcome to Sharad Ratatui, an AI-assisted text-based role-playing game built with Rust and the Ratatui library!
 
-## 🌟 Contribute to Our AI-Powered Adventure!
+## 🌟 Contribute to Our AI-Powered Adventure
 
 Are you excited about the intersection of AI and gaming? Do you want to be part of a project that's pushing the boundaries of what's possible with AI-assisted development? Then you've come to the right place!
 
