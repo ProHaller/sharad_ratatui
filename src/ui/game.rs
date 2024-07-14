@@ -1,7 +1,6 @@
 use crate::app::App;
 use crate::character::CharacterSheet;
 use crate::message::{GameMessage, MessageType, UserMessage};
-use hyphenation::{Language, Load, Standard};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -9,8 +8,7 @@ use ratatui::{
     widgets::*,
     Frame,
 };
-use textwrap::{wrap, Options, WordSplitter};
-use tui_input::backend::crossterm as tui_input_backend;
+use unicode_width::UnicodeWidthStr;
 
 // Main function for drawing in-game UI elements.
 pub fn draw_in_game(f: &mut Frame, app: &mut App) {
@@ -543,24 +541,20 @@ fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
     let inner_area = block.inner(area);
     f.render_widget(block, area);
 
-    let max_width = inner_area.width as usize - 2; // Account for borders
-    let wrapped_text = textwrap::fill(app.user_input.value(), max_width);
-
-    let input_text = Paragraph::new(wrapped_text)
+    let input_widget = Paragraph::new(app.user_input.value())
         .style(Style::default().fg(Color::White))
         .wrap(Wrap { trim: true });
 
-    f.render_widget(input_text, inner_area);
-
-    // Calculate cursor position
-    let cursor_position = app.user_input.cursor();
-    let text_before_cursor = &app.user_input.value()[..cursor_position];
-    let wrapped_before_cursor = textwrap::wrap(text_before_cursor, max_width);
-    let cursor_y = wrapped_before_cursor.len().saturating_sub(1) as u16;
-    let cursor_x = wrapped_before_cursor.last().map_or(0, |line| line.len()) as u16;
+    f.render_widget(input_widget, inner_area);
 
     // Set cursor
-    f.set_cursor(inner_area.left() + cursor_x, inner_area.top() + cursor_y);
+    let cursor_position = app.user_input.cursor();
+    let input_str = app.user_input.value();
+    let cursor_x = input_str[..cursor_position].width() as u16;
+    let cursor_y = cursor_x / inner_area.width;
+    let cursor_x = cursor_x % inner_area.width;
+
+    f.set_cursor(inner_area.x + cursor_x, inner_area.y + cursor_y);
 }
 
 // Function to parse markdown-like text to formatted spans.
