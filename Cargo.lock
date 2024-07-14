@@ -1739,7 +1739,7 @@ dependencies = [
  "textwrap",
  "thiserror",
  "tokio",
- "tui-textarea",
+ "tui-input",
  "unicode-segmentation",
  "unicode-width",
  "whatlang",
@@ -2141,13 +2141,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
-name = "tui-textarea"
-version = "0.4.0"
+name = "tui-input"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3e38ced1f941a9cfc923fbf2fe6858443c42cc5220bfd35bdd3648371e7bd8e"
+checksum = "9b02e86628a225c39b2602863f244a01668184149928ceb410e47a8022d7597e"
 dependencies = [
  "crossterm",
- "ratatui",
  "unicode-width",
 ]
 

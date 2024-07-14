@@ -29,7 +29,7 @@ pub fn draw_save_name_input(f: &mut Frame, app: &App) {
         .alignment(Alignment::Center);
     f.render_widget(title, chunks[0]);
 
-    let input = Paragraph::new(app.save_name_input.as_str())
+    let input = Paragraph::new(app.save_name_input.value())
         .style(Style::default().fg(Color::Yellow))
         .block(Block::default().borders(Borders::ALL).title("Save Name"));
     f.render_widget(input, chunks[1]);
@@ -41,7 +41,7 @@ pub fn draw_save_name_input(f: &mut Frame, app: &App) {
 
     // Set cursor
     f.set_cursor(
-        chunks[1].x + app.save_name_input.len() as u16 + 1,
+        chunks[1].x + app.api_key_input.cursor() as u16 + 1,
         chunks[1].y + 1,
     );
 }

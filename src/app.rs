@@ -10,14 +10,15 @@ use crate::settings_state::SettingsState;
 
 use chrono::Local;
 use copypasta::{ClipboardContext, ClipboardProvider};
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::widgets::ListState;
-use ropey::Rope;
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
 use tokio::sync::mpsc;
+use tui_input::backend::crossterm::EventHandler;
+use tui_input::Input;
 
 pub enum AppCommand {
     LoadGame(String),
@@ -33,10 +34,11 @@ pub struct App {
     pub ai_client: Option<GameAI>,
     pub current_game: Option<GameState>,
     pub settings: Settings,
-    pub api_key_input: String,
+    pub user_input: Input,
+    pub api_key_input: Input,
+    pub save_name_input: Input,
     pub openai_api_key_valid: bool,
     pub settings_state: SettingsState,
-    pub user_input: Rope,
     pub cursor_position: usize,
     pub debug_info: String,
     clipboard: ClipboardContext,
@@ -50,7 +52,6 @@ pub struct App {
     pub visible_lines: usize,
     pub total_lines: usize,
     pub message_line_counts: Vec<usize>,
-    pub save_name_input: String,
     pub current_game_response: Option<GameMessage>,
     pub last_user_message: Option<UserMessage>,
     pub backspace_counter: bool,
@@ -86,15 +87,15 @@ impl App {
             ai_client: None, // We'll initialize this later when needed
             current_game: None,
             settings,
-            api_key_input: String::new(),
+            user_input: Input::default(),
+            api_key_input: Input::default(),
+            save_name_input: Input::default(),
             settings_state,
             load_game_menu_state,
             openai_api_key_valid,
-            save_name_input: String::new(),
             available_saves,
             game_content: Vec::new(),
             game_content_scroll: 0,
-            user_input: Rope::new(),
             cursor_position: 0,
             debug_info: String::new(),
             visible_messages: 0,
@@ -132,7 +133,7 @@ impl App {
         Ok(())
     }
 
-    pub fn on_key(&mut self, key: KeyEvent) {
+    pub fn handle_input(&mut self, key: KeyEvent) {
         match self.state {
             AppState::MainMenu => self.handle_main_menu_input(key),
             AppState::InGame => self.handle_in_game_input(key),
@@ -144,16 +145,26 @@ impl App {
         }
     }
 
-    pub fn handle_api_key_input(&mut self, key: KeyEvent) {
-        if key.kind != KeyEventKind::Press {
-            return;
+    fn handle_text_input(input: &mut Input, key: KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Enter => true,
+            KeyCode::Esc => {
+                input.reset();
+                true
+            }
+            _ => {
+                input.handle_event(&Event::Key(key));
+                false
+            }
         }
+    }
+
+    fn handle_api_key_input(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Enter => {
-                if !self.api_key_input.is_empty() {
-                    let api_key = self.api_key_input.clone();
+                if !self.api_key_input.value().is_empty() {
+                    let api_key = self.api_key_input.value().to_string();
                     self.settings.openai_api_key = Some(api_key.clone());
-                    self.api_key_input.clear();
 
                     let sender = self.command_sender.clone();
                     tokio::spawn(async move {
@@ -164,25 +175,104 @@ impl App {
                     self.state = AppState::SettingsMenu;
                 }
             }
-            KeyCode::Char(c) => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'v' {
-                    // Handle paste
-                    if let Ok(contents) = self.clipboard.get_contents() {
-                        self.api_key_input
-                            .insert_str(self.cursor_position, &contents);
-                    }
-                } else {
-                    self.api_key_input.push(c);
-                }
-            }
-            KeyCode::Backspace => {
-                self.api_key_input.pop();
-            }
             KeyCode::Esc => {
-                self.api_key_input.clear();
                 self.state = AppState::SettingsMenu;
             }
-            _ => {}
+            _ => {
+                self.api_key_input.handle_event(&Event::Key(key));
+            }
+        }
+    }
+
+    fn handle_save_name_input(&mut self, key: KeyEvent) {
+        if Self::handle_text_input(&mut self.save_name_input, key) {
+            if !self.save_name_input.value().is_empty() {
+                // Clear the game content
+                self.game_content.clear();
+                self.current_game = None;
+                // Start a new game with the given save name
+                if let Err(e) = self.command_sender.send(AppCommand::StartNewGame(
+                    self.save_name_input.value().to_string(),
+                )) {
+                    self.add_message(Message::new(
+                        MessageType::System,
+                        format!("Failed to send start new game command: {:?}", e),
+                    ));
+                }
+                self.save_name_input.reset();
+                self.state = AppState::InGame;
+            }
+        }
+    }
+
+    fn handle_in_game_input(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                self.state = AppState::MainMenu;
+                self.available_saves = Self::scan_save_files();
+                self.add_message(Message::new(
+                    MessageType::System,
+                    "Game paused. Returned to main menu.".to_string(),
+                ))
+            }
+            KeyCode::Enter => {
+                if key.modifiers.contains(KeyModifiers::SHIFT) {
+                    // Add a new line in the input
+                    let current_value = self.user_input.value().to_string();
+                    let cursor_position = self.user_input.cursor();
+                    let (before, after) = current_value.split_at(cursor_position);
+                    let new_value = format!("{}\n{}", before, after);
+                    self.user_input = Input::new(new_value);
+                    self.user_input.clone().with_cursor(cursor_position + 1);
+                } else {
+                    self.submit_user_input();
+                }
+            }
+            KeyCode::PageUp => {
+                for _ in 0..self.visible_lines {
+                    self.scroll_up();
+                }
+            }
+            KeyCode::Up => self.scroll_up(),
+            KeyCode::PageDown => {
+                for _ in 0..self.visible_lines {
+                    self.scroll_down();
+                }
+            }
+            KeyCode::Down => self.scroll_down(),
+            KeyCode::Home => {
+                self.game_content_scroll = 0;
+            }
+            KeyCode::End => {
+                self.game_content_scroll = self.total_lines.saturating_sub(self.visible_lines);
+            }
+            _ => {
+                self.user_input.handle_event(&Event::Key(key));
+            }
+        }
+    }
+
+    pub fn submit_user_input(&mut self) {
+        let input = self.user_input.value().trim().to_string();
+        if !input.is_empty() {
+            self.add_message(Message::new(MessageType::User, input.clone()));
+
+            // Send a command to process the message
+            if let Err(e) = self.command_sender.send(AppCommand::ProcessMessage(input)) {
+                self.add_message(Message::new(
+                    MessageType::System,
+                    format!("Error sending message command: {:?}", e),
+                ));
+            } else {
+                // Add a "thinking" message to indicate that the AI is processing
+                self.add_message(Message::new(
+                    MessageType::System,
+                    "AI is thinking...".to_string(),
+                ));
+            }
+
+            // Clear the user input
+            self.user_input.reset();
         }
     }
 
@@ -316,7 +406,7 @@ impl App {
                     Some(0) => {
                         // Start New Game
                         self.state = AppState::InputSaveName;
-                        self.save_name_input.clear(); // Clear any previous input
+                        self.save_name_input.reset(); // Clear any previous input
                     }
                     Some(1) => {
                         // Load Game
@@ -370,109 +460,6 @@ impl App {
         let index = (c as usize - 1) % 4;
         self.main_menu_state.select(Some(index));
         self.select_main_menu_option();
-    }
-
-    pub fn handle_in_game_input(&mut self, key: KeyEvent) {
-        if key.kind != KeyEventKind::Press {
-            return;
-        }
-        match key.code {
-            KeyCode::Esc => {
-                self.state = AppState::MainMenu;
-                self.available_saves = Self::scan_save_files();
-                self.add_message(Message::new(
-                    MessageType::System,
-                    "Game paused. Returned to main menu.".to_string(),
-                ))
-            }
-            KeyCode::Enter => {
-                if key.modifiers.contains(KeyModifiers::SHIFT) {
-                    // Add a new line in the input
-                    self.user_input.insert(self.cursor_position, "\n");
-                    self.cursor_position += 1;
-                } else {
-                    self.submit_user_input();
-                }
-            }
-            KeyCode::Backspace => {
-                if self.cursor_position > 0 {
-                    self.user_input
-                        .remove(self.cursor_position - 1..self.cursor_position);
-                    self.cursor_position -= 1;
-                }
-            }
-            KeyCode::Delete => {
-                if self.cursor_position < self.user_input.len_chars() {
-                    self.user_input
-                        .remove(self.cursor_position..self.cursor_position + 1);
-                }
-            }
-            KeyCode::Left => {
-                if self.cursor_position > 0 {
-                    self.cursor_position -= 1;
-                }
-            }
-            KeyCode::Right => {
-                if self.cursor_position < self.user_input.len_chars() {
-                    self.cursor_position += 1;
-                }
-            }
-            KeyCode::Char(c) => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'v' {
-                    // Handle paste
-                    if let Ok(contents) = self.clipboard.get_contents() {
-                        self.user_input.insert(self.cursor_position, &contents);
-                    }
-                } else {
-                    self.user_input.insert_char(self.cursor_position, c);
-                    self.cursor_position += 1;
-                }
-            }
-            KeyCode::PageUp => {
-                for _ in 0..self.visible_lines {
-                    self.scroll_up();
-                }
-            }
-            KeyCode::Up => self.scroll_up(),
-            KeyCode::PageDown => {
-                for _ in 0..self.visible_lines {
-                    self.scroll_down();
-                }
-            }
-            KeyCode::Down => self.scroll_down(),
-            KeyCode::Home => {
-                self.game_content_scroll = 0;
-            }
-            KeyCode::End => {
-                self.game_content_scroll = self.total_lines.saturating_sub(self.visible_lines);
-            }
-            _ => {}
-        }
-    }
-
-    pub fn submit_user_input(&mut self) {
-        let input = self.user_input.to_string().trim().to_string();
-        if !input.is_empty() {
-            self.add_message(Message::new(MessageType::User, input.clone()));
-
-            // Send a command to process the message
-            if let Err(e) = self.command_sender.send(AppCommand::ProcessMessage(input)) {
-                self.add_message(Message::new(
-                    MessageType::System,
-                    format!("Error sending message command: {:?}", e),
-                ));
-            } else {
-                // Add a "thinking" message to indicate that the AI is processing
-                self.add_message(Message::new(
-                    MessageType::System,
-                    "AI is thinking...".to_string(),
-                ));
-            }
-
-            // Clear the user input
-            self.user_input = Rope::new();
-            self.cursor_position = 0;
-        }
     }
 
     pub fn scroll_up(&mut self) {
@@ -953,51 +940,6 @@ impl App {
         self.update_scroll();
     }
 
-    fn handle_save_name_input(&mut self, key: KeyEvent) {
-        if key.kind != KeyEventKind::Press {
-            return;
-        }
-        match key.code {
-            KeyCode::Enter => {
-                if !self.save_name_input.is_empty() {
-                    // Clear the game content
-                    self.game_content.clear();
-                    self.current_game = None;
-                    // Start a new game with the given save name
-                    if let Err(e) = self
-                        .command_sender
-                        .send(AppCommand::StartNewGame(self.save_name_input.clone()))
-                    {
-                        self.add_message(Message::new(
-                            MessageType::System,
-                            format!("Failed to send start new game command: {:?}", e),
-                        ));
-                    }
-                    self.save_name_input.clear();
-                    self.state = AppState::InGame;
-                }
-            }
-            KeyCode::Char(c) => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'v' {
-                    if let Ok(contents) = self.clipboard.get_contents() {
-                        self.save_name_input = contents;
-                    } else {
-                        self.save_name_input.push(c);
-                    }
-                } else {
-                    self.save_name_input.push(c);
-                }
-            }
-            KeyCode::Backspace => {
-                self.save_name_input.pop();
-            }
-            KeyCode::Esc => {
-                self.save_name_input.clear();
-                self.state = AppState::MainMenu;
-            }
-            _ => {}
-        }
-    }
     fn handle_create_image_input(&mut self, key: KeyEvent) {
         if key.kind != KeyEventKind::Press {
             return;

@@ -127,7 +127,7 @@ async fn run_app(
             }) => {
                 if let Ok(Ok(Event::Key(key))) = event {
                     let mut app = app.lock().await;
-                    app.on_key(key);
+                app.handle_input(key);
                 }
             },
             Some(command) = command_receiver.recv() => {

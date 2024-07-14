@@ -10,8 +10,7 @@ use ratatui::{
     Frame,
 };
 use textwrap::{wrap, Options, WordSplitter};
-use unicode_segmentation::UnicodeSegmentation;
-use unicode_width::UnicodeWidthStr;
+use tui_input::backend::crossterm as tui_input_backend;
 
 // Main function for drawing in-game UI elements.
 pub fn draw_in_game(f: &mut Frame, app: &mut App) {
@@ -410,7 +409,7 @@ fn draw_inventory(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     let widths = vec![Constraint::Percentage(100)];
     let inventory_table = Table::new(inventory_items, widths)
         .block(Block::default().borders(Borders::ALL).title("Inventory"))
-        .widths(&[Constraint::Percentage(100)])
+        .widths([Constraint::Percentage(100)])
         .column_spacing(1);
 
     f.render_widget(inventory_table, area);
@@ -544,95 +543,24 @@ fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
     let inner_area = block.inner(area);
     f.render_widget(block, area);
 
-    let max_width = inner_area.width as usize - 2;
+    let max_width = inner_area.width as usize - 2; // Account for borders
+    let wrapped_text = textwrap::fill(app.user_input.value(), max_width);
 
-    // Use Rope for handling the text buffer
-    let rope = &app.user_input;
-    let text = rope.to_string();
+    let input_text = Paragraph::new(wrapped_text)
+        .style(Style::default().fg(Color::White))
+        .wrap(Wrap { trim: true });
 
-    // Load hyphenation dictionary
-    let dictionary = Standard::from_embedded(Language::EnglishUS).unwrap();
-
-    // Configure textwrap options
-    let options = Options::new(max_width)
-        .word_splitter(WordSplitter::Hyphenation(dictionary))
-        .break_words(true);
-
-    // Wrap the input text
-    let wrapped_lines: Vec<String> = wrap(&text, &options)
-        .into_iter()
-        .map(|s| s.into_owned())
-        .collect();
+    f.render_widget(input_text, inner_area);
 
     // Calculate cursor position
-    let mut cursor_x = 0;
-    let mut cursor_y = 0;
-    let mut graphemes_processed = 0;
-
-    let text_graphemes: Vec<&str> = text.graphemes(true).collect();
-
-    for (line_idx, line) in wrapped_lines.iter().enumerate() {
-        let line_graphemes: Vec<&str> = line.graphemes(true).collect();
-
-        if graphemes_processed + line_graphemes.len() >= app.cursor_position {
-            cursor_y = line_idx;
-            let prefix_graphemes = &line_graphemes[..app.cursor_position - graphemes_processed];
-            cursor_x = prefix_graphemes.join("").width(); // Changed this line
-
-            // Count trailing spaces
-            let trailing_spaces = text_graphemes[graphemes_processed + prefix_graphemes.len()..]
-                .iter()
-                .take_while(|&&g| g == " ")
-                .count();
-            cursor_x += trailing_spaces;
-
-            break;
-        }
-
-        graphemes_processed += line_graphemes.len();
-        if graphemes_processed < text_graphemes.len() && text_graphemes[graphemes_processed] == "\n"
-        {
-            graphemes_processed += 1;
-        }
-    }
-
-    // Handle cursor at the end of the text
-    if app.cursor_position == text_graphemes.len() {
-        cursor_y = wrapped_lines.len() - 1;
-        cursor_x = wrapped_lines.last().map_or(0, |line| line.width()); // Changed this line
-
-        // Add trailing spaces at the end of the text
-        let trailing_spaces = text_graphemes
-            .iter()
-            .rev()
-            .take_while(|&&g| g == " ")
-            .count();
-        cursor_x += trailing_spaces;
-    }
-
-    let joined_lines = wrapped_lines.join("\n");
-
-    let input = Paragraph::new(joined_lines)
-        .style(Style::default().fg(Color::White))
-        .alignment(Alignment::Left)
-        .wrap(Wrap { trim: false });
-
-    f.render_widget(input, inner_area);
-
-    // Adjust cursor position if it's beyond the visible area
-    let visible_lines = inner_area.height as usize - 1;
-    if cursor_y >= visible_lines {
-        cursor_y = visible_lines - 1;
-    }
-
-    // Ensure cursor_x doesn't exceed the max width
-    cursor_x = cursor_x.min(max_width);
+    let cursor_position = app.user_input.cursor();
+    let text_before_cursor = &app.user_input.value()[..cursor_position];
+    let wrapped_before_cursor = textwrap::wrap(text_before_cursor, max_width);
+    let cursor_y = wrapped_before_cursor.len().saturating_sub(1) as u16;
+    let cursor_x = wrapped_before_cursor.last().map_or(0, |line| line.len()) as u16;
 
     // Set cursor
-    f.set_cursor(
-        inner_area.x + cursor_x as u16,
-        inner_area.y + cursor_y as u16,
-    );
+    f.set_cursor(inner_area.left() + cursor_x, inner_area.top() + cursor_y);
 }
 
 // Function to parse markdown-like text to formatted spans.
