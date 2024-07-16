@@ -1,6 +1,7 @@
 use crate::app::{App, InputMode};
 use crate::character::CharacterSheet;
 use crate::message::{GameMessage, MessageType, UserMessage};
+use hyphenation::{Language, Load, Standard};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -8,6 +9,7 @@ use ratatui::{
     widgets::*,
     Frame,
 };
+use textwrap::{wrap, Options, WordSplitter};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -548,52 +550,111 @@ pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
 // Function to handle user input display and interaction.
 
 pub fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
-    let input_block = Block::default()
-        .borders(Borders::ALL)
+    let block = Block::default()
         .title(match app.input_mode {
             InputMode::Normal => "Press 'e' to edit",
             InputMode::Editing => "Editing",
-        });
+        })
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(match app.input_mode {
+            InputMode::Normal => Color::DarkGray,
+            InputMode::Editing => Color::Yellow,
+        }));
 
-    let inner_area = input_block.inner(area);
+    let inner_area = block.inner(area);
+    f.render_widget(block, area);
 
-    let input_text = app.user_input.value();
-    let input = Paragraph::new(input_text)
+    let max_width = inner_area.width as usize - 2;
+
+    let text = app.user_input.value();
+
+    // Load hyphenation dictionary
+    let dictionary = Standard::from_embedded(Language::EnglishUS).unwrap();
+
+    // Configure textwrap options
+    let options = Options::new(max_width)
+        .word_splitter(WordSplitter::Hyphenation(dictionary))
+        .break_words(true);
+
+    // Wrap the input text
+    let wrapped_lines: Vec<String> = wrap(&text, &options)
+        .into_iter()
+        .map(|s| s.into_owned())
+        .collect();
+
+    // Calculate cursor position
+    let mut cursor_x = 0;
+    let mut cursor_y = 0;
+    let mut graphemes_processed = 0;
+
+    let text_graphemes: Vec<&str> = text.graphemes(true).collect();
+    let cursor_position = app.user_input.cursor();
+
+    for (line_idx, line) in wrapped_lines.iter().enumerate() {
+        let line_graphemes: Vec<&str> = line.graphemes(true).collect();
+
+        if graphemes_processed + line_graphemes.len() >= cursor_position {
+            cursor_y = line_idx;
+            let prefix_graphemes = &line_graphemes[..cursor_position - graphemes_processed];
+            cursor_x = prefix_graphemes.join("").width();
+
+            // Count trailing spaces
+            let trailing_spaces = text_graphemes[graphemes_processed + prefix_graphemes.len()..]
+                .iter()
+                .take_while(|&&g| g == " ")
+                .count();
+            cursor_x += trailing_spaces;
+
+            break;
+        }
+
+        graphemes_processed += line_graphemes.len();
+        if graphemes_processed < text_graphemes.len() && text_graphemes[graphemes_processed] == "\n"
+        {
+            graphemes_processed += 1;
+        }
+    }
+
+    // Handle cursor at the end of the text
+    if cursor_position == text_graphemes.len() {
+        cursor_y = wrapped_lines.len() - 1;
+        cursor_x = wrapped_lines.last().map_or(0, |line| line.width());
+
+        // Add trailing spaces at the end of the text
+        let trailing_spaces = text_graphemes
+            .iter()
+            .rev()
+            .take_while(|&&g| g == " ")
+            .count();
+        cursor_x += trailing_spaces;
+    }
+
+    let joined_lines = wrapped_lines.join("\n");
+
+    let input = Paragraph::new(joined_lines)
         .style(Style::default().fg(match app.input_mode {
             InputMode::Normal => Color::DarkGray,
             InputMode::Editing => Color::Yellow,
         }))
-        .block(input_block)
-        .wrap(Wrap { trim: true });
+        .alignment(Alignment::Left)
+        .wrap(Wrap { trim: false });
 
-    f.render_widget(input, area);
+    f.render_widget(input, inner_area);
 
+    // Adjust cursor position if it's beyond the visible area
+    let visible_lines = inner_area.height as usize - 1;
+    if cursor_y >= visible_lines {
+        cursor_y = visible_lines - 1;
+    }
+
+    // Ensure cursor_x doesn't exceed the max width
+    cursor_x = cursor_x.min(max_width);
+
+    // Set cursor
     if let InputMode::Editing = app.input_mode {
-        // Calculate cursor position
-        let cursor = app.user_input.visual_cursor();
-        let width = inner_area.width as usize;
-
-        let mut current_line = 0;
-        let mut current_column = 0;
-
-        for (idx, grapheme) in input_text.graphemes(true).enumerate() {
-            if idx == cursor {
-                break;
-            }
-
-            let grapheme_width = grapheme.width();
-            if current_column + grapheme_width > width {
-                current_line += 1;
-                current_column = grapheme_width;
-            } else {
-                current_column += grapheme_width;
-            }
-        }
-
-        // Set cursor
         f.set_cursor(
-            inner_area.x + current_column as u16,
-            inner_area.y + current_line as u16,
+            inner_area.x + cursor_x as u16,
+            inner_area.y + cursor_y as u16,
         );
     }
 }
