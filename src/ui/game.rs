@@ -8,6 +8,7 @@ use ratatui::{
     widgets::*,
     Frame,
 };
+use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 // Main function for drawing in-game UI elements.
@@ -547,27 +548,52 @@ pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
 // Function to handle user input display and interaction.
 
 pub fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
-    let input = Paragraph::new(app.user_input.value())
+    let input_block = Block::default()
+        .borders(Borders::ALL)
+        .title(match app.input_mode {
+            InputMode::Normal => "Press 'e' to edit",
+            InputMode::Editing => "Editing",
+        });
+
+    let inner_area = input_block.inner(area);
+
+    let input_text = app.user_input.value();
+    let input = Paragraph::new(input_text)
         .style(Style::default().fg(match app.input_mode {
             InputMode::Normal => Color::DarkGray,
             InputMode::Editing => Color::Yellow,
         }))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(match app.input_mode {
-                    InputMode::Normal => "Press 'e' to edit",
-                    InputMode::Editing => "Editing",
-                }),
-        );
+        .block(input_block)
+        .wrap(Wrap { trim: true });
 
     f.render_widget(input, area);
 
     if let InputMode::Editing = app.input_mode {
+        // Calculate cursor position
+        let cursor = app.user_input.visual_cursor();
+        let width = inner_area.width as usize;
+
+        let mut current_line = 0;
+        let mut current_column = 0;
+
+        for (idx, grapheme) in input_text.graphemes(true).enumerate() {
+            if idx == cursor {
+                break;
+            }
+
+            let grapheme_width = grapheme.width();
+            if current_column + grapheme_width > width {
+                current_line += 1;
+                current_column = grapheme_width;
+            } else {
+                current_column += grapheme_width;
+            }
+        }
+
         // Set cursor
         f.set_cursor(
-            area.x + app.user_input.visual_cursor() as u16 + 1,
-            area.y + 1,
+            inner_area.x + current_column as u16,
+            inner_area.y + current_line as u16,
         );
     }
 }
