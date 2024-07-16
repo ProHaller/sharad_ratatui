@@ -27,6 +27,11 @@ pub enum AppCommand {
     ApiKeyValidationResult(bool),
 }
 
+pub enum InputMode {
+    Normal,
+    Editing,
+}
+
 pub struct App {
     pub should_quit: bool,
     pub state: AppState,
@@ -37,6 +42,7 @@ pub struct App {
     pub user_input: Input,
     pub api_key_input: Input,
     pub save_name_input: Input,
+    pub input_mode: InputMode,
     pub openai_api_key_valid: bool,
     pub settings_state: SettingsState,
     pub cursor_position: usize,
@@ -90,6 +96,7 @@ impl App {
             user_input: Input::default(),
             api_key_input: Input::default(),
             save_name_input: Input::default(),
+            input_mode: InputMode::Normal,
             settings_state,
             load_game_menu_state,
             openai_api_key_valid,
@@ -134,27 +141,66 @@ impl App {
     }
 
     pub fn handle_input(&mut self, key: KeyEvent) {
-        match self.state {
-            AppState::MainMenu => self.handle_main_menu_input(key),
-            AppState::InGame => self.handle_in_game_input(key),
-            AppState::LoadMenu => self.handle_load_game_input(key),
-            AppState::CreateImage => self.handle_create_image_input(key),
-            AppState::SettingsMenu => self.handle_settings_input(key),
-            AppState::InputApiKey => self.handle_api_key_input(key),
-            AppState::InputSaveName => self.handle_save_name_input(key),
+        match self.input_mode {
+            InputMode::Normal => match self.state {
+                AppState::MainMenu => self.handle_main_menu_input(key),
+                AppState::InGame => self.handle_in_game_input(key),
+                AppState::LoadMenu => self.handle_load_game_input(key),
+                AppState::CreateImage => self.handle_create_image_input(key),
+                AppState::SettingsMenu => self.handle_settings_input(key),
+                AppState::InputApiKey => self.handle_api_key_input(key),
+                AppState::InputSaveName => self.handle_save_name_input(key),
+            },
+            InputMode::Editing => match self.state {
+                AppState::InGame => self.handle_in_game_editing(key),
+                AppState::InputSaveName => self.handle_save_name_editing(key),
+                AppState::InputApiKey => self.handle_api_key_editing(key),
+                _ => {} // Other states don't have editing mode
+            },
         }
     }
 
-    fn handle_text_input(input: &mut Input, key: KeyEvent) -> bool {
+    fn handle_in_game_editing(&mut self, key: KeyEvent) {
         match key.code {
-            KeyCode::Enter => true,
+            KeyCode::Enter => {
+                self.submit_user_input();
+                self.input_mode = InputMode::Normal;
+            }
             KeyCode::Esc => {
-                input.reset();
-                true
+                self.input_mode = InputMode::Normal;
             }
             _ => {
-                input.handle_event(&Event::Key(key));
-                false
+                self.user_input.handle_event(&Event::Key(key));
+            }
+        }
+    }
+
+    fn handle_save_name_editing(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Enter => {
+                // Handle save name submission
+                self.input_mode = InputMode::Normal;
+            }
+            KeyCode::Esc => {
+                self.input_mode = InputMode::Normal;
+            }
+            _ => {
+                self.save_name_input.handle_event(&Event::Key(key));
+            }
+        }
+    }
+
+    fn handle_api_key_editing(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Enter => {
+                // Handle API key submission
+                self.input_mode = InputMode::Normal;
+            }
+            KeyCode::Esc => {
+                self.input_mode = InputMode::Normal;
+            }
+            _ => {
+                self.api_key_input.handle_event(&Event::Key(key));
             }
         }
     }
@@ -185,74 +231,94 @@ impl App {
     }
 
     fn handle_save_name_input(&mut self, key: KeyEvent) {
-        if Self::handle_text_input(&mut self.save_name_input, key) {
-            if !self.save_name_input.value().is_empty() {
-                // Clear the game content
-                self.game_content.clear();
-                self.current_game = None;
-                // Start a new game with the given save name
-                if let Err(e) = self.command_sender.send(AppCommand::StartNewGame(
-                    self.save_name_input.value().to_string(),
-                )) {
-                    self.add_message(Message::new(
-                        MessageType::System,
-                        format!("Failed to send start new game command: {:?}", e),
-                    ));
+        match self.input_mode {
+            InputMode::Normal => match key.code {
+                KeyCode::Char('e') => {
+                    self.input_mode = InputMode::Editing;
                 }
-                self.save_name_input.reset();
-                self.state = AppState::InGame;
-            }
+                KeyCode::Esc => {
+                    self.state = AppState::MainMenu;
+                    self.save_name_input.reset();
+                }
+                KeyCode::Enter => {
+                    if !self.save_name_input.value().is_empty() {
+                        self.game_content.clear();
+                        self.current_game = None;
+                        if let Err(e) = self.command_sender.send(AppCommand::StartNewGame(
+                            self.save_name_input.value().to_string(),
+                        )) {
+                            self.add_message(Message::new(
+                                MessageType::System,
+                                format!("Failed to send start new game command: {:?}", e),
+                            ));
+                        }
+                        self.state = AppState::InGame;
+                    }
+                }
+                _ => {}
+            },
+            InputMode::Editing => match key.code {
+                KeyCode::Esc => {
+                    self.input_mode = InputMode::Normal;
+                }
+                _ => {
+                    self.save_name_input.handle_event(&Event::Key(key));
+                }
+            },
         }
     }
 
     fn handle_in_game_input(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Esc => {
-                self.state = AppState::MainMenu;
-                self.available_saves = Self::scan_save_files();
-                self.add_message(Message::new(
-                    MessageType::System,
-                    "Game paused. Returned to main menu.".to_string(),
-                ))
-            }
-            KeyCode::Enter => {
-                if key.modifiers.contains(KeyModifiers::SHIFT) {
-                    // Add a new line in the input
-                    let current_value = self.user_input.value().to_string();
-                    let cursor_position = self.user_input.cursor();
-                    let (before, after) = current_value.split_at(cursor_position);
-                    let new_value = format!("{}\n{}", before, after);
-                    self.user_input = Input::new(new_value);
-                    self.user_input.clone().with_cursor(cursor_position + 1);
-                } else {
-                    self.submit_user_input();
+        match self.input_mode {
+            InputMode::Normal => match key.code {
+                KeyCode::Char('e') => {
+                    self.input_mode = InputMode::Editing;
                 }
-            }
-            KeyCode::PageUp => {
-                for _ in 0..self.visible_lines {
-                    self.scroll_up();
+                KeyCode::Esc => {
+                    self.state = AppState::MainMenu;
+                    self.available_saves = Self::scan_save_files();
+                    self.add_message(Message::new(
+                        MessageType::System,
+                        "Game paused. Returned to main menu.".to_string(),
+                    ))
                 }
-            }
-            KeyCode::Up => self.scroll_up(),
-            KeyCode::PageDown => {
-                for _ in 0..self.visible_lines {
-                    self.scroll_down();
+                KeyCode::Enter => {
+                    if !self.user_input.value().is_empty() {
+                        self.submit_user_input();
+                    }
                 }
-            }
-            KeyCode::Down => self.scroll_down(),
-            KeyCode::Home => {
-                self.game_content_scroll = 0;
-            }
-            KeyCode::End => {
-                self.game_content_scroll = self.total_lines.saturating_sub(self.visible_lines);
-            }
-            _ => {
-                self.user_input.handle_event(&Event::Key(key));
-            }
+                KeyCode::PageUp => {
+                    for _ in 0..self.visible_lines {
+                        self.scroll_up();
+                    }
+                }
+                KeyCode::Up => self.scroll_up(),
+                KeyCode::PageDown => {
+                    for _ in 0..self.visible_lines {
+                        self.scroll_down();
+                    }
+                }
+                KeyCode::Down => self.scroll_down(),
+                KeyCode::Home => {
+                    self.game_content_scroll = 0;
+                }
+                KeyCode::End => {
+                    self.game_content_scroll = self.total_lines.saturating_sub(self.visible_lines);
+                }
+                _ => {}
+            },
+            InputMode::Editing => match key.code {
+                KeyCode::Esc => {
+                    self.input_mode = InputMode::Normal;
+                }
+                _ => {
+                    self.user_input.handle_event(&Event::Key(key));
+                }
+            },
         }
     }
 
-    pub fn submit_user_input(&mut self) {
+    fn submit_user_input(&mut self) {
         let input = self.user_input.value().trim().to_string();
         if !input.is_empty() {
             self.add_message(Message::new(MessageType::User, input.clone()));
@@ -272,7 +338,7 @@ impl App {
             }
 
             // Clear the user input
-            self.user_input.reset();
+            self.user_input = Input::default();
         }
     }
 

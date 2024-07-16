@@ -1,0 +1,92 @@
+{
+  "name": "update_character_sheet",
+  "description": "Update various elements of a Shadowrun character sheet",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "character_name": {
+        "type": "string",
+        "description": "The name of the character whose sheet is being updated"
+      },
+      "update": {
+        "type": "object",
+        "description": "The update to perform on the character sheet",
+        "properties": {
+          "attribute": {
+            "type": "string",
+            "enum": [
+              "name",
+              "race",
+              "gender",
+              "backstory",
+              "main",
+              "body",
+              "agility",
+              "reaction",
+              "strength",
+              "willpower",
+              "logic",
+              "intuition",
+              "charisma",
+              "edge",
+              "magic",
+              "resonance",
+              "skills",
+              "knowledge_skills",
+              "nuyen",
+              "lifestyle",
+              "contacts",
+              "qualities",
+              "cyberware",
+              "bioware",
+              "inventory",
+              "matrix_attributes"
+            ],
+            "description": "The attribute to update"
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "Modify",
+              "Add",
+              "Remove"
+            ],
+            "description": "The type of operation to perform"
+          },
+          "value": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "object"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The new value for the attribute. For 'cyberware' and 'bioware', this should be an array of strings."
+          }
+        },
+        "required": [
+          "attribute",
+          "operation",
+          "value"
+        ]
+      }
+    },
+    "required": [
+      "character_name",
+      "update"
+    ]
+  }
+}

@@ -1,6 +1,7 @@
 // Import necessary modules and data structures from other parts of the application and external crates.
 use crate::character::{
-    CharacterSheet, CharacterSheetUpdate, Contact, Item, Quality, Race, Skills,
+    CharacterSheet, CharacterSheetBuilder, CharacterSheetUpdate, Contact, Item, Quality, Race,
+    Skills, UpdateOperation,
 };
 use crate::dice::{perform_dice_roll, DiceRollRequest, DiceRollResponse};
 use crate::game_state::GameState;
@@ -164,7 +165,6 @@ impl GameAI {
     }
 
     // Asynchronous method to send a message within the conversation, handling game state updates.
-
     pub async fn send_message(
         &mut self,
         message: &str,
@@ -242,7 +242,7 @@ impl GameAI {
         Ok(game_message)
     }
 
-    fn update_character_sheet(
+    pub fn update_character_sheet(
         &self,
         game_state: &mut GameState,
         new_sheet: CharacterSheet,
@@ -292,7 +292,6 @@ impl GameAI {
                     self.add_debug_message(format!("Handling tool call: {:?}", tool_call));
                     let output = match tool_call.function.name.as_str() {
                         "create_character_sheet" => {
-                            // Existing character creation code
                             let args: serde_json::Value =
                                 serde_json::from_str(&tool_call.function.arguments)?;
                             let character_sheet = match self.create_character(&args).await {
@@ -352,8 +351,108 @@ impl GameAI {
                                         "Missing character_name".to_string(),
                                     )
                                 })?;
-                            let update: CharacterSheetUpdate =
-                                serde_json::from_value(args["update"].clone())?;
+                            let update = &args["update"];
+
+                            let attribute = update["attribute"].as_str().ok_or_else(|| {
+                                AppError::GameStateParseError("Missing attribute".to_string())
+                            })?;
+                            let operation = match update["operation"].as_str() {
+                                Some("Modify") => |v| UpdateOperation::Modify(v),
+                                Some("Add") => |v| UpdateOperation::Add(v),
+                                Some("Remove") => |_| UpdateOperation::Remove,
+                                _ => {
+                                    return Err(AppError::GameStateParseError(
+                                        "Invalid operation".to_string(),
+                                    ))
+                                }
+                            };
+
+                            let value = match attribute {
+                                "name" | "gender" | "backstory" | "lifestyle" => {
+                                    crate::character::Value::String(
+                                        update["value"]
+                                            .as_str()
+                                            .ok_or_else(|| {
+                                                AppError::GameStateParseError(
+                                                    "Invalid string value".to_string(),
+                                                )
+                                            })?
+                                            .to_string(),
+                                    )
+                                }
+                                "race" => crate::character::Value::Race(
+                                    match update["value"].as_str().ok_or_else(|| {
+                                        AppError::GameStateParseError(
+                                            "Invalid race value".to_string(),
+                                        )
+                                    })? {
+                                        "Human" => Race::Human,
+                                        "Elf" => Race::Elf,
+                                        "Dwarf" => Race::Dwarf,
+                                        "Ork" => Race::Ork,
+                                        "Troll" => Race::Troll,
+                                        _ => {
+                                            return Err(AppError::GameStateParseError(
+                                                "Invalid race".to_string(),
+                                            ))
+                                        }
+                                    },
+                                ),
+                                "body" | "agility" | "reaction" | "strength" | "willpower"
+                                | "logic" | "intuition" | "charisma" | "edge" => {
+                                    crate::character::Value::U8(
+                                        update["value"].as_u64().ok_or_else(|| {
+                                            AppError::GameStateParseError(
+                                                "Invalid u8 value".to_string(),
+                                            )
+                                        })? as u8,
+                                    )
+                                }
+                                "magic" | "resonance" => crate::character::Value::OptionU8(
+                                    update["value"].as_u64().map(|v| v as u8),
+                                ),
+                                "nuyen" => crate::character::Value::U32(
+                                    update["value"].as_u64().ok_or_else(|| {
+                                        AppError::GameStateParseError(
+                                            "Invalid u32 value for nuyen".to_string(),
+                                        )
+                                    })? as u32,
+                                ),
+                                "skills" => crate::character::Value::Skills(
+                                    serde_json::from_value(update["value"].clone())?,
+                                ),
+                                "knowledge_skills" => crate::character::Value::HashMapStringU8(
+                                    serde_json::from_value(update["value"].clone())?,
+                                ),
+                                "contacts" => crate::character::Value::HashMapStringContact(
+                                    serde_json::from_value(update["value"].clone())?,
+                                ),
+                                "qualities" => crate::character::Value::VecQuality(
+                                    serde_json::from_value(update["value"].clone())?,
+                                ),
+                                "cyberware" | "bioware" => crate::character::Value::VecString(
+                                    serde_json::from_value(update["value"].clone())?,
+                                ),
+                                "inventory" => crate::character::Value::HashMapStringItem(
+                                    serde_json::from_value(update["value"].clone())?,
+                                ),
+                                "matrix_attributes" => {
+                                    crate::character::Value::OptionMatrixAttributes(
+                                        serde_json::from_value(update["value"].clone())?,
+                                    )
+                                }
+                                _ => {
+                                    return Err(AppError::GameStateParseError(format!(
+                                        "Unsupported attribute: {}",
+                                        attribute
+                                    )))
+                                }
+                            };
+
+                            let character_update = CharacterSheetUpdate::UpdateAttribute {
+                                attribute: attribute.to_string(),
+                                operation: operation(value),
+                            };
 
                             // Find the character in the game state
                             let character = game_state
@@ -367,7 +466,7 @@ impl GameAI {
                                 })?;
 
                             // Apply the update
-                            if let Err(e) = character.apply_update(update) {
+                            if let Err(e) = character.apply_update(character_update) {
                                 self.add_debug_message(format!(
                                     "Failed to apply character sheet update: {}",
                                     e
@@ -386,8 +485,8 @@ impl GameAI {
                             }
 
                             let response = format!(
-                                "Character '{}' sheet updated successfully : {:?}",
-                                character_name, game_state.character_sheet
+                                "Character '{}' sheet updated successfully: {:?}",
+                                character_name, character
                             );
                             self.add_debug_message(response.clone());
                             response
@@ -511,7 +610,6 @@ impl GameAI {
     }
 
     // Asynchronous method to submit output from a tool during a run.
-
     async fn submit_tool_outputs(
         &self,
         thread_id: &str,
@@ -533,9 +631,8 @@ impl GameAI {
     }
 
     // Asynchronous method to create a character based on provided arguments, handling attributes and skills.
-    async fn create_character(&self, args: &Value) -> Result<CharacterSheet, AIError> {
-        // self.add_debug_message(format!("Creating character from args: {:?}", args));
 
+    pub async fn create_character(&self, args: &Value) -> Result<CharacterSheet, AIError> {
         // Helper function to extract a string
         fn extract_str(args: &Value, field: &str) -> Result<String, AIError> {
             args.get(field)
@@ -560,13 +657,19 @@ impl GameAI {
                 })
         }
 
+        // Helper function to extract an optional u8
+        fn extract_u8_opt(args: &Value, field: &str) -> Option<u8> {
+            args.get(field)
+                .and_then(|v| v.as_u64())
+                .and_then(|v| u8::try_from(v).ok())
+        }
+
         // Extract basic information
         let name = extract_str(args, "name")?;
         let race_str = extract_str(args, "race")?;
         let gender = extract_str(args, "gender")?;
         let backstory = extract_str(args, "backstory")?;
-        // Extract main
-        let main: bool = args.get("main").and_then(|v| v.as_bool()).unwrap_or(false);
+        let main = args.get("main").and_then(|v| v.as_bool()).unwrap_or(false);
 
         // Parse race
         let race = match race_str.as_str() {
@@ -581,27 +684,23 @@ impl GameAI {
         // Extract attributes
         let attributes = args
             .get("attributes")
-            .and_then(|v| v.as_object())
             .ok_or_else(|| AIError::GameStateParseError("Missing attributes".to_string()))?;
-
-        let body = extract_u8(&Value::Object(attributes.clone()), "body")?;
-        let agility = extract_u8(&Value::Object(attributes.clone()), "agility")?;
-        let reaction = extract_u8(&Value::Object(attributes.clone()), "reaction")?;
-        let strength = extract_u8(&Value::Object(attributes.clone()), "strength")?;
-        let willpower = extract_u8(&Value::Object(attributes.clone()), "willpower")?;
-        let logic = extract_u8(&Value::Object(attributes.clone()), "logic")?;
-        let intuition = extract_u8(&Value::Object(attributes.clone()), "intuition")?;
-        let charisma = extract_u8(&Value::Object(attributes.clone()), "charisma")?;
-        let edge = extract_u8(&Value::Object(attributes.clone()), "edge")?;
-        let magic = extract_u8(&Value::Object(attributes.clone()), "magic")?;
-        let resonance = extract_u8(&Value::Object(attributes.clone()), "resonance")?;
+        let body = extract_u8(attributes, "body")?;
+        let agility = extract_u8(attributes, "agility")?;
+        let reaction = extract_u8(attributes, "reaction")?;
+        let strength = extract_u8(attributes, "strength")?;
+        let willpower = extract_u8(attributes, "willpower")?;
+        let logic = extract_u8(attributes, "logic")?;
+        let intuition = extract_u8(attributes, "intuition")?;
+        let charisma = extract_u8(attributes, "charisma")?;
+        let edge = extract_u8(attributes, "edge")?;
+        let magic = extract_u8_opt(attributes, "magic");
+        let resonance = extract_u8_opt(attributes, "resonance");
 
         // Extract skills
         let skills_obj = args
             .get("skills")
-            .and_then(|v| v.as_object())
             .ok_or_else(|| AIError::GameStateParseError("Missing skills".to_string()))?;
-
         let mut skills = Skills {
             combat: HashMap::new(),
             physical: HashMap::new(),
@@ -615,29 +714,23 @@ impl GameAI {
             ("social", &mut skills.social),
             ("technical", &mut skills.technical),
         ] {
-            let category_array = skills_obj
-                .get(category)
-                .and_then(|v| v.as_array())
-                .ok_or_else(|| {
-                    AIError::GameStateParseError(format!("Missing {} skills array", category))
-                })?;
-
-            for skill in category_array {
-                let name = extract_str(skill, "name")?;
-                let rating = extract_u8(skill, "rating")?;
-                skills_map.insert(name, rating);
+            if let Some(category_array) = skills_obj.get(category).and_then(|v| v.as_array()) {
+                for skill in category_array {
+                    let name = extract_str(skill, "name")?;
+                    let rating = extract_u8(skill, "rating")?;
+                    skills_map.insert(name, rating);
+                }
             }
         }
-        let mut knowledge = HashMap::new();
-        let knowledge_skills = skills_obj
-            .get("knowledge")
-            .and_then(|v| v.as_array())
-            .ok_or_else(|| AIError::GameStateParseError("Missing knowledge skills".to_string()))?;
 
-        for skill in knowledge_skills {
-            let name = extract_str(skill, "name")?;
-            let rating = extract_u8(skill, "rating")?;
-            knowledge.insert(name, rating);
+        let mut knowledge_skills = HashMap::new();
+        if let Some(knowledge_skills_array) = skills_obj.get("knowledge").and_then(|v| v.as_array())
+        {
+            for skill in knowledge_skills_array {
+                let name = extract_str(skill, "name")?;
+                let rating = extract_u8(skill, "rating")?;
+                knowledge_skills.insert(name, rating);
+            }
         }
 
         // Extract qualities
@@ -716,16 +809,26 @@ impl GameAI {
             })
             .unwrap_or_else(HashMap::new);
 
-        // Create base character sheet
-        let mut character = CharacterSheet::new(
-            name, race, gender, backstory, main, body, agility, reaction, strength, willpower,
-            logic, intuition, charisma, edge, magic, resonance, skills, knowledge, qualities,
-            nuyen, inventory, contacts,
-        );
-
-        // Apply race modifiers and update derived attributes
-        character.apply_race_modifiers(character.race.clone());
-        character.update_derived_attributes();
+        // Create base character sheet using the builder pattern
+        let character = CharacterSheetBuilder::new(name, race, gender, backstory, main)
+            .body(body)
+            .agility(agility)
+            .reaction(reaction)
+            .strength(strength)
+            .willpower(willpower)
+            .logic(logic)
+            .intuition(intuition)
+            .charisma(charisma)
+            .edge(edge)
+            .magic(magic.unwrap_or(0))
+            .resonance(resonance.unwrap_or(0))
+            .skills(skills)
+            .knowledge_skills(knowledge_skills)
+            .qualities(qualities)
+            .nuyen(nuyen)
+            .inventory(inventory)
+            .contacts(contacts)
+            .build();
 
         self.add_debug_message("Character creation successful".to_string());
 
@@ -757,29 +860,30 @@ impl GameAI {
         };
         let dummy_knowledge = HashMap::new();
 
-        CharacterSheet::new(
+        CharacterSheetBuilder::new(
             "Dummy Character".to_string(),
             Race::Human,
             "Unspecified".to_string(),
             "This is a dummy character created as a fallback.".to_string(),
             false, // main
-            3,     // body
-            3,     // agility
-            3,     // reaction
-            3,     // strength
-            3,     // willpower
-            3,     // logic
-            3,     // intuition
-            3,     // charisma
-            3,     // edge
-            0,     // magic
-            0,     // resonance
-            dummy_skills,
-            dummy_knowledge,
-            vec![],         // qualities
-            5000,           //nuyen
-            HashMap::new(), // inventory
-            HashMap::new(), // contacts
         )
+        .body(3)
+        .agility(3)
+        .reaction(3)
+        .strength(3)
+        .willpower(3)
+        .logic(3)
+        .intuition(3)
+        .charisma(3)
+        .edge(3)
+        .magic(0)
+        .resonance(0)
+        .skills(dummy_skills)
+        .knowledge_skills(dummy_knowledge)
+        .qualities(vec![])
+        .nuyen(5000)
+        .inventory(HashMap::new())
+        .contacts(HashMap::new())
+        .build()
     }
 }

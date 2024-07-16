@@ -14,18 +14,18 @@ use tokio::sync::mpsc; // Asynchronous message passing channel.
 use tokio::{sync::Mutex, time::Instant}; // Asynchronous mutex and time utilities.
 
 // Modules are declared which should be assumed to be part of the application architecture.
-mod ai;
-mod ai_response;
-mod app;
-mod app_state;
-mod character;
-mod cleanup;
-mod dice;
-mod game_state;
-mod message;
-mod settings;
-mod settings_state;
-mod ui;
+pub mod ai;
+pub mod ai_response;
+pub mod app;
+pub mod app_state;
+pub mod character;
+pub mod cleanup;
+pub mod dice;
+pub mod game_state;
+pub mod message;
+pub mod settings;
+pub mod settings_state;
+pub mod ui;
 
 // Constants for minimum terminal size.
 const MIN_WIDTH: u16 = 90;

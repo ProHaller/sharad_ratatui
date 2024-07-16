@@ -1,4 +1,4 @@
-use crate::app::App;
+use crate::app::{App, InputMode};
 use crate::character::CharacterSheet;
 use crate::message::{GameMessage, MessageType, UserMessage};
 use ratatui::{
@@ -11,12 +11,11 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 // Main function for drawing in-game UI elements.
+
 pub fn draw_in_game(f: &mut Frame, app: &mut App) {
     let size = f.size();
-    // Storing terminal size information for debugging.
     app.debug_info = format!("Terminal size: {}x{}", size.width, size.height);
 
-    // Conditionally display a warning if the terminal is too small.
     if size.width < 50 || size.height < 50 {
         let warning = Paragraph::new("Terminal too small. Please resize.")
             .style(Style::default().fg(Color::Red))
@@ -25,23 +24,19 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
         return;
     }
 
-    // Layout setup: split the screen horizontally into main sections.
     let main_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
         .split(size);
 
-    // Further split the left section vertically for game content and user input.
     let left_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Percentage(80), Constraint::Percentage(20)])
         .split(main_chunks[0]);
 
-    // Draw dynamic game content and user input areas.
     draw_game_content(f, app, left_chunks[0]);
     draw_user_input(f, app, left_chunks[1]);
 
-    // Handle the right section for displaying the character sheet.
     let game_info_area = main_chunks[1];
     if let Some(game_state) = &app.current_game {
         if let Some(sheet) = &game_state.character_sheet {
@@ -60,7 +55,6 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
         f.render_widget(no_game, game_info_area);
     }
 
-    // Display debug information if enabled in settings.
     if app.settings.debug_mode {
         let debug_area = Rect::new(size.x, size.bottom() - 1, size.width, 1);
         let debug_text =
@@ -345,13 +339,33 @@ fn draw_resources(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
 }
 
 fn draw_augmentations(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
-    let info = vec![
-        format!("Cyberware: {}", sheet.cyberware.len()),
-        format!("Bioware: {}", sheet.bioware.len()),
-    ];
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(area);
 
-    let augmentations_table = create_table(&info, "Augmentations");
-    f.render_widget(augmentations_table, area);
+    let cyberware_elements: Vec<Line> = sheet
+        .cyberware
+        .iter()
+        .map(|cw| Line::from(Span::styled(cw.clone(), Style::default().fg(Color::White))))
+        .collect();
+
+    let bioware_elements: Vec<Line> = sheet
+        .bioware
+        .iter()
+        .map(|bw| Line::from(Span::styled(bw.clone(), Style::default().fg(Color::White))))
+        .collect();
+
+    let cyberware_paragraph = Paragraph::new(cyberware_elements)
+        .block(Block::default().borders(Borders::ALL).title("Cyberware"))
+        .wrap(Wrap { trim: true });
+
+    let bioware_paragraph = Paragraph::new(bioware_elements)
+        .block(Block::default().borders(Borders::ALL).title("Bioware"))
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(cyberware_paragraph, chunks[0]);
+    f.render_widget(bioware_paragraph, chunks[1]);
 }
 
 fn draw_contacts(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
@@ -532,29 +546,30 @@ pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
 
 // Function to handle user input display and interaction.
 
-fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
-    let block = Block::default()
-        .title("Your Action")
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Yellow));
+pub fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
+    let input = Paragraph::new(app.user_input.value())
+        .style(Style::default().fg(match app.input_mode {
+            InputMode::Normal => Color::DarkGray,
+            InputMode::Editing => Color::Yellow,
+        }))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(match app.input_mode {
+                    InputMode::Normal => "Press 'e' to edit",
+                    InputMode::Editing => "Editing",
+                }),
+        );
 
-    let inner_area = block.inner(area);
-    f.render_widget(block, area);
+    f.render_widget(input, area);
 
-    let input_widget = Paragraph::new(app.user_input.value())
-        .style(Style::default().fg(Color::White))
-        .wrap(Wrap { trim: true });
-
-    f.render_widget(input_widget, inner_area);
-
-    // Set cursor
-    let cursor_position = app.user_input.cursor();
-    let input_str = app.user_input.value();
-    let cursor_x = input_str[..cursor_position].width() as u16;
-    let cursor_y = cursor_x / inner_area.width;
-    let cursor_x = cursor_x % inner_area.width;
-
-    f.set_cursor(inner_area.x + cursor_x, inner_area.y + cursor_y);
+    if let InputMode::Editing = app.input_mode {
+        // Set cursor
+        f.set_cursor(
+            area.x + app.user_input.visual_cursor() as u16 + 1,
+            area.y + 1,
+        );
+    }
 }
 
 // Function to parse markdown-like text to formatted spans.

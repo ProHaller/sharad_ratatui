@@ -1,6 +1,4 @@
-// ui/save_name_input.rs
-
-use crate::app::App;
+use crate::app::{App, InputMode};
 use ratatui::{
     layout::{Constraint, Direction, Layout},
     prelude::Alignment,
@@ -30,18 +28,35 @@ pub fn draw_save_name_input(f: &mut Frame, app: &App) {
     f.render_widget(title, chunks[0]);
 
     let input = Paragraph::new(app.save_name_input.value())
-        .style(Style::default().fg(Color::Yellow))
-        .block(Block::default().borders(Borders::ALL).title("Save Name"));
+        .style(Style::default().fg(Color::White))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(match app.input_mode {
+                    InputMode::Normal => "Press 'e' to edit",
+                    InputMode::Editing => "Editing",
+                })
+                .border_style(Style::default().fg(match app.input_mode {
+                    InputMode::Normal => Color::DarkGray,
+                    InputMode::Editing => Color::Yellow,
+                })),
+        );
     f.render_widget(input, chunks[1]);
 
-    let instructions = Paragraph::new("Press Enter to confirm, Esc to cancel")
+    let mode_indicator = match app.input_mode {
+        InputMode::Normal => "NORMAL",
+        InputMode::Editing => "EDITING",
+    };
+    let instructions = Paragraph::new(format!("{} | Enter: confirm | Esc: cancel", mode_indicator))
         .style(Style::default().fg(Color::Gray))
         .alignment(Alignment::Center);
     f.render_widget(instructions, chunks[2]);
 
-    // Set cursor
-    f.set_cursor(
-        chunks[1].x + app.api_key_input.cursor() as u16 + 1,
-        chunks[1].y + 1,
-    );
+    // Only show the cursor when in Editing mode
+    if let InputMode::Editing = app.input_mode {
+        f.set_cursor(
+            chunks[1].x + app.save_name_input.visual_cursor() as u16 + 1,
+            chunks[1].y + 1,
+        );
+    }
 }

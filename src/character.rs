@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 
-// Define an enumeration for character races in a role-playing game.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+// Define an enumeration for character races.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Race {
     Human,
     Elf,
@@ -125,47 +125,24 @@ pub struct MatrixAttributes {
 // Implementation of methods for the CharacterSheet struct.
 impl CharacterSheet {
     // Constructor for creating a new character sheet.
-    pub fn new(
-        name: String,
-        race: Race,
-        gender: String,
-        backstory: String,
-        main: bool,
-        body: u8,
-        agility: u8,
-        reaction: u8,
-        strength: u8,
-        willpower: u8,
-        logic: u8,
-        intuition: u8,
-        charisma: u8,
-        edge: u8,
-        magic: u8,
-        resonance: u8,
-        skills: Skills,
-        knowledge_skills: HashMap<String, u8>,
-        qualities: Vec<Quality>,
-        nuyen: u32,
-        inventory: HashMap<String, Item>,
-        contacts: HashMap<String, Contact>,
-    ) -> Self {
+    pub fn new(builder: CharacterSheetBuilder) -> Self {
         let mut sheet = CharacterSheet {
-            name,
-            race: race.clone(),
-            gender,
-            backstory,
-            main,
-            body,
-            agility,
-            reaction,
-            strength,
-            willpower,
-            logic,
-            intuition,
-            charisma,
-            edge,
-            magic: Some(magic),
-            resonance: Some(resonance),
+            name: builder.name,
+            race: builder.race.clone(),
+            gender: builder.gender,
+            backstory: builder.backstory,
+            main: builder.main,
+            body: builder.body,
+            agility: builder.agility,
+            reaction: builder.reaction,
+            strength: builder.strength,
+            willpower: builder.willpower,
+            logic: builder.logic,
+            intuition: builder.intuition,
+            charisma: builder.charisma,
+            edge: builder.edge,
+            magic: Some(builder.magic),
+            resonance: Some(builder.resonance),
             initiative: (0, 1),
             essence: 6.0,
             edge_points: 1,
@@ -175,16 +152,16 @@ impl CharacterSheet {
             physical_limit: 1,
             mental_limit: 1,
             social_limit: 1,
-            skills,
-            knowledge_skills,
-            nuyen,
+            skills: builder.skills,
+            knowledge_skills: builder.knowledge_skills,
+            nuyen: builder.nuyen,
             lifestyle: "Street".to_string(),
-            contacts,
-            qualities,
+            contacts: builder.contacts,
+            qualities: builder.qualities,
             cyberware: Vec::new(),
             bioware: Vec::new(),
             matrix_attributes: None,
-            inventory,
+            inventory: builder.inventory,
         };
 
         // Apply race-specific attribute modifiers and update derived attributes.
@@ -282,158 +259,359 @@ impl CharacterSheet {
             _ => 0,
         }
     }
+}
 
-    pub fn apply_update(&mut self, update: CharacterSheetUpdate) -> Result<(), String> {
-        match update {
-            CharacterSheetUpdate::UpdateNuyen { amount } => {
-                if amount >= 0 {
-                    self.nuyen = self.nuyen.saturating_add(amount as u32);
-                } else {
-                    self.nuyen = self.nuyen.saturating_sub(amount.abs() as u32);
-                }
-            }
-            CharacterSheetUpdate::AddContact {
-                name,
-                description,
-                loyalty,
-                connection,
-            } => {
-                self.contacts.insert(
-                    name.clone(),
-                    Contact {
-                        name,
-                        description,
-                        loyalty,
-                        connection,
-                    },
-                );
-            }
-            CharacterSheetUpdate::RemoveContact { name } => {
-                self.contacts.remove(&name);
-            }
-            CharacterSheetUpdate::AddInventoryItem {
-                name,
-                quantity,
-                description,
-            } => {
-                self.inventory
-                    .entry(name.clone())
-                    .and_modify(|item| item.quantity += quantity)
-                    .or_insert(Item {
-                        name,
-                        quantity,
-                        description,
-                    });
-            }
-            CharacterSheetUpdate::RemoveInventoryItem { name } => {
-                if let Some(item) = self.inventory.get_mut(&name) {
-                    item.quantity = item.quantity.saturating_sub(1);
-                    if item.quantity == 0 {
-                        self.inventory.remove(&name);
-                    }
-                }
-            }
-            CharacterSheetUpdate::AddCyberware { name } => {
-                self.cyberware.push(name);
-            }
-            CharacterSheetUpdate::RemoveCyberware { name } => {
-                self.cyberware.retain(|c| c != &name);
-            }
-            CharacterSheetUpdate::AddBioware { name } => {
-                self.bioware.push(name);
-            }
-            CharacterSheetUpdate::RemoveBioware { name } => {
-                self.bioware.retain(|b| b != &name);
-            }
-            CharacterSheetUpdate::UpdateAttribute { attribute, value } => {
-                match attribute.to_lowercase().as_str() {
-                    "body" => self.body = value,
-                    "agility" => self.agility = value,
-                    "reaction" => self.reaction = value,
-                    "strength" => self.strength = value,
-                    "willpower" => self.willpower = value,
-                    "logic" => self.logic = value,
-                    "intuition" => self.intuition = value,
-                    "charisma" => self.charisma = value,
-                    "edge" => self.edge = value,
-                    _ => return Err(format!("Invalid attribute: {}", attribute)),
-                }
-                self.update_derived_attributes();
-            }
-            CharacterSheetUpdate::UpdateSkill {
-                category,
-                skill,
-                value,
-            } => {
-                let skill_map = match category.to_lowercase().as_str() {
-                    "combat" => &mut self.skills.combat,
-                    "physical" => &mut self.skills.physical,
-                    "social" => &mut self.skills.social,
-                    "technical" => &mut self.skills.technical,
-                    "knowledge" => &mut self.knowledge_skills,
-                    _ => return Err(format!("Invalid skill category: {}", category)),
-                };
-                skill_map.insert(skill, value);
-            }
-            CharacterSheetUpdate::AddQuality { name, positive } => {
-                self.qualities.push(Quality { name, positive });
-            }
-            CharacterSheetUpdate::RemoveQuality { name } => {
-                self.qualities.retain(|c| c.name != name);
-            }
+// Builder for creating CharacterSheet
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CharacterSheetBuilder {
+    name: String,
+    race: Race,
+    gender: String,
+    backstory: String,
+    main: bool,
+    body: u8,
+    agility: u8,
+    reaction: u8,
+    strength: u8,
+    willpower: u8,
+    logic: u8,
+    intuition: u8,
+    charisma: u8,
+    edge: u8,
+    magic: u8,
+    resonance: u8,
+    skills: Skills,
+    knowledge_skills: HashMap<String, u8>,
+    qualities: Vec<Quality>,
+    nuyen: u32,
+    inventory: HashMap<String, Item>,
+    contacts: HashMap<String, Contact>,
+}
+
+impl CharacterSheetBuilder {
+    pub fn new(name: String, race: Race, gender: String, backstory: String, main: bool) -> Self {
+        Self {
+            name,
+            race,
+            gender,
+            backstory,
+            main,
+            body: 1,
+            agility: 1,
+            reaction: 1,
+            strength: 1,
+            willpower: 1,
+            logic: 1,
+            intuition: 1,
+            charisma: 1,
+            edge: 1,
+            magic: 0,
+            resonance: 0,
+            skills: Skills {
+                combat: HashMap::new(),
+                physical: HashMap::new(),
+                social: HashMap::new(),
+                technical: HashMap::new(),
+            },
+            knowledge_skills: HashMap::new(),
+            qualities: vec![],
+            nuyen: 0,
+            inventory: HashMap::new(),
+            contacts: HashMap::new(),
         }
-        Ok(())
+    }
+
+    pub fn body(mut self, body: u8) -> Self {
+        self.body = body;
+        self
+    }
+
+    pub fn agility(mut self, agility: u8) -> Self {
+        self.agility = agility;
+        self
+    }
+
+    pub fn reaction(mut self, reaction: u8) -> Self {
+        self.reaction = reaction;
+        self
+    }
+
+    pub fn strength(mut self, strength: u8) -> Self {
+        self.strength = strength;
+        self
+    }
+
+    pub fn willpower(mut self, willpower: u8) -> Self {
+        self.willpower = willpower;
+        self
+    }
+
+    pub fn logic(mut self, logic: u8) -> Self {
+        self.logic = logic;
+        self
+    }
+
+    pub fn intuition(mut self, intuition: u8) -> Self {
+        self.intuition = intuition;
+        self
+    }
+
+    pub fn charisma(mut self, charisma: u8) -> Self {
+        self.charisma = charisma;
+        self
+    }
+
+    pub fn edge(mut self, edge: u8) -> Self {
+        self.edge = edge;
+        self
+    }
+
+    pub fn magic(mut self, magic: u8) -> Self {
+        self.magic = magic;
+        self
+    }
+
+    pub fn resonance(mut self, resonance: u8) -> Self {
+        self.resonance = resonance;
+        self
+    }
+
+    pub fn skills(mut self, skills: Skills) -> Self {
+        self.skills = skills;
+        self
+    }
+
+    pub fn knowledge_skills(mut self, knowledge_skills: HashMap<String, u8>) -> Self {
+        self.knowledge_skills = knowledge_skills;
+        self
+    }
+
+    pub fn qualities(mut self, qualities: Vec<Quality>) -> Self {
+        self.qualities = qualities;
+        self
+    }
+
+    pub fn nuyen(mut self, nuyen: u32) -> Self {
+        self.nuyen = nuyen;
+        self
+    }
+
+    pub fn inventory(mut self, inventory: HashMap<String, Item>) -> Self {
+        self.inventory = inventory;
+        self
+    }
+
+    pub fn contacts(mut self, contacts: HashMap<String, Contact>) -> Self {
+        self.contacts = contacts;
+        self
+    }
+
+    pub fn build(self) -> CharacterSheet {
+        CharacterSheet::new(self)
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum UpdateOperation<T> {
+    Modify(T),
+    Add(T),
+    Remove,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum CharacterSheetUpdate {
-    UpdateNuyen {
-        amount: i32,
-    },
-    AddContact {
-        name: String,
-        description: String,
-        loyalty: u8,
-        connection: u8,
-    },
-    RemoveContact {
-        name: String,
-    },
-    AddInventoryItem {
-        name: String,
-        quantity: u32,
-        description: String,
-    },
-    RemoveInventoryItem {
-        name: String,
-    },
-    AddCyberware {
-        name: String,
-    },
-    RemoveCyberware {
-        name: String,
-    },
-    AddBioware {
-        name: String,
-    },
-    RemoveBioware {
-        name: String,
-    },
     UpdateAttribute {
         attribute: String,
-        value: u8,
+        operation: UpdateOperation<Value>,
     },
-    UpdateSkill {
-        category: String,
-        skill: String,
-        value: u8,
-    },
-    AddQuality {
-        name: String,
-        positive: bool,
-    },
-    RemoveQuality {
-        name: String,
-    },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Value {
+    U8(u8),
+    U32(u32),
+    String(String),
+    Race(Race),
+    Skills(Skills),
+    HashMapStringU8(HashMap<String, u8>),
+    VecQuality(Vec<Quality>),
+    VecString(Vec<String>),
+    HashMapStringItem(HashMap<String, Item>),
+    HashMapStringContact(HashMap<String, Contact>),
+    OptionMatrixAttributes(Option<MatrixAttributes>),
+    OptionU8(Option<u8>),
+}
+
+impl CharacterSheet {
+    pub fn apply_update(&mut self, update: CharacterSheetUpdate) -> Result<(), String> {
+        match update {
+            CharacterSheetUpdate::UpdateAttribute {
+                attribute,
+                operation,
+            } => {
+                match attribute.as_str() {
+                    "name" => {
+                        if let UpdateOperation::Modify(Value::String(value)) = operation {
+                            self.name = value;
+                        }
+                    }
+                    "race" => {
+                        if let UpdateOperation::Modify(Value::Race(value)) = operation {
+                            self.race = value;
+                        }
+                    }
+                    "gender" => {
+                        if let UpdateOperation::Modify(Value::String(value)) = operation {
+                            self.gender = value;
+                        }
+                    }
+                    "backstory" => {
+                        if let UpdateOperation::Modify(Value::String(value)) = operation {
+                            self.backstory = value;
+                        }
+                    }
+                    "main" => {
+                        if let UpdateOperation::Modify(Value::U8(value)) = operation {
+                            self.main = value != 0;
+                        }
+                    }
+                    "body" => {
+                        if let UpdateOperation::Modify(Value::U8(value)) = operation {
+                            self.body = value;
+                        }
+                    }
+                    "agility" => {
+                        if let UpdateOperation::Modify(Value::U8(value)) = operation {
+                            self.agility = value;
+                        }
+                    }
+                    "reaction" => {
+                        if let UpdateOperation::Modify(Value::U8(value)) = operation {
+                            self.reaction = value;
+                        }
+                    }
+                    "strength" => {
+                        if let UpdateOperation::Modify(Value::U8(value)) = operation {
+                            self.strength = value;
+                        }
+                    }
+                    "willpower" => {
+                        if let UpdateOperation::Modify(Value::U8(value)) = operation {
+                            self.willpower = value;
+                        }
+                    }
+                    "logic" => {
+                        if let UpdateOperation::Modify(Value::U8(value)) = operation {
+                            self.logic = value;
+                        }
+                    }
+                    "intuition" => {
+                        if let UpdateOperation::Modify(Value::U8(value)) = operation {
+                            self.intuition = value;
+                        }
+                    }
+                    "charisma" => {
+                        if let UpdateOperation::Modify(Value::U8(value)) = operation {
+                            self.charisma = value;
+                        }
+                    }
+                    "edge" => {
+                        if let UpdateOperation::Modify(Value::U8(value)) = operation {
+                            self.edge = value;
+                        }
+                    }
+                    "magic" => {
+                        if let UpdateOperation::Modify(Value::OptionU8(value)) = operation {
+                            self.magic = value;
+                        }
+                    }
+                    "resonance" => {
+                        if let UpdateOperation::Modify(Value::OptionU8(value)) = operation {
+                            self.resonance = value;
+                        }
+                    }
+                    "skills" => {
+                        if let UpdateOperation::Modify(Value::Skills(value)) = operation {
+                            self.skills = value;
+                        }
+                    }
+                    "knowledge_skills" => {
+                        if let UpdateOperation::Modify(Value::HashMapStringU8(value)) = operation {
+                            self.knowledge_skills = value;
+                        }
+                    }
+                    "nuyen" => match operation {
+                        UpdateOperation::Modify(Value::U32(value)) => {
+                            self.nuyen = value;
+                        }
+                        UpdateOperation::Add(Value::U32(value)) => {
+                            self.nuyen = self.nuyen.saturating_add(value);
+                        }
+                        UpdateOperation::Remove => {
+                            self.nuyen = 0;
+                        }
+                        _ => return Err("Invalid operation for nuyen".to_string()),
+                    },
+                    "lifestyle" => {
+                        if let UpdateOperation::Modify(Value::String(value)) = operation {
+                            self.lifestyle = value;
+                        }
+                    }
+                    "contacts" => {
+                        if let UpdateOperation::Modify(Value::HashMapStringContact(value)) =
+                            operation
+                        {
+                            self.contacts = value;
+                        }
+                    }
+                    "qualities" => {
+                        if let UpdateOperation::Modify(Value::VecQuality(value)) = operation {
+                            self.qualities = value;
+                        }
+                    }
+                    "cyberware" => match operation {
+                        UpdateOperation::Modify(Value::VecString(value)) => {
+                            self.cyberware = value;
+                        }
+                        UpdateOperation::Add(Value::VecString(values)) => {
+                            self.cyberware.extend(values);
+                        }
+                        UpdateOperation::Remove => {
+                            self.cyberware.clear();
+                        }
+                        _ => return Err("Invalid operation for cyberware".to_string()),
+                    },
+                    "bioware" => match operation {
+                        UpdateOperation::Modify(Value::VecString(value)) => {
+                            self.bioware = value;
+                        }
+                        UpdateOperation::Add(Value::VecString(values)) => {
+                            self.bioware.extend(values);
+                        }
+                        UpdateOperation::Remove => {
+                            self.bioware.clear();
+                        }
+                        _ => return Err("Invalid operation for bioware".to_string()),
+                    },
+                    "inventory" => {
+                        if let UpdateOperation::Modify(Value::HashMapStringItem(value)) = operation
+                        {
+                            self.inventory = value;
+                        }
+                    }
+                    "matrix_attributes" => {
+                        if let UpdateOperation::Modify(Value::OptionMatrixAttributes(value)) =
+                            operation
+                        {
+                            self.matrix_attributes = value;
+                        }
+                    }
+                    _ => return Err(format!("Invalid attribute: {}", attribute)),
+                }
+                self.update_derived_attributes();
+            }
+        }
+        Ok(())
+    }
 }
