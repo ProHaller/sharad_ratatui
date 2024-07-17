@@ -1,0 +1,95 @@
+{
+  "name": "update_basic_attributes",
+  "description": "Update basic attributes of a Shadowrun character",
+  "parameters": {
+    "type": "object",
+    "required": [
+      "character_name",
+      "updates"
+    ],
+    "properties": {
+      "character_name": {
+        "type": "string",
+        "description": "The name of the character to update"
+      },
+      "updates": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "race": {
+            "type": "string",
+            "enum": [
+              "Human",
+              "Elf",
+              "Dwarf",
+              "Ork",
+              "Troll"
+            ]
+          },
+          "gender": {
+            "type": "string"
+          },
+          "backstory": {
+            "type": "string"
+          },
+          "main": {
+            "type": "boolean"
+          },
+          "body": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "agility": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "reaction": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "strength": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "willpower": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "logic": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "intuition": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "charisma": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "edge": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "magic": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "resonance": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "nuyen": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "lifestyle": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

@@ -28,8 +28,8 @@ pub mod settings_state;
 pub mod ui;
 
 // Constants for minimum terminal size.
-const MIN_WIDTH: u16 = 90;
-const MIN_HEIGHT: u16 = 70;
+const MIN_WIDTH: u16 = 100;
+const MIN_HEIGHT: u16 = 40;
 
 // Function to ensure the terminal size meets minimum requirements.
 fn ensure_minimum_terminal_size() -> io::Result<()> {

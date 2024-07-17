@@ -1,0 +1,44 @@
+{
+  "name": "update_qualities",
+  "description": "Update qualities of a Shadowrun character",
+  "parameters": {
+    "type": "object",
+    "required": [
+      "character_name",
+      "operation",
+      "qualities"
+    ],
+    "properties": {
+      "character_name": {
+        "type": "string",
+        "description": "The name of the character to update"
+      },
+      "operation": {
+        "type": "string",
+        "enum": [
+          "Add",
+          "Remove"
+        ],
+        "description": "The type of operation to perform on the qualities"
+      },
+      "qualities": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "name",
+            "positive"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "positive": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "name": "update_matrix_attributes",
+  "description": "Update matrix attributes of a Shadowrun character",
+  "parameters": {
+    "type": "object",
+    "required": [
+      "character_name",
+      "matrix_attributes"
+    ],
+    "properties": {
+      "character_name": {
+        "type": "string",
+        "description": "The name of the character to update"
+      },
+      "matrix_attributes": {
+        "type": "object",
+        "properties": {
+          "attack": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "sleaze": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "data_processing": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "firewall": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "name": "update_inventory",
+  "description": "Update the inventory of a character by adding, removing, or modifying items.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "character_name": {
+        "type": "string",
+        "description": "The name of the character whose inventory will be updated."
+      },
+      "operation": {
+        "type": "string",
+        "description": "The operation to perform on the inventory. Can be 'Add', 'Remove', or 'Modify'.",
+        "enum": [
+          "Add",
+          "Remove",
+          "Modify"
+        ]
+      },
+      "items": {
+        "type": "object",
+        "description": "The item or items to update. Can be a single item or multiple items.",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "integer"
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "quantity": {
+              "type": "integer"
+            },
+            "description": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "required": [
+      "character_name",
+      "operation",
+      "items"
+    ]
+  }
+}

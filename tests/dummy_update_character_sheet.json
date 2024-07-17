@@ -1,0 +1,20 @@
+{
+  "id": "call_eG5SVVhg4ukbe6vaGAqO2Ps2",
+  "type": "function",
+  "function": {
+    "name": "update_character_sheet",
+    "arguments": {
+      "character_name": "Alex 'Raven' Hayes",
+      "update": {
+        "attribute": "qualities",
+        "operation": "Add",
+        "value": [
+          {
+            "name": "Street Samurai",
+            "positive": true
+          }
+        ]
+      }
+    }
+  }
+}

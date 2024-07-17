@@ -1,0 +1,67 @@
+{
+  "name": "perform_dice_roll",
+  "description": "Perform a dice roll for a Shadowrun character",
+  "parameters": {
+    "properties": {
+      "attribute": {
+        "description": "The attribute used for the roll",
+        "enum": [
+          "body",
+          "agility",
+          "reaction",
+          "strength",
+          "willpower",
+          "logic",
+          "intuition",
+          "charisma",
+          "edge"
+        ],
+        "type": "string"
+      },
+      "character_name": {
+        "description": "The name of the character performing the roll",
+        "type": "string"
+      },
+      "edge_action": {
+        "description": "The Edge action to apply to the roll (optional)",
+        "enum": [
+          "RerollFailures",
+          "AddExtraDice",
+          "PushTheLimit"
+        ],
+        "type": "string"
+      },
+      "extra_dice": {
+        "description": "The number of extra dice to add when using the AddExtraDice Edge action",
+        "maximum": 5,
+        "minimum": 1,
+        "type": "integer"
+      },
+      "limit_type": {
+        "description": "The type of limit to apply to the roll",
+        "enum": [
+          "physical",
+          "mental",
+          "social"
+        ],
+        "type": "string"
+      },
+      "skill": {
+        "description": "The skill used for the roll",
+        "type": "string"
+      },
+      "threshold": {
+        "description": "The number of hits required for success (optional)",
+        "minimum": 1,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "character_name",
+      "attribute",
+      "skill",
+      "limit_type"
+    ],
+    "type": "object"
+  }
+}

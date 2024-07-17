@@ -1,0 +1,41 @@
+{
+  "name": "update_augmentations",
+  "description": "Update cyberware and bioware of a Shadowrun character",
+  "parameters": {
+    "type": "object",
+    "required": [
+      "character_name",
+      "operation",
+      "augmentation_type",
+      "augmentations"
+    ],
+    "properties": {
+      "character_name": {
+        "type": "string",
+        "description": "The name of the character to update"
+      },
+      "operation": {
+        "type": "string",
+        "enum": [
+          "Add",
+          "Remove"
+        ],
+        "description": "The type of operation to perform on the augmentations"
+      },
+      "augmentation_type": {
+        "type": "string",
+        "enum": [
+          "cyberware",
+          "bioware"
+        ],
+        "description": "The type of augmentation to update"
+      },
+      "augmentations": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,108 @@
+{
+  "id": "call_JwlwsNa1iYU0vD5BbPs5BjSw",
+  "type": "function",
+  "function": {
+    "name": "create_character_sheet",
+    "arguments": {
+      "attributes": {
+        "body": 4,
+        "agility": 5,
+        "charisma": 3,
+        "edge": 2,
+        "intuition": 5,
+        "logic": 4,
+        "reaction": 5,
+        "strength": 4,
+        "willpower": 3,
+        "magic": 0,
+        "resonance": 0
+      },
+      "backstory": "Raised in the slums of Seattle, Alex 'Raven' Hayes turned to the shadows at a young age. A natural talent for agility and sharp instincts made him a prime candidate for shadowrunning. With a knack for bypassing security systems and dealing with underworld contacts, Raven quickly made a name for himself in the data theft and covert ops scene.",
+      "gender": "Male",
+      "name": "Alex 'Raven' Hayes",
+      "main": true,
+      "qualities": [
+        {
+          "name": "Natural Athlete",
+          "positive": true
+        },
+        {
+          "name": "Low Pain Tolerance",
+          "positive": false
+        },
+        {
+          "name": "Keen-Eyed",
+          "positive": true
+        }
+      ],
+      "race": "Human",
+      "skills": {
+        "combat": [
+          {
+            "name": "Pistols",
+            "rating": 4
+          },
+          {
+            "name": "Unarmed Combat",
+            "rating": 3
+          }
+        ],
+        "physical": [
+          {
+            "name": "Athletics",
+            "rating": 5
+          },
+          {
+            "name": "Stealth",
+            "rating": 6
+          }
+        ],
+        "social": [
+          {
+            "name": "Negotiation",
+            "rating": 3
+          },
+          {
+            "name": "Intimidation",
+            "rating": 2
+          }
+        ],
+        "technical": [
+          {
+            "name": "Hacking",
+            "rating": 4
+          },
+          {
+            "name": "Electronic Warfare",
+            "rating": 3
+          }
+        ],
+        "knowledge": [
+          {
+            "name": "Street Knowledge",
+            "rating": 5
+          },
+          {
+            "name": "Security Systems",
+            "rating": 4
+          }
+        ]
+      },
+      "nuyen": 20000,
+      "contacts": [
+        {
+          "name": "Jenna 'Fixer' Morgan",
+          "description": "An experienced fixer with deep connections in the Seattle underworld.",
+          "loyalty": 4,
+          "connection": 5
+        },
+        {
+          "name": "Marcus 'Gearhead' Flint",
+          "description": "A tech expert and supplier of cutting-edge gear.",
+          "loyalty": 3,
+          "connection": 4
+        }
+      ]
+    }
+  }
+}

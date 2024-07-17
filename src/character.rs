@@ -415,7 +415,7 @@ impl CharacterSheetBuilder {
 pub enum UpdateOperation<T> {
     Modify(T),
     Add(T),
-    Remove,
+    Remove(T),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -450,166 +450,113 @@ impl CharacterSheet {
                 attribute,
                 operation,
             } => {
-                match attribute.as_str() {
-                    "name" => {
-                        if let UpdateOperation::Modify(Value::String(value)) = operation {
-                            self.name = value;
-                        }
+                match operation {
+                    UpdateOperation::Modify(value) => self.modify_attribute(&attribute, value)?,
+                    UpdateOperation::Add(value) => self.add_to_attribute(&attribute, value)?,
+                    UpdateOperation::Remove(value) => {
+                        self.remove_from_attribute(&attribute, value)?
                     }
-                    "race" => {
-                        if let UpdateOperation::Modify(Value::Race(value)) = operation {
-                            self.race = value;
-                        }
-                    }
-                    "gender" => {
-                        if let UpdateOperation::Modify(Value::String(value)) = operation {
-                            self.gender = value;
-                        }
-                    }
-                    "backstory" => {
-                        if let UpdateOperation::Modify(Value::String(value)) = operation {
-                            self.backstory = value;
-                        }
-                    }
-                    "main" => {
-                        if let UpdateOperation::Modify(Value::U8(value)) = operation {
-                            self.main = value != 0;
-                        }
-                    }
-                    "body" => {
-                        if let UpdateOperation::Modify(Value::U8(value)) = operation {
-                            self.body = value;
-                        }
-                    }
-                    "agility" => {
-                        if let UpdateOperation::Modify(Value::U8(value)) = operation {
-                            self.agility = value;
-                        }
-                    }
-                    "reaction" => {
-                        if let UpdateOperation::Modify(Value::U8(value)) = operation {
-                            self.reaction = value;
-                        }
-                    }
-                    "strength" => {
-                        if let UpdateOperation::Modify(Value::U8(value)) = operation {
-                            self.strength = value;
-                        }
-                    }
-                    "willpower" => {
-                        if let UpdateOperation::Modify(Value::U8(value)) = operation {
-                            self.willpower = value;
-                        }
-                    }
-                    "logic" => {
-                        if let UpdateOperation::Modify(Value::U8(value)) = operation {
-                            self.logic = value;
-                        }
-                    }
-                    "intuition" => {
-                        if let UpdateOperation::Modify(Value::U8(value)) = operation {
-                            self.intuition = value;
-                        }
-                    }
-                    "charisma" => {
-                        if let UpdateOperation::Modify(Value::U8(value)) = operation {
-                            self.charisma = value;
-                        }
-                    }
-                    "edge" => {
-                        if let UpdateOperation::Modify(Value::U8(value)) = operation {
-                            self.edge = value;
-                        }
-                    }
-                    "magic" => {
-                        if let UpdateOperation::Modify(Value::OptionU8(value)) = operation {
-                            self.magic = value;
-                        }
-                    }
-                    "resonance" => {
-                        if let UpdateOperation::Modify(Value::OptionU8(value)) = operation {
-                            self.resonance = value;
-                        }
-                    }
-                    "skills" => {
-                        if let UpdateOperation::Modify(Value::Skills(value)) = operation {
-                            self.skills = value;
-                        }
-                    }
-                    "knowledge_skills" => {
-                        if let UpdateOperation::Modify(Value::HashMapStringU8(value)) = operation {
-                            self.knowledge_skills = value;
-                        }
-                    }
-                    "nuyen" => match operation {
-                        UpdateOperation::Modify(Value::U32(value)) => {
-                            self.nuyen = value;
-                        }
-                        UpdateOperation::Add(Value::U32(value)) => {
-                            self.nuyen = self.nuyen.saturating_add(value);
-                        }
-                        UpdateOperation::Remove => {
-                            self.nuyen = 0;
-                        }
-                        _ => return Err("Invalid operation for nuyen".to_string()),
-                    },
-                    "lifestyle" => {
-                        if let UpdateOperation::Modify(Value::String(value)) = operation {
-                            self.lifestyle = value;
-                        }
-                    }
-                    "contacts" => {
-                        if let UpdateOperation::Modify(Value::HashMapStringContact(value)) =
-                            operation
-                        {
-                            self.contacts = value;
-                        }
-                    }
-                    "qualities" => {
-                        if let UpdateOperation::Modify(Value::VecQuality(value)) = operation {
-                            self.qualities = value;
-                        }
-                    }
-                    "cyberware" => match operation {
-                        UpdateOperation::Modify(Value::VecString(value)) => {
-                            self.cyberware = value;
-                        }
-                        UpdateOperation::Add(Value::VecString(values)) => {
-                            self.cyberware.extend(values);
-                        }
-                        UpdateOperation::Remove => {
-                            self.cyberware.clear();
-                        }
-                        _ => return Err("Invalid operation for cyberware".to_string()),
-                    },
-                    "bioware" => match operation {
-                        UpdateOperation::Modify(Value::VecString(value)) => {
-                            self.bioware = value;
-                        }
-                        UpdateOperation::Add(Value::VecString(values)) => {
-                            self.bioware.extend(values);
-                        }
-                        UpdateOperation::Remove => {
-                            self.bioware.clear();
-                        }
-                        _ => return Err("Invalid operation for bioware".to_string()),
-                    },
-                    "inventory" => {
-                        if let UpdateOperation::Modify(Value::HashMapStringItem(value)) = operation
-                        {
-                            self.inventory = value;
-                        }
-                    }
-                    "matrix_attributes" => {
-                        if let UpdateOperation::Modify(Value::OptionMatrixAttributes(value)) =
-                            operation
-                        {
-                            self.matrix_attributes = value;
-                        }
-                    }
-                    _ => return Err(format!("Invalid attribute: {}", attribute)),
                 }
                 self.update_derived_attributes();
+                Ok(())
+            }
+        }
+    }
+
+    fn modify_attribute(&mut self, attribute: &str, value: Value) -> Result<(), String> {
+        match (attribute, value.clone()) {
+            ("name", Value::String(v)) => self.name = v,
+            ("race", Value::Race(v)) => {
+                self.race = v;
+                self.apply_race_modifiers(self.race.clone());
+            }
+            ("gender", Value::String(v)) => self.gender = v,
+            ("backstory", Value::String(v)) => self.backstory = v,
+            ("main", Value::U8(v)) => self.main = v != 0,
+            ("body", Value::U8(v)) => self.body = v,
+            ("agility", Value::U8(v)) => self.agility = v,
+            ("reaction", Value::U8(v)) => self.reaction = v,
+            ("strength", Value::U8(v)) => self.strength = v,
+            ("willpower", Value::U8(v)) => self.willpower = v,
+            ("logic", Value::U8(v)) => self.logic = v,
+            ("intuition", Value::U8(v)) => self.intuition = v,
+            ("charisma", Value::U8(v)) => self.charisma = v,
+            ("edge", Value::U8(v)) => self.edge = v,
+            ("magic", Value::OptionU8(v)) => self.magic = v,
+            ("resonance", Value::OptionU8(v)) => self.resonance = v,
+            ("skills", Value::Skills(v)) => self.skills = v,
+            ("knowledge_skills", Value::HashMapStringU8(v)) => self.knowledge_skills = v,
+            ("nuyen", Value::U32(v)) => self.nuyen = v,
+            ("lifestyle", Value::String(v)) => self.lifestyle = v,
+            ("contacts", Value::HashMapStringContact(v)) => self.contacts = v,
+            ("qualities", Value::VecQuality(v)) => self.qualities = v,
+            ("cyberware", Value::VecString(v)) => self.cyberware = v,
+            ("bioware", Value::VecString(v)) => self.bioware = v,
+            ("inventory", Value::HashMapStringItem(v)) => self.inventory = v,
+            ("matrix_attributes", Value::OptionMatrixAttributes(v)) => self.matrix_attributes = v,
+            _ => {
+                return Err(format!(
+                    "Invalid attribute-value pair for modification: {} {:?}",
+                    attribute, value
+                ))
+            }
+        }
+        Ok(())
+    }
+
+    fn add_to_attribute(&mut self, attribute: &str, value: Value) -> Result<(), String> {
+        match (attribute, value.clone()) {
+            ("nuyen", Value::U32(v)) => self.nuyen = self.nuyen.saturating_add(v),
+            ("contacts", Value::HashMapStringContact(v)) => self.contacts.extend(v),
+            ("qualities", Value::VecQuality(v)) => self.qualities.extend(v),
+            ("cyberware", Value::VecString(v)) => self.cyberware.extend(v),
+            ("bioware", Value::VecString(v)) => self.bioware.extend(v),
+            ("inventory", Value::HashMapStringItem(v)) => {
+                for (key, item) in v {
+                    if let Some(existing_item) = self.inventory.get_mut(&key) {
+                        existing_item.quantity += item.quantity;
+                    } else {
+                        self.inventory.insert(key, item);
+                    }
+                }
+            }
+            _ => {
+                return Err(format!(
+                    "Invalid attribute-value pair for addition: {} {:?}",
+                    attribute, value
+                ))
+            }
+        }
+        Ok(())
+    }
+
+    fn remove_from_attribute(&mut self, attribute: &str, value: Value) -> Result<(), String> {
+        match (attribute, value.clone()) {
+            ("nuyen", Value::U32(v)) => self.nuyen = self.nuyen.saturating_sub(v),
+            ("contacts", Value::HashMapStringContact(v)) => {
+                for key in v.keys() {
+                    self.contacts.remove(key);
+                }
+            }
+            ("qualities", Value::VecQuality(v)) => self.qualities.retain(|q| !v.contains(q)),
+            ("cyberware", Value::VecString(v)) => self.cyberware.retain(|item| !v.contains(item)),
+            ("bioware", Value::VecString(v)) => self.bioware.retain(|item| !v.contains(item)),
+            ("inventory", Value::HashMapStringItem(v)) => {
+                for (key, item) in v {
+                    if let Some(existing_item) = self.inventory.get_mut(&key) {
+                        if existing_item.quantity <= item.quantity {
+                            self.inventory.remove(&key);
+                        } else {
+                            existing_item.quantity -= item.quantity;
+                        }
+                    }
+                }
+            }
+            _ => {
+                return Err(format!(
+                    "Invalid attribute-value pair for removal: {} {:?}",
+                    attribute, value
+                ))
             }
         }
         Ok(())
