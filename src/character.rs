@@ -492,7 +492,18 @@ impl CharacterSheet {
             ("qualities", Value::VecQuality(v)) => self.qualities = v,
             ("cyberware", Value::VecString(v)) => self.cyberware = v,
             ("bioware", Value::VecString(v)) => self.bioware = v,
-            ("inventory", Value::HashMapStringItem(v)) => self.inventory = v,
+            ("inventory", Value::HashMapStringItem(v)) => {
+                for (key, new_item) in v {
+                    if let Some(existing_item) = self.inventory.get_mut(&key) {
+                        // Update existing item
+                        existing_item.quantity = new_item.quantity;
+                        existing_item.description = new_item.description;
+                    } else {
+                        // Add new item
+                        self.inventory.insert(key, new_item);
+                    }
+                }
+            }
             ("matrix_attributes", Value::OptionMatrixAttributes(v)) => self.matrix_attributes = v,
             _ => {
                 return Err(format!(
