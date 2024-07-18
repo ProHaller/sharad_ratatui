@@ -19,6 +19,7 @@ use std::path::Path;
 use tokio::sync::mpsc;
 use tui_input::backend::crossterm::EventHandler;
 use tui_input::Input;
+use tui_input::InputRequest;
 
 pub enum AppCommand {
     LoadGame(String),
@@ -45,7 +46,6 @@ pub struct App {
     pub input_mode: InputMode,
     pub openai_api_key_valid: bool,
     pub settings_state: SettingsState,
-    pub cursor_position: usize,
     pub debug_info: String,
     clipboard: ClipboardContext,
     command_sender: mpsc::UnboundedSender<AppCommand>,
@@ -103,7 +103,6 @@ impl App {
             available_saves,
             game_content: Vec::new(),
             game_content_scroll: 0,
-            cursor_position: 0,
             debug_info: String::new(),
             visible_messages: 0,
             total_lines: 0,
@@ -140,6 +139,30 @@ impl App {
         Ok(())
     }
 
+    fn handle_paste(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Ok(contents) = self.clipboard.get_contents() {
+            match self.state {
+                AppState::InGame => {
+                    for c in contents.chars() {
+                        self.user_input.handle(InputRequest::InsertChar(c));
+                    }
+                }
+                AppState::InputSaveName => {
+                    for c in contents.chars() {
+                        self.save_name_input.handle(InputRequest::InsertChar(c));
+                    }
+                }
+                AppState::InputApiKey => {
+                    for c in contents.chars() {
+                        self.api_key_input.handle(InputRequest::InsertChar(c));
+                    }
+                }
+                _ => {} // Other states don't have editable inputs
+            }
+        }
+        Ok(())
+    }
+
     pub fn handle_input(&mut self, key: KeyEvent) {
         match self.input_mode {
             InputMode::Normal => match self.state {
@@ -169,6 +192,15 @@ impl App {
             KeyCode::Esc => {
                 self.input_mode = InputMode::Normal;
             }
+            KeyCode::Char(c) => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'v' {
+                    if let Err(e) = self.handle_paste() {
+                        self.add_debug_message(format!("Failed to paste: {:?}", e));
+                    }
+                } else {
+                    self.user_input.handle_event(&Event::Key(key));
+                }
+            }
             _ => {
                 self.user_input.handle_event(&Event::Key(key));
             }
@@ -184,6 +216,15 @@ impl App {
             KeyCode::Esc => {
                 self.input_mode = InputMode::Normal;
             }
+            KeyCode::Char(c) => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'v' {
+                    if let Err(e) = self.handle_paste() {
+                        self.add_debug_message(format!("Failed to paste: {:?}", e));
+                    }
+                } else {
+                    self.save_name_input.handle_event(&Event::Key(key));
+                }
+            }
             _ => {
                 self.save_name_input.handle_event(&Event::Key(key));
             }
@@ -198,6 +239,15 @@ impl App {
             }
             KeyCode::Esc => {
                 self.input_mode = InputMode::Normal;
+            }
+            KeyCode::Char(c) => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'v' {
+                    if let Err(e) = self.handle_paste() {
+                        self.add_debug_message(format!("Failed to paste: {:?}", e));
+                    }
+                } else {
+                    self.api_key_input.handle_event(&Event::Key(key));
+                }
             }
             _ => {
                 self.api_key_input.handle_event(&Event::Key(key));

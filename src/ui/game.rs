@@ -577,7 +577,7 @@ pub fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
         .break_words(true);
 
     // Wrap the input text
-    let wrapped_lines: Vec<String> = wrap(&text, &options)
+    let wrapped_lines: Vec<String> = wrap(text, &options)
         .into_iter()
         .map(|s| s.into_owned())
         .collect();
@@ -588,23 +588,15 @@ pub fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
     let mut graphemes_processed = 0;
 
     let text_graphemes: Vec<&str> = text.graphemes(true).collect();
-    let cursor_position = app.user_input.cursor();
+    let cursor_position = app.user_input.visual_cursor();
 
     for (line_idx, line) in wrapped_lines.iter().enumerate() {
         let line_graphemes: Vec<&str> = line.graphemes(true).collect();
 
         if graphemes_processed + line_graphemes.len() >= cursor_position {
             cursor_y = line_idx;
-            let prefix_graphemes = &line_graphemes[..cursor_position - graphemes_processed];
-            cursor_x = prefix_graphemes.join("").width();
-
-            // Count trailing spaces
-            let trailing_spaces = text_graphemes[graphemes_processed + prefix_graphemes.len()..]
-                .iter()
-                .take_while(|&&g| g == " ")
-                .count();
-            cursor_x += trailing_spaces;
-
+            let prefix_graphemes = &text_graphemes[graphemes_processed..cursor_position];
+            cursor_x = prefix_graphemes.iter().map(|&g| g.width()).sum();
             break;
         }
 
@@ -618,15 +610,7 @@ pub fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
     // Handle cursor at the end of the text
     if cursor_position == text_graphemes.len() {
         cursor_y = wrapped_lines.len() - 1;
-        cursor_x = wrapped_lines.last().map_or(0, |line| line.width());
-
-        // Add trailing spaces at the end of the text
-        let trailing_spaces = text_graphemes
-            .iter()
-            .rev()
-            .take_while(|&&g| g == " ")
-            .count();
-        cursor_x += trailing_spaces;
+        cursor_x = text_graphemes.iter().map(|&g| g.width()).sum::<usize>();
     }
 
     let joined_lines = wrapped_lines.join("\n");
@@ -648,7 +632,7 @@ pub fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
     }
 
     // Ensure cursor_x doesn't exceed the max width
-    cursor_x = cursor_x.min(max_width);
+    cursor_x = (cursor_x/* needs to substract the lenght of the previous line */).min(max_width);
 
     // Set cursor
     if let InputMode::Editing = app.input_mode {
