@@ -1,7 +1,6 @@
 use crate::app::{App, InputMode};
 use crate::character::CharacterSheet;
 use crate::message::{GameMessage, MessageType, UserMessage};
-use hyphenation::{Language, Load, Standard};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -9,7 +8,6 @@ use ratatui::{
     widgets::*,
     Frame,
 };
-use textwrap::{wrap, Options, WordSplitter};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -591,15 +589,22 @@ pub fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
     let cursor_position = app.user_input.visual_cursor();
     let mut cursor_x = 0;
     let mut cursor_y = 0;
-    let mut chars_processed = 0;
+    let mut total_width = 0;
 
     for (line_idx, line) in wrapped_lines.iter().enumerate() {
-        if chars_processed + line.len() >= cursor_position {
+        let line_width: usize = line.width();
+        if total_width + line_width >= cursor_position {
             cursor_y = line_idx;
-            cursor_x = text[chars_processed..cursor_position].width();
+            cursor_x = cursor_position - total_width;
             break;
         }
-        chars_processed += line.len();
+        total_width += line_width;
+        cursor_y = line_idx + 1;
+    }
+
+    // Ensure cursor_x doesn't exceed the line width
+    if cursor_y < wrapped_lines.len() {
+        cursor_x = cursor_x.min(wrapped_lines[cursor_y].width());
     }
 
     let joined_lines = wrapped_lines.join("\n");
