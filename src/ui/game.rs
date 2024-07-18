@@ -495,13 +495,13 @@ pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
                 if let Ok(user_message) = serde_json::from_str::<UserMessage>(&message.content) {
                     (
                         format!("\nPlayer action:\n{}", user_message.player_action),
-                        Style::default().fg(Color::Blue),
+                        Style::default().fg(Color::Cyan),
                         Alignment::Right,
                     )
                 } else {
                     (
                         message.content.clone(),
-                        Style::default().fg(Color::Blue),
+                        Style::default().fg(Color::Cyan),
                         Alignment::Right,
                     )
                 }
