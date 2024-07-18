@@ -17,6 +17,15 @@ use ratatui::{
 
 // Function to draw the main menu interface.
 pub fn draw_main_menu(f: &mut Frame, app: &App) {
+    let size = f.size();
+
+    if size.width < 100 || size.height < 40 {
+        let warning = Paragraph::new("Terminal too small. Please resize.")
+            .style(Style::default().fg(Color::Red))
+            .alignment(Alignment::Center);
+        f.render_widget(warning, size);
+        return;
+    }
     // Define layout constraints for different sections of the main menu.
     let chunks = Layout::default()
         .direction(Direction::Vertical)

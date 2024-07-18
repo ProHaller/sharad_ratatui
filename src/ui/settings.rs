@@ -14,6 +14,15 @@ use ratatui::{
 };
 
 pub fn draw_settings(f: &mut Frame, app: &mut App) {
+    let size = f.size();
+
+    if size.width < 100 || size.height < 40 {
+        let warning = Paragraph::new("Terminal too small. Please resize.")
+            .style(Style::default().fg(Color::Red))
+            .alignment(Alignment::Center);
+        f.render_widget(warning, size);
+        return;
+    }
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints(

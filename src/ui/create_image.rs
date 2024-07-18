@@ -9,6 +9,15 @@ use ratatui::{
 
 // Function to draw the image creation interface in the application.
 pub fn draw_create_image(f: &mut Frame, app: &App) {
+    let size = f.size();
+
+    if size.width < 100 || size.height < 40 {
+        let warning = Paragraph::new("Terminal too small. Please resize.")
+            .style(Style::default().fg(Color::Red))
+            .alignment(Alignment::Center);
+        f.render_widget(warning, size);
+        return;
+    }
     let chunk = f.size(); // Get the current size of the terminal window or frame.
 
     // Define a UI element for the image creation feature using a Paragraph widget.

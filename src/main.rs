@@ -119,7 +119,7 @@ async fn run_app(
                 last_tick = Instant::now();
             },
             event = tokio::task::spawn_blocking(|| {
-                if event::poll(Duration::from_millis(0)).unwrap() {
+                if event::poll(Duration::from_millis(1)).unwrap() {
                     event::read()
                 } else {
                     Ok(Event::FocusGained)
