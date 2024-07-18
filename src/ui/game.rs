@@ -568,49 +568,38 @@ pub fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
 
     let text = app.user_input.value();
 
-    // Load hyphenation dictionary
-    let dictionary = Standard::from_embedded(Language::EnglishUS).unwrap();
+    // Wrap the text manually, considering grapheme clusters and their widths
+    let mut wrapped_lines = Vec::new();
+    let mut current_line = String::new();
+    let mut current_width = 0;
 
-    // Configure textwrap options
-    let options = Options::new(max_width)
-        .word_splitter(WordSplitter::Hyphenation(dictionary))
-        .break_words(true);
-
-    // Wrap the input text
-    let wrapped_lines: Vec<String> = wrap(text, &options)
-        .into_iter()
-        .map(|s| s.into_owned())
-        .collect();
-
-    // Calculate cursor position
-    let mut cursor_x = 0;
-    let mut cursor_y = 0;
-    let mut graphemes_processed = 0;
-
-    let text_graphemes: Vec<&str> = text.graphemes(true).collect();
-    let cursor_position = app.user_input.visual_cursor();
-
-    for (line_idx, line) in wrapped_lines.iter().enumerate() {
-        let line_graphemes: Vec<&str> = line.graphemes(true).collect();
-
-        if graphemes_processed + line_graphemes.len() >= cursor_position {
-            cursor_y = line_idx;
-            let prefix_graphemes = &text_graphemes[graphemes_processed..cursor_position];
-            cursor_x = prefix_graphemes.iter().map(|&g| g.width()).sum();
-            break;
+    for grapheme in text.graphemes(true) {
+        let grapheme_width = grapheme.width();
+        if current_width + grapheme_width > max_width {
+            wrapped_lines.push(current_line);
+            current_line = String::new();
+            current_width = 0;
         }
-
-        graphemes_processed += line_graphemes.len();
-        if graphemes_processed < text_graphemes.len() && text_graphemes[graphemes_processed] == "\n"
-        {
-            graphemes_processed += 1;
-        }
+        current_line.push_str(grapheme);
+        current_width += grapheme_width;
+    }
+    if !current_line.is_empty() {
+        wrapped_lines.push(current_line);
     }
 
-    // Handle cursor at the end of the text
-    if cursor_position == text_graphemes.len() {
-        cursor_y = wrapped_lines.len() - 1;
-        cursor_x = text_graphemes.iter().map(|&g| g.width()).sum::<usize>();
+    // Calculate cursor position
+    let cursor_position = app.user_input.visual_cursor();
+    let mut cursor_x = 0;
+    let mut cursor_y = 0;
+    let mut chars_processed = 0;
+
+    for (line_idx, line) in wrapped_lines.iter().enumerate() {
+        if chars_processed + line.len() >= cursor_position {
+            cursor_y = line_idx;
+            cursor_x = text[chars_processed..cursor_position].width();
+            break;
+        }
+        chars_processed += line.len();
     }
 
     let joined_lines = wrapped_lines.join("\n");
@@ -630,9 +619,6 @@ pub fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
     if cursor_y >= visible_lines {
         cursor_y = visible_lines - 1;
     }
-
-    // Ensure cursor_x doesn't exceed the max width
-    cursor_x = (cursor_x/* needs to substract the lenght of the previous line */).min(max_width);
 
     // Set cursor
     if let InputMode::Editing = app.input_mode {
