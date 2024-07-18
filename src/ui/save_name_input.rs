@@ -10,7 +10,7 @@ use ratatui::{
 pub fn draw_save_name_input(f: &mut Frame, app: &App) {
     let size = f.size();
 
-    if size.width < 100 || size.height < 40 {
+    if size.width < 100 || size.height < 50 {
         let warning = Paragraph::new("Terminal too small. Please resize.")
             .style(Style::default().fg(Color::Red))
             .alignment(Alignment::Center);

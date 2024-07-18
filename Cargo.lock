@@ -1720,7 +1720,7 @@ dependencies = [
 
 [[package]]
 name = "sharad_ratatui"
-version = "0.1.9"
+version = "0.1.11"
 dependencies = [
  "async-openai",
  "chrono",

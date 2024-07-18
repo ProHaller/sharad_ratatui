@@ -16,7 +16,7 @@ use ratatui::{
 pub fn draw_settings(f: &mut Frame, app: &mut App) {
     let size = f.size();
 
-    if size.width < 100 || size.height < 40 {
+    if size.width < 101 || size.height < 50 {
         let warning = Paragraph::new("Terminal too small. Please resize.")
             .style(Style::default().fg(Color::Red))
             .alignment(Alignment::Center);
