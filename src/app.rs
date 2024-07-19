@@ -330,6 +330,7 @@ impl App {
                                 format!("Failed to send start new game command: {:?}", e),
                             ));
                         }
+                        self.save_name_input.reset();
                         self.state = AppState::InGame;
                     }
                 }
