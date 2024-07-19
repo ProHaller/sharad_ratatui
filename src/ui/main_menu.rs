@@ -19,7 +19,7 @@ use ratatui::{
 pub fn draw_main_menu(f: &mut Frame, app: &App) {
     let size = f.size();
 
-    if size.width < 101 || size.height < 50 {
+    if size.width < 100 || size.height < 50 {
         let warning = Paragraph::new("Terminal too small. Please resize.")
             .style(Style::default().fg(Color::Red))
             .alignment(Alignment::Center);
@@ -34,7 +34,7 @@ pub fn draw_main_menu(f: &mut Frame, app: &App) {
                 Constraint::Max(3),
                 Constraint::Max(20),
                 Constraint::Max(7),
-                Constraint::Min(2),
+                Constraint::Fill(1),
                 Constraint::Min(6),
                 Constraint::Max(3),
             ]
