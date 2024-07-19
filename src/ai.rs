@@ -230,7 +230,7 @@ impl GameAI {
                         run.status
                     )));
                 }
-                _ => tokio::time::sleep(Duration::from_secs(2)).await,
+                _ => tokio::time::sleep(Duration::from_secs(1)).await,
             }
         }
     }
@@ -279,7 +279,7 @@ impl GameAI {
             .runs(thread_id)
             .cancel(run_id)
             .await
-            .map_err(|e| AppError::OpenAI(e))?;
+            .map_err(AppError::OpenAI)?;
         self.add_debug_message(format!("Run {} cancelled", run_id));
         Ok(())
     }
@@ -405,7 +405,7 @@ impl GameAI {
                                         "Missing character_name".to_string(),
                                     )
                                 })?;
-                            let updates = &args["updates"];
+                            let updates = &args["updates"]["skills"];
 
                             let character = game_state
                                 .characters
@@ -417,24 +417,79 @@ impl GameAI {
                                     ))
                                 })?;
 
-                            if let Some(skills) = updates.get("skills") {
-                                let update = CharacterSheetUpdate::UpdateAttribute {
-                                    attribute: "skills".to_string(),
-                                    operation: UpdateOperation::Modify(
-                                        self.parse_value("skills", skills)?,
-                                    ),
+                            let update_category =
+                                |category: &str,
+                                 skill_map: &mut HashMap<String, u8>|
+                                 -> Result<(), AppError> {
+                                    if let Some(category_skills) =
+                                        updates.get(category).and_then(|s| s.as_array())
+                                    {
+                                        for skill in category_skills {
+                                            let name = skill["name"].as_str().ok_or_else(|| {
+                                                AppError::GameStateParseError(format!(
+                                                    "Missing skill name in {} category",
+                                                    category
+                                                ))
+                                            })?;
+                                            let rating =
+                                                skill["rating"].as_u64().ok_or_else(|| {
+                                                    AppError::GameStateParseError(format!(
+                                                        "Invalid skill rating in {} category",
+                                                        category
+                                                    ))
+                                                })?
+                                                    as u8;
+                                            skill_map.insert(name.to_string(), rating);
+                                        }
+                                    }
+                                    Ok(())
                                 };
-                                character.apply_update(update)?;
-                            }
 
-                            if let Some(knowledge_skills) = updates.get("knowledge_skills") {
-                                let update = CharacterSheetUpdate::UpdateAttribute {
+                            // Update regular skills
+                            let mut updated_skills = character.skills.clone();
+                            update_category("combat", &mut updated_skills.combat)?;
+                            update_category("physical", &mut updated_skills.physical)?;
+                            update_category("social", &mut updated_skills.social)?;
+                            update_category("technical", &mut updated_skills.technical)?;
+
+                            let skills_update = CharacterSheetUpdate::UpdateAttribute {
+                                attribute: "skills".to_string(),
+                                operation: UpdateOperation::Modify(
+                                    crate::character::Value::Skills(updated_skills),
+                                ),
+                            };
+                            character.apply_update(skills_update)?;
+
+                            // Update knowledge skills
+                            if let Some(knowledge_skills) = updates.get("knowledge") {
+                                let mut updated_knowledge_skills =
+                                    character.knowledge_skills.clone();
+                                if let Some(knowledge_array) = knowledge_skills.as_array() {
+                                    for skill in knowledge_array {
+                                        let name = skill["name"].as_str().ok_or_else(|| {
+                                            AppError::GameStateParseError(
+                                                "Missing knowledge skill name".to_string(),
+                                            )
+                                        })?;
+                                        let rating = skill["rating"].as_u64().ok_or_else(|| {
+                                            AppError::GameStateParseError(
+                                                "Invalid knowledge skill rating".to_string(),
+                                            )
+                                        })?
+                                            as u8;
+                                        updated_knowledge_skills.insert(name.to_string(), rating);
+                                    }
+                                }
+
+                                let knowledge_update = CharacterSheetUpdate::UpdateAttribute {
                                     attribute: "knowledge_skills".to_string(),
                                     operation: UpdateOperation::Modify(
-                                        self.parse_value("knowledge_skills", knowledge_skills)?,
+                                        crate::character::Value::HashMapStringU8(
+                                            updated_knowledge_skills,
+                                        ),
                                     ),
                                 };
-                                character.apply_update(update)?;
+                                character.apply_update(knowledge_update)?;
                             }
 
                             if game_state
@@ -472,15 +527,73 @@ impl GameAI {
                                     ))
                                 })?;
 
-                            let new_items: HashMap<String, Item> =
-                                if items.is_object() && items.get("name").is_some() {
-                                    let item: Item = serde_json::from_value(items.clone())?;
-                                    let mut map = HashMap::new();
-                                    map.insert(item.name.clone(), item);
-                                    map
-                                } else {
-                                    serde_json::from_value(items.clone())?
-                                };
+                            let mut new_items: HashMap<String, Item> = HashMap::new();
+
+                            match operation {
+                                "Remove" => {
+                                    // For removal, we only need the item names
+                                    let item_names: Vec<String> = if items.is_array() {
+                                        serde_json::from_value(items.clone())?
+                                    } else if items.is_object() && items.get("name").is_some() {
+                                        vec![items["name"].as_str().unwrap().to_string()]
+                                    } else {
+                                        return Err(AppError::GameStateParseError(
+                                            "Invalid items format for removal".to_string(),
+                                        ));
+                                    };
+                                    for name in item_names {
+                                        new_items.insert(
+                                            name.clone(),
+                                            Item {
+                                                name: name.clone(),
+                                                quantity: 1,
+                                                description: String::new(),
+                                            },
+                                        );
+                                    }
+                                }
+                                "Add" | "Modify" => {
+                                    // Handle both single item and multiple items
+                                    if items.is_object() {
+                                        if items.get("name").is_some() {
+                                            // Single item
+                                            let item: Item = serde_json::from_value(items.clone())?;
+                                            new_items.insert(item.name.clone(), item);
+                                        } else {
+                                            // Multiple items
+                                            for (key, value) in items.as_object().unwrap() {
+                                                let item = if value.is_object() {
+                                                    Item {
+                                                        name: key.clone(),
+                                                        quantity: value["quantity"]
+                                                            .as_u64()
+                                                            .unwrap_or(1)
+                                                            as u32,
+                                                        description: value["description"]
+                                                            .as_str()
+                                                            .unwrap_or("")
+                                                            .to_string(),
+                                                    }
+                                                } else {
+                                                    return Err(AppError::GameStateParseError(
+                                                        format!("Invalid item format for {}", key),
+                                                    ));
+                                                };
+                                                new_items.insert(key.clone(), item);
+                                            }
+                                        }
+                                    } else {
+                                        return Err(AppError::GameStateParseError(
+                                            "Invalid items format for add/modify".to_string(),
+                                        ));
+                                    }
+                                }
+                                _ => {
+                                    return Err(AppError::GameStateParseError(
+                                        "Invalid inventory operation".to_string(),
+                                    ))
+                                }
+                            };
 
                             let update = CharacterSheetUpdate::UpdateAttribute {
                                 attribute: "inventory".to_string(),
@@ -494,11 +607,7 @@ impl GameAI {
                                     "Modify" => UpdateOperation::Modify(
                                         crate::character::Value::HashMapStringItem(new_items),
                                     ),
-                                    _ => {
-                                        return Err(AppError::GameStateParseError(
-                                            "Invalid inventory operation".to_string(),
-                                        ))
-                                    }
+                                    _ => unreachable!(),
                                 },
                             };
                             character.apply_update(update)?;
@@ -517,6 +626,7 @@ impl GameAI {
                                 character_name, operation
                             )
                         }
+
                         "update_qualities" => {
                             let args: serde_json::Value =
                                 serde_json::from_str(&tool_call.function.arguments)?;
