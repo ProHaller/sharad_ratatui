@@ -635,62 +635,89 @@ pub fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
 }
 
 // Function to parse markdown-like text to formatted spans.
+
 fn parse_markdown<'a>(line: String, base_style: Style) -> Line<'a> {
     let mut spans = Vec::new();
     let mut current_text = String::new();
     let mut in_bold = false;
+    let mut in_list = false;
+    let mut chars = line.chars().peekable();
 
-    for word in line.split_whitespace() {
-        if word.starts_with("###") {
-            if !current_text.is_empty() {
-                spans.push(Span::styled(current_text.clone(), base_style));
-                current_text.clear();
-            }
-            let header_text = word[3..].to_uppercase();
-            spans.push(Span::styled(
-                header_text,
-                base_style.add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
-            ));
-        } else if word.starts_with("**") && word.ends_with("**") && word.len() > 4 {
-            if !current_text.is_empty() {
-                spans.push(Span::styled(current_text.clone(), base_style));
-                current_text.clear();
-            }
-            let bold_text = word[2..word.len() - 2].to_string();
-            spans.push(Span::styled(
-                bold_text,
-                base_style.add_modifier(Modifier::BOLD),
-            ));
-        } else if word.contains("**") {
-            let parts: Vec<&str> = word.split("**").collect();
-            for (i, part) in parts.iter().enumerate() {
-                if !part.is_empty() {
-                    if in_bold {
+    while let Some(ch) = chars.next() {
+        if ch == '*' {
+            if chars.peek() == Some(&'*') {
+                chars.next(); // consume the second '*'
+                if in_bold {
+                    if !current_text.is_empty() {
                         spans.push(Span::styled(
-                            part.to_string(),
+                            current_text.clone(),
                             base_style.add_modifier(Modifier::BOLD),
                         ));
-                    } else {
-                        current_text.push_str(part);
+                        current_text.clear();
+                    }
+                } else {
+                    if !current_text.is_empty() {
+                        spans.push(Span::styled(current_text.clone(), base_style));
+                        current_text.clear();
                     }
                 }
-                if i < parts.len() - 1 {
-                    in_bold = !in_bold;
+                in_bold = !in_bold;
+            } else {
+                current_text.push(ch);
+            }
+        } else if ch == '#' {
+            let mut header_level = 1;
+            while chars.peek() == Some(&'#') {
+                header_level += 1;
+                chars.next(); // consume additional '#'
+            }
+            if header_level == 3 {
+                if !current_text.is_empty() {
+                    spans.push(Span::styled(current_text.clone(), base_style));
+                    current_text.clear();
+                }
+                while chars.peek() == Some(&' ') {
+                    chars.next(); // consume spaces after ###
+                }
+                let header_text: String = chars.by_ref().take_while(|&c| c != ' ').collect();
+                spans.push(Span::styled(
+                    header_text.to_uppercase(),
+                    base_style.add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+                ));
+            } else {
+                current_text.push('#');
+                for _ in 1..header_level {
+                    current_text.push('#');
                 }
             }
-        } else if in_bold {
-            spans.push(Span::styled(
-                word.to_string(),
-                base_style.add_modifier(Modifier::BOLD),
-            ));
+        } else if ch == '-' && chars.peek() == Some(&' ') {
+            if !current_text.is_empty() {
+                spans.push(Span::styled(current_text.clone(), base_style));
+                current_text.clear();
+            }
+            in_list = true;
+            current_text.push(ch);
+        } else if ch == '\n' {
+            if in_list {
+                spans.push(Span::styled(current_text.clone(), base_style));
+                current_text.clear();
+                in_list = false;
+            }
+            current_text.push(ch);
         } else {
-            current_text.push_str(word);
-            current_text.push(' ');
+            current_text.push(ch);
         }
     }
 
     if !current_text.is_empty() {
-        spans.push(Span::styled(current_text.trim().to_string(), base_style));
+        if in_bold {
+            spans.push(Span::styled(
+                current_text,
+                base_style.add_modifier(Modifier::BOLD),
+            ));
+        } else {
+            spans.push(Span::styled(current_text, base_style));
+        }
     }
 
     Line::from(spans)
