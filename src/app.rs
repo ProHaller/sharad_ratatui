@@ -431,7 +431,7 @@ impl App {
             if let Err(e) = self.command_sender.send(AppCommand::ProcessMessage(input)) {
                 self.add_message(Message::new(
                     MessageType::System,
-                    format!("Error sending message command: {:?}", e),
+                    format!("Error sending message command: {:#?}", e),
                 ));
             } else {
                 // Add a "thinking" message to indicate that the AI is processing
@@ -674,7 +674,7 @@ impl App {
             .append(true)
             .open("sharad_debug.log")
         {
-            let timestamp = Local::now().format("Y-m-d H:M:S");
+            let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
             let _ = writeln!(file, "[{}] {}", timestamp, &message);
         }
     }
@@ -694,7 +694,7 @@ impl App {
 
     pub fn add_message(&mut self, message: Message) {
         self.game_content.push(message.clone());
-        self.add_debug_message(format!("pushed message to game_content: {:?}", message));
+        self.add_debug_message(format!("pushed message to game_content: {:#?}", message));
         self.total_lines = self
             .game_content
             .iter()
@@ -1204,3 +1204,4 @@ impl App {
         }
     }
 }
+
