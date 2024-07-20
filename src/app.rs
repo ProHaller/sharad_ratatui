@@ -1138,6 +1138,7 @@ impl App {
                         MessageType::System,
                         "Generating image...".to_string(),
                     ));
+                    self.image_prompt.reset();
                     self.state = AppState::MainMenu;
                 }
                 _ => {}
