@@ -4,6 +4,7 @@ use crate::app_state::AppState;
 use crate::character::CharacterSheet;
 use crate::cleanup::cleanup;
 use crate::game_state::GameState;
+use crate::image;
 use crate::message::{self, AIMessage, Message, MessageType};
 use crate::settings::Settings;
 use crate::settings_state::SettingsState;
@@ -43,6 +44,7 @@ pub struct App {
     pub user_input: Input,
     pub api_key_input: Input,
     pub save_name_input: Input,
+    pub image_prompt: Input,
     pub input_mode: InputMode,
     pub openai_api_key_valid: bool,
     pub settings_state: SettingsState,
@@ -96,6 +98,7 @@ impl App {
             user_input: Input::default(),
             api_key_input: Input::default(),
             save_name_input: Input::default(),
+            image_prompt: Input::default(),
             input_mode: InputMode::Normal,
             settings_state,
             load_game_menu_state,
@@ -181,6 +184,7 @@ impl App {
                 AppState::InGame => self.handle_in_game_editing(key),
                 AppState::InputSaveName => self.handle_save_name_editing(key),
                 AppState::InputApiKey => self.handle_api_key_editing(key),
+                AppState::CreateImage => self.handle_create_image_editing(key),
                 _ => {} // Other states don't have editing mode
             },
         }
@@ -646,16 +650,18 @@ impl App {
     }
 
     pub fn add_debug_message(&mut self, message: String) {
-        if self.settings.debug_mode {
-            self.debug_info = message.clone();
-            if let Ok(mut file) = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open("sharad_debug.log")
-            {
-                let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
-                let _ = writeln!(file, "[{}] {}", timestamp, message);
-            }
+        if !self.settings.debug_mode {
+            return;
+        }
+
+        self.debug_info = message.clone();
+        if let Ok(mut file) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("sharad_debug.log")
+        {
+            let timestamp = Local::now().format("Y-m-d H:M:S");
+            let _ = writeln!(file, "[{}] {}", timestamp, &message);
         }
     }
 
@@ -776,7 +782,7 @@ impl App {
         }
     }
 
-    pub fn update_character_sheet(&mut self, mut character_sheet: CharacterSheet) {
+    pub fn update_character_sheet(&mut self, character_sheet: CharacterSheet) {
         if let Some(game_state) = &mut self.current_game {
             // Update the main character sheet
             game_state.character_sheet = Some(character_sheet.clone());
@@ -1110,11 +1116,76 @@ impl App {
         if key.kind != KeyEventKind::Press {
             return;
         }
+
+        match self.input_mode {
+            InputMode::Normal => match key.code {
+                KeyCode::Char('e') => {
+                    self.input_mode = InputMode::Editing;
+                }
+                KeyCode::Esc => self.state = AppState::MainMenu,
+                KeyCode::Enter => {
+                    let prompt = self.image_prompt.value().to_owned();
+                    let api_key = self
+                        .settings
+                        .openai_api_key
+                        .clone()
+                        .unwrap_or("".to_string());
+
+                    tokio::spawn(async move {
+                        let _ = image::generate_and_save_image(&api_key, &prompt).await;
+                    });
+                    self.add_message(Message::new(
+                        MessageType::System,
+                        "Generating image...".to_string(),
+                    ));
+                    self.state = AppState::MainMenu;
+                }
+                _ => {}
+            },
+            InputMode::Editing => match key.code {
+                KeyCode::Esc => {
+                    self.input_mode = InputMode::Normal;
+                }
+                KeyCode::Char(c) => {
+                    if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'v' {
+                        if let Err(e) = self.handle_paste() {
+                            self.add_debug_message(format!("Failed to paste: {:?}", e));
+                        }
+                    } else {
+                        self.image_prompt.handle_event(&Event::Key(key));
+                    }
+                }
+                _ => {
+                    self.image_prompt.handle_event(&Event::Key(key));
+                }
+            },
+        }
+    }
+
+    fn handle_create_image_editing(&mut self, key: KeyEvent) {
+        if key.kind != KeyEventKind::Press {
+            return;
+        }
         match key.code {
-            KeyCode::Esc => {
-                self.state = AppState::MainMenu;
+            KeyCode::Enter => {
+                // Handle save name submission
+                self.input_mode = InputMode::Normal;
             }
-            _ => {}
+            KeyCode::Esc => {
+                self.input_mode = InputMode::Normal;
+            }
+            KeyCode::Char(c) => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'v' {
+                    if let Err(e) = self.handle_paste() {
+                        self.add_debug_message(format!("Failed to paste: {:?}", e));
+                    }
+                } else {
+                    self.image_prompt.handle_event(&Event::Key(key));
+                }
+            }
+            _ => {
+                self.image_prompt.handle_event(&Event::Key(key));
+            }
         }
     }
 }

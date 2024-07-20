@@ -109,7 +109,7 @@ pub enum AIError {
 
 // Structure representing the game's AI component.
 pub struct GameAI {
-    client: Client<OpenAIConfig>, // OpenAI client configured with an API key.
+    pub client: Client<OpenAIConfig>, // OpenAI client configured with an API key.
     pub conversation_state: Option<GameConversationState>, // Optional state of the ongoing conversation.
     debug_callback: Box<dyn Fn(String) + Send + Sync>,     // Debug callback for logging purposes.
 }

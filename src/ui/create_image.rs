@@ -1,10 +1,10 @@
-// Import necessary modules and components from the application and Ratatui UI library.
-use crate::app::App;
+use crate::app::{App, InputMode};
 use ratatui::{
-    layout::Alignment,     // Used for aligning text within widgets.
-    style::{Color, Style}, // Used for styling text and widgets.
-    widgets::*,            // Includes UI components like Paragraph and Block.
-    Frame,                 // Represents the area where UI elements are drawn.
+    layout::{Constraint, Direction, Layout},
+    prelude::Alignment,
+    style::{Color, Style},
+    widgets::*,
+    Frame,
 };
 
 // Function to draw the image creation interface in the application.
@@ -18,14 +18,55 @@ pub fn draw_create_image(f: &mut Frame, app: &App) {
         f.render_widget(warning, size);
         return;
     }
-    let chunk = f.size(); // Get the current size of the terminal window or frame.
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(f.size().height / 3)
+        .constraints(
+            [
+                Constraint::Length(3),
+                Constraint::Length(3),
+                Constraint::Length(3),
+                Constraint::Min(1),
+            ]
+            .as_ref(),
+        )
+        .split(f.size());
 
-    // Define a UI element for the image creation feature using a Paragraph widget.
-    let create_image_ui = Paragraph::new("Image creation functionality coming soon...")
-        .style(Style::default().fg(Color::Magenta)) // Set the text color to magenta.
-        .alignment(Alignment::Center) // Center-align the text within the widget.
-        .block(Block::default().borders(Borders::ALL).title("Create Image")); // Enclose the paragraph in a block with a title and borders.
+    let title = Paragraph::new("Enter an image prompt")
+        .style(Style::default().fg(Color::Cyan))
+        .alignment(Alignment::Center);
+    f.render_widget(title, chunks[0]);
 
-    // Render the defined UI element in the available space of the frame.
-    f.render_widget(create_image_ui, chunk);
+    let input = Paragraph::new(app.image_prompt.value())
+        .style(Style::default().fg(Color::White))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(match app.input_mode {
+                    InputMode::Normal => "Press 'e' to edit",
+                    InputMode::Editing => "Editing",
+                })
+                .border_style(Style::default().fg(match app.input_mode {
+                    InputMode::Normal => Color::DarkGray,
+                    InputMode::Editing => Color::Yellow,
+                })),
+        );
+    f.render_widget(input, chunks[1]);
+
+    let mode_indicator = match app.input_mode {
+        InputMode::Normal => "NORMAL",
+        InputMode::Editing => "EDITING",
+    };
+    let instructions = Paragraph::new(format!("{} | Enter: confirm | Esc: cancel", mode_indicator))
+        .style(Style::default().fg(Color::Gray))
+        .alignment(Alignment::Center);
+    f.render_widget(instructions, chunks[2]);
+
+    // Only show the cursor when in Editing mode
+    if let InputMode::Editing = app.input_mode {
+        f.set_cursor(
+            chunks[1].x + app.image_prompt.visual_cursor() as u16 + 1,
+            chunks[1].y + 1,
+        );
+    }
 }

@@ -22,6 +22,7 @@ pub mod character;
 pub mod cleanup;
 pub mod dice;
 pub mod game_state;
+pub mod image;
 pub mod message;
 pub mod settings;
 pub mod settings_state;
