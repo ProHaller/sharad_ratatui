@@ -453,6 +453,7 @@ impl App {
                 MessageType::System,
                 "Invalid API key entered. Please try again.".to_string(),
             ));
+            self.openai_api_key_valid = false;
         } else {
             self.openai_api_key_valid = true;
         }
@@ -585,7 +586,11 @@ impl App {
                         self.load_game_menu_state.select(Some(0));
                     }
                     Some(2) => {
-                        self.state = AppState::CreateImage;
+                        if self.openai_api_key_valid {
+                            self.state = AppState::CreateImage;
+                        } else {
+                            self.state = AppState::InputApiKey;
+                        }
                     }
                     Some(3) => {
                         self.state = AppState::SettingsMenu;
@@ -620,7 +625,16 @@ impl App {
                 }
             }
             Some(1) => self.state = AppState::LoadMenu,
-            Some(2) => self.state = AppState::CreateImage,
+            Some(2) => {
+                self.state = {
+                    if self.openai_api_key_valid {
+                        AppState::CreateImage
+                    } else {
+                        AppState::InputApiKey
+                    }
+                }
+            }
+
             Some(3) => self.state = AppState::SettingsMenu,
             _ => {}
         }
