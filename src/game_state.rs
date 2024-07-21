@@ -43,7 +43,7 @@ impl GameState {
             .open("sharad_debug.log")
         {
             let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
-            let _ = writeln!(file, "[{}] load_from_file:\n {:?}", timestamp, game_state);
+            let _ = writeln!(file, "[{}] load_from_file:\n {:#?}", timestamp, game_state);
         }
         Ok(game_state)
     }

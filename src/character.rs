@@ -507,7 +507,7 @@ impl CharacterSheet {
             ("matrix_attributes", Value::OptionMatrixAttributes(v)) => self.matrix_attributes = v,
             _ => {
                 return Err(format!(
-                    "Invalid attribute-value pair for modification: {} {:?}",
+                    "Invalid attribute-value pair for modification: {} {:#?}",
                     attribute, value
                 ))
             }
@@ -533,7 +533,7 @@ impl CharacterSheet {
             }
             _ => {
                 return Err(format!(
-                    "Invalid attribute-value pair for addition: {} {:?}",
+                    "Invalid attribute-value pair for addition: {} {:#?}",
                     attribute, value
                 ))
             }
@@ -565,7 +565,7 @@ impl CharacterSheet {
             }
             _ => {
                 return Err(format!(
-                    "Invalid attribute-value pair for removal: {} {:?}",
+                    "Invalid attribute-value pair for removal: {} {:#?}",
                     attribute, value
                 ))
             }

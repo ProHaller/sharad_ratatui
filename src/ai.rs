@@ -31,16 +31,16 @@ pub struct GameConversationState {
 // Enum for handling various application-level errors.
 #[derive(Debug, Error)]
 pub enum AppError {
-    #[error("AI error: {0}")]
+    #[error("AI error: {:#}", 0)]
     AI(#[from] AIError), // Errors related to AI operations.
 
-    #[error("Game error: {0}")]
+    #[error("Game error: {:#}", 0)]
     Game(#[from] GameError), // Errors specific to game logic or state.
 
-    #[error("Serialization error: {0}")]
+    #[error("Serialization error: {:#}", 0)]
     Serialization(#[from] serde_json::Error), // Errors related to data serialization.
 
-    #[error("IO error: {0}")]
+    #[error("IO error: {:#}", 0)]
     IO(#[from] std::io::Error), // Input/output errors.
 
     #[error("AI client not initialized")]
@@ -49,7 +49,7 @@ pub enum AppError {
     #[error("No current game")]
     NoCurrentGame, // Error when no game session is active.
 
-    #[error("OpenAI API error: {0}")]
+    #[error("OpenAI API error: {:#}", 0)]
     OpenAI(#[from] async_openai::error::OpenAIError), // Errors from the OpenAI API.
 
     #[error("Conversation not initialized")]
@@ -64,10 +64,10 @@ pub enum AppError {
     #[error("Max Attempts Reached")]
     MaxAttemptsReached,
 
-    #[error("Failed to parse game state: {0}")]
+    #[error("Failed to parse game state: {:#}", 0)]
     GameStateParseError(String), // Error for issues when parsing game state.
 
-    #[error("Character sheet update error: {0}")]
+    #[error("Character sheet update error: {:#}", 0)]
     CharacterSheetUpdateError(String),
 }
 
@@ -80,10 +80,10 @@ impl From<String> for AppError {
 // Enum for game-specific errors.
 #[derive(Debug, Error)]
 pub enum GameError {
-    #[error("Invalid game state: {0}")]
+    #[error("Invalid game state: {:#}", 0)]
     InvalidGameState(String), // Error for invalid game state conditions.
 
-    #[error("Character not found: {0}")]
+    #[error("Character not found: {:#}", 0)]
     CharacterNotFound(String), // Error when a specified character cannot be found.
                                // Potential additional game-specific errors could be defined here.
 }
@@ -91,7 +91,7 @@ pub enum GameError {
 // Errors related to AI operations are separated into their own enum for clarity.
 #[derive(Debug, Error)]
 pub enum AIError {
-    #[error("OpenAI API error: {0}")]
+    #[error("OpenAI API error: {:#}", 0)]
     OpenAI(#[from] async_openai::error::OpenAIError), // Errors from the OpenAI API.
 
     #[error("Conversation not initialized")]
@@ -103,7 +103,7 @@ pub enum AIError {
     #[error("No message found")]
     NoMessageFound, // Error when expected message content is not found.
 
-    #[error("Failed to parse game state: {0}")]
+    #[error("Failed to parse game state: {:#}", 0)]
     GameStateParseError(String), // Error during parsing of game state.
 }
 
@@ -226,7 +226,7 @@ impl GameAI {
                 }
                 RunStatus::Failed | RunStatus::Cancelled | RunStatus::Expired => {
                     return Err(AppError::GameStateParseError(format!(
-                        "Run failed with status: {:?}",
+                        "Run failed with status: {:#?}",
                         run.status
                     )));
                 }
@@ -298,7 +298,7 @@ impl GameAI {
                 let mut tool_outputs = Vec::new();
 
                 for tool_call in &required_action.submit_tool_outputs.tool_calls {
-                    self.add_debug_message(format!("Handling tool call: {:?}", tool_call));
+                    self.add_debug_message(format!("Handling tool call: {:#?}", tool_call));
                     let output = match tool_call.function.name.as_str() {
                         "create_character_sheet" => {
                             let args: serde_json::Value =
@@ -307,7 +307,7 @@ impl GameAI {
                                 Ok(sheet) => sheet,
                                 Err(e) => {
                                     self.add_debug_message(format!(
-                                        "Error creating character: {:?}",
+                                        "Error creating character: {:#?}",
                                         e
                                     ));
                                     self.create_dummy_character()
@@ -321,7 +321,7 @@ impl GameAI {
                                 state.character_sheet = Some(character_sheet.clone());
                             }
                             self.add_debug_message(format!(
-                                "Character sheet: {:?}",
+                                "Character sheet: {:#?}",
                                 character_sheet.clone()
                             ));
                             serde_json::to_string(&character_sheet)?
@@ -331,12 +331,12 @@ impl GameAI {
                                 serde_json::from_str(&tool_call.function.arguments)?;
                             let response = match perform_dice_roll(args, game_state) {
                                 Ok(response) => {
-                                    self.add_debug_message(format!("Dice roll: {:?}", response));
+                                    self.add_debug_message(format!("Dice roll: {:#?}", response));
                                     response
                                 }
                                 Err(e) => {
                                     self.add_debug_message(format!(
-                                        "Error performing dice roll: {:?}",
+                                        "Error performing dice roll: {:#?}",
                                         e
                                     ));
                                     DiceRollResponse {

@@ -211,7 +211,7 @@ impl App {
             KeyCode::Char('v') => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
                     if let Err(e) = self.handle_paste() {
-                        self.add_debug_message(format!("Failed to paste: {:?}", e));
+                        self.add_debug_message(format!("Failed to paste: {:#?}", e));
                     }
                 } else {
                     self.save_name_input.handle_event(&Event::Key(key));
@@ -235,7 +235,7 @@ impl App {
             KeyCode::Char('v') => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
                     if let Err(e) = self.handle_paste() {
-                        self.add_debug_message(format!("Failed to paste: {:?}", e));
+                        self.add_debug_message(format!("Failed to paste: {:#?}", e));
                     }
                 } else {
                     self.api_key_input.handle_event(&Event::Key(key));
@@ -269,7 +269,7 @@ impl App {
             KeyCode::Char('v') => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
                     if let Err(e) = self.handle_paste() {
-                        self.add_debug_message(format!("Failed to paste: {:?}", e));
+                        self.add_debug_message(format!("Failed to paste: {:#?}", e));
                     }
                 } else {
                     self.api_key_input.handle_event(&Event::Key(key));
@@ -300,7 +300,7 @@ impl App {
                         )) {
                             self.add_message(Message::new(
                                 MessageType::System,
-                                format!("Failed to send start new game command: {:?}", e),
+                                format!("Failed to send start new game command: {:#?}", e),
                             ));
                         }
                         self.save_name_input.reset();
@@ -316,7 +316,7 @@ impl App {
                 KeyCode::Char('v') => {
                     if key.modifiers.contains(KeyModifiers::CONTROL) {
                         if let Err(e) = self.handle_paste() {
-                            self.add_debug_message(format!("Failed to paste: {:?}", e));
+                            self.add_debug_message(format!("Failed to paste: {:#?}", e));
                         }
                     } else {
                         self.save_name_input.handle_event(&Event::Key(key));
@@ -341,7 +341,7 @@ impl App {
             KeyCode::Char('v') => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
                     if let Err(e) = self.handle_paste() {
-                        self.add_debug_message(format!("Failed to paste: {:?}", e));
+                        self.add_debug_message(format!("Failed to paste: {:#?}", e));
                     }
                 } else {
                     self.user_input.handle_event(&Event::Key(key));
@@ -399,7 +399,7 @@ impl App {
                 KeyCode::Char('v') => {
                     if key.modifiers.contains(KeyModifiers::CONTROL) {
                         if let Err(e) = self.handle_paste() {
-                            self.add_debug_message(format!("Failed to paste: {:?}", e));
+                            self.add_debug_message(format!("Failed to paste: {:#?}", e));
                         }
                     } else {
                         self.user_input.handle_event(&Event::Key(key));
@@ -448,7 +448,7 @@ impl App {
             self.openai_api_key_valid = true;
         }
         if let Err(e) = self.settings.save_to_file("./data/settings.json") {
-            self.add_debug_message(format!("Failed to save settings: {:?}", e));
+            self.add_debug_message(format!("Failed to save settings: {:#?}", e));
         }
     }
 
@@ -549,7 +549,7 @@ impl App {
 
         // Save settings to file
         if let Err(e) = self.settings.save_to_file("./data/settings.json") {
-            eprintln!("Failed to save settings: {:?}", e);
+            eprintln!("Failed to save settings: {:#?}", e);
         }
     }
 
@@ -698,7 +698,7 @@ impl App {
                 let game_message = ai.send_message(&formatted_message, game_state).await?;
 
                 self.add_debug_message(format!(
-                    "Received game message from AI: {:?}",
+                    "Received game message from AI: {:#?}",
                     game_message
                 ));
 
@@ -799,7 +799,7 @@ impl App {
             if let Err(e) = self.save_current_game() {
                 self.add_message(Message::new(
                     MessageType::System,
-                    format!("Failed to save game after character sheet update: {:?}", e),
+                    format!("Failed to save game after character sheet update: {:#?}", e),
                 ));
             } else {
                 self.add_debug_message("Game saved after character sheet update".to_string());
@@ -882,14 +882,14 @@ impl App {
 
                     // Add debug message for AI response if debug mode is on
                     if self.settings.debug_mode {
-                        self.add_debug_message(format!("Parsed AI response: {:?}", game_message));
+                        self.add_debug_message(format!("Parsed AI response: {:#?}", game_message));
                     }
 
                     // Save the game after processing the response
                     if let Err(e) = self.save_current_game() {
                         self.add_message(Message::new(
                             MessageType::System,
-                            format!("Failed to save game after AI response: {:?}", e),
+                            format!("Failed to save game after AI response: {:#?}", e),
                         ));
                     }
                 } else {
@@ -941,7 +941,7 @@ impl App {
                         if let Err(e) = self.command_sender.send(AppCommand::LoadGame(save_path)) {
                             self.add_message(Message::new(
                                 MessageType::System,
-                                format!("Failed to send load game command: {:?}", e),
+                                format!("Failed to send load game command: {:#?}", e),
                             ));
                         } else {
                             // Add a message to indicate that the game is being loaded
@@ -983,7 +983,7 @@ impl App {
                     if let Err(e) = self.command_sender.send(AppCommand::LoadGame(save_path)) {
                         self.add_message(Message::new(
                             MessageType::System,
-                            format!("Failed to send load game command: {:?}", e),
+                            format!("Failed to send load game command: {:#?}", e),
                         ));
                     } else {
                         self.add_message(Message::new(
@@ -1022,7 +1022,7 @@ impl App {
                 Err(e) => {
                     self.add_message(Message::new(
                         MessageType::System,
-                        format!("Failed to delete save file: {:?}", e),
+                        format!("Failed to delete save file: {:#?}", e),
                     ));
                 }
             }
@@ -1045,7 +1045,7 @@ impl App {
 
     pub async fn load_game(&mut self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
         let mut game_state = GameState::load_from_file(path)?;
-        self.add_debug_message(format!("Game state loade: {:?}", game_state));
+        self.add_debug_message(format!("Game state loade: {:#?}", game_state));
 
         // Extract the save name from the path
         let save_name = Path::new(path)
@@ -1140,7 +1140,7 @@ impl App {
                 KeyCode::Char('v') => {
                     if key.modifiers.contains(KeyModifiers::CONTROL) {
                         if let Err(e) = self.handle_paste() {
-                            self.add_debug_message(format!("Failed to paste: {:?}", e));
+                            self.add_debug_message(format!("Failed to paste: {:#?}", e));
                         }
                     } else {
                         self.image_prompt.handle_event(&Event::Key(key));
@@ -1165,7 +1165,7 @@ impl App {
             KeyCode::Char('v') => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
                     if let Err(e) = self.handle_paste() {
-                        self.add_debug_message(format!("Failed to paste: {:?}", e));
+                        self.add_debug_message(format!("Failed to paste: {:#?}", e));
                     }
                 } else {
                     self.image_prompt.handle_event(&Event::Key(key));

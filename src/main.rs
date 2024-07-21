@@ -85,7 +85,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Run the application in the terminal and handle any errors.
     if let Err(err) = run_app(&mut terminal, app, command_receiver, ai_receiver).await {
-        println!("Error: {:?}", err);
+        println!("Error: {:#?}", err);
     }
 
     Ok(())
@@ -100,8 +100,8 @@ async fn run_app(
 ) -> io::Result<()> {
     let mut last_tick = Instant::now();
     let tick_rate = Duration::from_millis(16); // Increased tick rate for more responsive input
-    let mut frame_count = 0;
-    let mut last_frame_time = Instant::now();
+                                               // let mut frame_count = 0;
+                                               // let mut last_frame_time = Instant::now();
 
     loop {
         let timeout = tick_rate
@@ -123,16 +123,16 @@ async fn run_app(
                             }
                             Ok(_) => {}, // Ignore non-key events and non-press key events
                             Err(e) => {
-                                eprintln!("Error reading event: {:?}", e);
+                                eprintln!("Error reading event: {:#?}", e);
                             }
                         }
                     }
                     Ok(Ok(false)) => {}, // No event available
                     Ok(Err(e)) => {
-                        eprintln!("Error polling for event: {:?}", e);
+                        eprintln!("Error polling for event: {:#?}", e);
                     }
                     Err(e) => {
-                        eprintln!("Task join error: {:?}", e);
+                        eprintln!("Task join error: {:#?}", e);
                     }
                 }
             }
@@ -187,16 +187,16 @@ async fn run_app(
         })?;
         let draw_duration = start_draw.elapsed();
 
-        frame_count += 1;
-        if last_frame_time.elapsed() >= Duration::from_secs(1) {
-            let mut app = app.lock().await;
-            app.add_debug_message(format!(
-                "FPS: {}, Last frame draw time: {:?}",
-                frame_count, draw_duration
-            ));
-            frame_count = 0;
-            last_frame_time = Instant::now();
-        }
+        // frame_count += 1;
+        // if last_frame_time.elapsed() >= Duration::from_secs(1) {
+        //     let mut app = app.lock().await;
+        //     app.add_debug_message(format!(
+        //         "FPS: {}, Last frame draw time: {:#?}",
+        //         frame_count, draw_duration
+        //     ));
+        //     frame_count = 0;
+        //     last_frame_time = Instant::now();
+        // }
 
         if app.lock().await.should_quit {
             return Ok(());
