@@ -8,10 +8,13 @@ use ratatui::{
     widgets::*,
     Frame,
 };
+use std::cell::RefCell;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-// Main function for drawing in-game UI elements.
+thread_local! {
+    static CACHED_LAYOUTS: RefCell<Option<(Rect, Vec<Rect>, Vec<Rect>)>> = RefCell::new(None);
+}
 
 pub fn draw_in_game(f: &mut Frame, app: &mut App) {
     let size = f.size();
@@ -25,20 +28,30 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
         return;
     }
 
-    let main_chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
-        .split(size);
+    let (main_chunks, left_chunks, game_info_area) = CACHED_LAYOUTS.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if cache.as_ref().map_or(true, |&(area, _, _)| area != size) {
+            let main_chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+                .split(size);
 
-    let left_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(80), Constraint::Percentage(20)])
-        .split(main_chunks[0]);
+            let left_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(80), Constraint::Percentage(20)])
+                .split(main_chunks[0]);
+
+            let new_cache = (size, main_chunks.to_vec(), left_chunks.to_vec());
+            *cache = Some(new_cache);
+        }
+
+        let (_, ref main_chunks, ref left_chunks) = cache.as_ref().unwrap();
+        (main_chunks.clone(), left_chunks.clone(), main_chunks[1])
+    });
 
     draw_game_content(f, app, left_chunks[0]);
     draw_user_input(f, app, left_chunks[1]);
 
-    let game_info_area = main_chunks[1];
     if let Some(game_state) = &app.current_game {
         if let Some(sheet) = &game_state.character_sheet {
             draw_character_sheet(f, sheet, game_info_area);
@@ -450,7 +463,6 @@ fn create_table<'a>(info: &'a [String], title: &'a str) -> Table<'a> {
         .column_spacing(1)
 }
 
-// Function to draw dynamic game content.
 pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
     let fluff_block = Block::default()
         .title(app.current_game.as_ref().map_or_else(
@@ -467,6 +479,40 @@ pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
     let max_width = fluff_area.width.saturating_sub(2) as usize;
     let max_height = fluff_area.height.saturating_sub(2) as usize;
 
+    if app.cached_game_content.is_none() || app.cached_content_len != app.game_content.len() {
+        app.update_cached_content(max_width);
+    }
+
+    let all_lines = app.cached_game_content.as_ref().unwrap();
+
+    app.total_lines = all_lines.len();
+    app.debug_info += &format!(", Total lines: {}", app.total_lines);
+
+    let visible_lines: Vec<Line> = all_lines
+        .iter()
+        .skip(app.game_content_scroll)
+        .take(max_height)
+        .map(|(line, alignment)| {
+            let mut new_line = line.clone();
+            new_line.alignment = Some(*alignment);
+            new_line
+        })
+        .collect();
+
+    app.debug_info += &format!(", Visible lines: {}", visible_lines.len());
+
+    let content = Paragraph::new(visible_lines)
+        .block(Block::default().borders(Borders::NONE))
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(content, fluff_area);
+
+    app.visible_lines = max_height;
+    app.update_scroll();
+    app.update_debug_info();
+}
+
+pub fn parse_game_content(app: &App, max_width: usize) -> Vec<(Line<'static>, Alignment)> {
     let mut all_lines = Vec::new();
 
     for message in &app.game_content {
@@ -518,34 +564,8 @@ pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
         }
     }
 
-    app.total_lines = all_lines.len();
-    app.debug_info += &format!(", Total lines: {}", app.total_lines);
-
-    let visible_lines: Vec<Line> = all_lines
-        .iter()
-        .skip(app.game_content_scroll)
-        .take(max_height)
-        .map(|(line, alignment)| match alignment {
-            Alignment::Right => line.clone().alignment(Alignment::Right),
-            Alignment::Left => line.clone(),
-            Alignment::Center => line.clone().alignment(Alignment::Center),
-        })
-        .collect();
-
-    app.debug_info += &format!(", Visible lines: {}", visible_lines.len());
-
-    let content = Paragraph::new(visible_lines)
-        .block(Block::default().borders(Borders::NONE))
-        .wrap(Wrap { trim: true });
-
-    f.render_widget(content, fluff_area);
-
-    app.visible_lines = max_height;
-    app.update_scroll();
-    app.update_debug_info();
+    all_lines
 }
-
-// Function to handle user input display and interaction.
 
 pub fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
@@ -620,9 +640,9 @@ pub fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(input, inner_area);
 
     // Adjust cursor position if it's beyond the visible area
-    let visible_lines = inner_area.height as usize - 1;
+    let visible_lines = inner_area.height.saturating_sub(1) as usize;
     if cursor_y >= visible_lines {
-        cursor_y = visible_lines - 1;
+        cursor_y = visible_lines.saturating_sub(1);
     }
 
     // Set cursor
@@ -636,7 +656,7 @@ pub fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
 
 // Function to parse markdown-like text to formatted spans.
 
-fn parse_markdown<'a>(line: String, base_style: Style) -> Line<'a> {
+fn parse_markdown(line: String, base_style: Style) -> Line<'static> {
     let mut spans = Vec::new();
     let mut current_text = String::new();
     let mut in_bold = false;

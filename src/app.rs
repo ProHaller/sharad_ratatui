@@ -8,16 +8,18 @@ use crate::image;
 use crate::message::{self, AIMessage, Message, MessageType};
 use crate::settings::Settings;
 use crate::settings_state::SettingsState;
-use crate::ui::game::MessageCache;
+use crate::ui::game;
 
 use chrono::Local;
 use copypasta::{ClipboardContext, ClipboardProvider};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::widgets::ListState;
+use ratatui::{layout::Alignment, text::Line};
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
+use std::rc::Rc;
 use tokio::sync::mpsc;
 use tui_input::backend::crossterm::EventHandler;
 use tui_input::Input;
@@ -30,6 +32,7 @@ pub enum AppCommand {
     ApiKeyValidationResult(bool),
 }
 
+#[derive(PartialEq, Eq, Clone)]
 pub enum InputMode {
     Normal,
     Editing,
@@ -57,8 +60,9 @@ pub struct App {
     ai_sender: mpsc::UnboundedSender<AIMessage>,
     pub visible_messages: usize,
     pub game_content: Vec<Message>,
-    pub message_cache: Option<MessageCache>,
     pub game_content_scroll: usize,
+    pub cached_game_content: Option<Rc<Vec<(Line<'static>, Alignment)>>>,
+    pub cached_content_len: usize,
     pub visible_lines: usize,
     pub total_lines: usize,
     pub message_line_counts: Vec<usize>,
@@ -108,7 +112,8 @@ impl App {
             available_saves,
             game_content: Vec::new(),
             game_content_scroll: 0,
-            message_cache: None,
+            cached_game_content: None,
+            cached_content_len: 0,
             debug_info: String::new(),
             visible_messages: 0,
             total_lines: 0,
@@ -125,7 +130,11 @@ impl App {
         (app, command_receiver)
     }
 
-    // Add this method to initialize the AI client when needed
+    pub fn update_cached_content(&mut self, max_width: usize) {
+        let parsed_content = game::parse_game_content(self, max_width);
+        self.cached_game_content = Some(Rc::new(parsed_content));
+        self.cached_content_len = self.game_content.len();
+    }
 
     pub async fn initialize_ai_client(&mut self) -> Result<(), AppError> {
         let api_key = self
@@ -678,7 +687,6 @@ impl App {
             })
             .sum();
         self.update_scroll();
-        self.message_cache = None;
     }
 
     pub async fn send_message(&mut self, message: String) -> Result<(), AppError> {
