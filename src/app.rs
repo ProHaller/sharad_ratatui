@@ -8,10 +8,11 @@ use crate::image;
 use crate::message::{self, AIMessage, Message, MessageType};
 use crate::settings::Settings;
 use crate::settings_state::SettingsState;
+use crate::ui::game::MessageCache;
 
 use chrono::Local;
 use copypasta::{ClipboardContext, ClipboardProvider};
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::widgets::ListState;
 use std::fs;
 use std::fs::OpenOptions;
@@ -56,6 +57,7 @@ pub struct App {
     ai_sender: mpsc::UnboundedSender<AIMessage>,
     pub visible_messages: usize,
     pub game_content: Vec<Message>,
+    pub message_cache: Option<MessageCache>,
     pub game_content_scroll: usize,
     pub visible_lines: usize,
     pub total_lines: usize,
@@ -106,6 +108,7 @@ impl App {
             available_saves,
             game_content: Vec::new(),
             game_content_scroll: 0,
+            message_cache: None,
             debug_info: String::new(),
             visible_messages: 0,
             total_lines: 0,
@@ -167,9 +170,6 @@ impl App {
     }
 
     pub fn handle_input(&mut self, key: KeyEvent) {
-        if key.kind != KeyEventKind::Press {
-            return;
-        }
         match self.input_mode {
             InputMode::Normal => match self.state {
                 AppState::MainMenu => self.handle_main_menu_input(key),
@@ -190,38 +190,7 @@ impl App {
         }
     }
 
-    fn handle_in_game_editing(&mut self, key: KeyEvent) {
-        if key.kind != KeyEventKind::Press {
-            return;
-        }
-        match key.code {
-            KeyCode::Enter => {
-                self.submit_user_input();
-                self.input_mode = InputMode::Normal;
-            }
-            KeyCode::Esc => {
-                self.input_mode = InputMode::Normal;
-            }
-            KeyCode::Char(c) => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'v' {
-                    if let Err(e) = self.handle_paste() {
-                        self.add_debug_message(format!("Failed to paste: {:?}", e));
-                    }
-                } else {
-                    self.user_input.handle_event(&Event::Key(key));
-                }
-            }
-            _ => {
-                // Let tui_input handle all other key events
-                self.user_input.handle_event(&Event::Key(key));
-            }
-        }
-    }
-
     fn handle_save_name_editing(&mut self, key: KeyEvent) {
-        if key.kind != KeyEventKind::Press {
-            return;
-        }
         match key.code {
             KeyCode::Enter => {
                 // Handle save name submission
@@ -230,8 +199,8 @@ impl App {
             KeyCode::Esc => {
                 self.input_mode = InputMode::Normal;
             }
-            KeyCode::Char(c) => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'v' {
+            KeyCode::Char('v') => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
                     if let Err(e) = self.handle_paste() {
                         self.add_debug_message(format!("Failed to paste: {:?}", e));
                     }
@@ -246,9 +215,6 @@ impl App {
     }
 
     fn handle_api_key_editing(&mut self, key: KeyEvent) {
-        if key.kind != KeyEventKind::Press {
-            return;
-        }
         match key.code {
             KeyCode::Enter => {
                 // Handle API key submission
@@ -257,8 +223,8 @@ impl App {
             KeyCode::Esc => {
                 self.input_mode = InputMode::Normal;
             }
-            KeyCode::Char(c) => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'v' {
+            KeyCode::Char('v') => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
                     if let Err(e) = self.handle_paste() {
                         self.add_debug_message(format!("Failed to paste: {:?}", e));
                     }
@@ -273,9 +239,6 @@ impl App {
     }
 
     fn handle_api_key_input(&mut self, key: KeyEvent) {
-        if key.kind != KeyEventKind::Press {
-            return;
-        }
         match key.code {
             KeyCode::Enter => {
                 if !self.api_key_input.value().is_empty() {
@@ -294,8 +257,8 @@ impl App {
             KeyCode::Esc => {
                 self.state = AppState::SettingsMenu;
             }
-            KeyCode::Char(c) => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'v' {
+            KeyCode::Char('v') => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
                     if let Err(e) = self.handle_paste() {
                         self.add_debug_message(format!("Failed to paste: {:?}", e));
                     }
@@ -310,9 +273,6 @@ impl App {
     }
 
     fn handle_save_name_input(&mut self, key: KeyEvent) {
-        if key.kind != KeyEventKind::Press {
-            return;
-        }
         match self.input_mode {
             InputMode::Normal => match key.code {
                 KeyCode::Char('e') => {
@@ -344,8 +304,8 @@ impl App {
                 KeyCode::Esc => {
                     self.input_mode = InputMode::Normal;
                 }
-                KeyCode::Char(c) => {
-                    if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'v' {
+                KeyCode::Char('v') => {
+                    if key.modifiers.contains(KeyModifiers::CONTROL) {
                         if let Err(e) = self.handle_paste() {
                             self.add_debug_message(format!("Failed to paste: {:?}", e));
                         }
@@ -360,10 +320,31 @@ impl App {
         }
     }
 
-    fn handle_in_game_input(&mut self, key: KeyEvent) {
-        if key.kind != KeyEventKind::Press {
-            return;
+    fn handle_in_game_editing(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Enter => {
+                self.submit_user_input();
+                self.input_mode = InputMode::Normal;
+            }
+            KeyCode::Esc => {
+                self.input_mode = InputMode::Normal;
+            }
+            KeyCode::Char('v') => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    if let Err(e) = self.handle_paste() {
+                        self.add_debug_message(format!("Failed to paste: {:?}", e));
+                    }
+                } else {
+                    self.user_input.handle_event(&Event::Key(key));
+                }
+            }
+            _ => {
+                // Let tui_input handle all other key events
+                self.user_input.handle_event(&Event::Key(key));
+            }
         }
+    }
+    fn handle_in_game_input(&mut self, key: KeyEvent) {
         match self.input_mode {
             InputMode::Normal => match key.code {
                 KeyCode::Char('e') => {
@@ -406,8 +387,8 @@ impl App {
                 KeyCode::Esc => {
                     self.input_mode = InputMode::Normal;
                 }
-                KeyCode::Char(c) => {
-                    if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'v' {
+                KeyCode::Char('v') => {
+                    if key.modifiers.contains(KeyModifiers::CONTROL) {
                         if let Err(e) = self.handle_paste() {
                             self.add_debug_message(format!("Failed to paste: {:?}", e));
                         }
@@ -463,9 +444,6 @@ impl App {
     }
 
     fn handle_settings_input(&mut self, key: KeyEvent) {
-        if key.kind != KeyEventKind::Press {
-            return;
-        }
         match key.code {
             KeyCode::Up => {
                 self.settings_state.selected_setting =
@@ -567,10 +545,6 @@ impl App {
     }
 
     fn handle_main_menu_input(&mut self, key: KeyEvent) {
-        if key.kind != KeyEventKind::Press {
-            return;
-        }
-
         match key.code {
             KeyCode::Enter => {
                 match self.main_menu_state.selected() {
@@ -704,6 +678,7 @@ impl App {
             })
             .sum();
         self.update_scroll();
+        self.message_cache = None;
     }
 
     pub async fn send_message(&mut self, message: String) -> Result<(), AppError> {
@@ -950,9 +925,6 @@ impl App {
     }
 
     fn handle_load_game_input(&mut self, key: KeyEvent) {
-        if key.kind != KeyEventKind::Press {
-            return;
-        }
         match key.code {
             KeyCode::Enter => {
                 if let Some(selected) = self.load_game_menu_state.selected() {
@@ -1127,10 +1099,6 @@ impl App {
     }
 
     fn handle_create_image_input(&mut self, key: KeyEvent) {
-        if key.kind != KeyEventKind::Press {
-            return;
-        }
-
         match self.input_mode {
             InputMode::Normal => match key.code {
                 KeyCode::Char('e') => {
@@ -1161,8 +1129,8 @@ impl App {
                 KeyCode::Esc => {
                     self.input_mode = InputMode::Normal;
                 }
-                KeyCode::Char(c) => {
-                    if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'v' {
+                KeyCode::Char('v') => {
+                    if key.modifiers.contains(KeyModifiers::CONTROL) {
                         if let Err(e) = self.handle_paste() {
                             self.add_debug_message(format!("Failed to paste: {:?}", e));
                         }
@@ -1178,9 +1146,6 @@ impl App {
     }
 
     fn handle_create_image_editing(&mut self, key: KeyEvent) {
-        if key.kind != KeyEventKind::Press {
-            return;
-        }
         match key.code {
             KeyCode::Enter => {
                 // Handle save name submission
@@ -1189,8 +1154,8 @@ impl App {
             KeyCode::Esc => {
                 self.input_mode = InputMode::Normal;
             }
-            KeyCode::Char(c) => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'v' {
+            KeyCode::Char('v') => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
                     if let Err(e) = self.handle_paste() {
                         self.add_debug_message(format!("Failed to paste: {:?}", e));
                     }
@@ -1204,4 +1169,3 @@ impl App {
         }
     }
 }
-

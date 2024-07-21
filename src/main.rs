@@ -3,14 +3,15 @@ use crate::app::{App, AppCommand};
 use crate::cleanup::cleanup;
 use crate::message::{AIMessage, Message, MessageType};
 use crossterm::{
-    event::{self, Event}, // Event handling from crossterm for input events.
-    execute,              // Helper macro to execute terminal commands.
+    event::{self, Event, KeyEventKind}, // Event handling from crossterm for input events.
+    execute,                            // Helper macro to execute terminal commands.
     terminal::{enable_raw_mode, EnterAlternateScreen, SetSize}, // Terminal manipulation utilities.
 };
 use ratatui::{backend::CrosstermBackend, Terminal}; // Terminal backend for drawing UI.
 use std::panic; // Panic handling for cleanup.
 use std::{io, sync::Arc, time::Duration}; // Standard I/O and concurrency utilities.
 use tokio::sync::mpsc; // Asynchronous message passing channel.
+use tokio::time::sleep;
 use tokio::{sync::Mutex, time::Instant}; // Asynchronous mutex and time utilities.
 
 // Modules are declared which should be assumed to be part of the application architecture.
@@ -97,40 +98,44 @@ async fn run_app(
     mut command_receiver: mpsc::UnboundedReceiver<AppCommand>,
     mut ai_receiver: mpsc::UnboundedReceiver<AIMessage>,
 ) -> io::Result<()> {
-    let tick_rate = Duration::from_millis(100); // Duration for each tick in the main loop.
-    let mut last_tick = Instant::now(); // Timestamp of the last tick.
+    let mut last_tick = Instant::now();
+    let tick_rate = Duration::from_millis(16); // Increased tick rate for more responsive input
+    let mut frame_count = 0;
+    let mut last_frame_time = Instant::now();
 
     loop {
-        // Draw the UI using the specified terminal and app state.
-        terminal.draw(|f| {
-            let mut app = tokio::task::block_in_place(|| app.blocking_lock());
-            ui::draw(f, &mut app)
-        })?;
-
-        // Calculate timeout duration to synchronize with the tick rate.
         let timeout = tick_rate
             .checked_sub(last_tick.elapsed())
             .unwrap_or_else(|| Duration::from_secs(0));
 
-        // Handle different types of events: ticks, user input, and incoming commands.
         tokio::select! {
-            _ = tokio::time::sleep(timeout) => {
+            _ = sleep(timeout) => {
                 let mut app = app.lock().await;
                 app.on_tick();
-                last_tick = Instant::now();
-            },
-            event = tokio::task::spawn_blocking(|| {
-                if event::poll(Duration::from_millis(1)).unwrap() {
-                    event::read()
-                } else {
-                    Ok(Event::FocusGained)
+            }
+            event_result = tokio::task::spawn_blocking(|| crossterm::event::poll(Duration::from_millis(1))) => {
+                match event_result {
+                    Ok(Ok(true)) => {
+                        match crossterm::event::read() {
+                            Ok(Event::Key(key)) if key.kind == KeyEventKind::Press => {
+                                let mut app = app.lock().await;
+                                app.handle_input(key);
+                            }
+                            Ok(_) => {}, // Ignore non-key events and non-press key events
+                            Err(e) => {
+                                eprintln!("Error reading event: {:?}", e);
+                            }
+                        }
+                    }
+                    Ok(Ok(false)) => {}, // No event available
+                    Ok(Err(e)) => {
+                        eprintln!("Error polling for event: {:?}", e);
+                    }
+                    Err(e) => {
+                        eprintln!("Task join error: {:?}", e);
+                    }
                 }
-            }) => {
-                if let Ok(Ok(Event::Key(key))) = event {
-                    let mut app = app.lock().await;
-                app.handle_input(key);
-                }
-            },
+            }
             Some(command) = command_receiver.recv() => {
                 let mut app = app.lock().await;
                 match command {
@@ -175,9 +180,33 @@ async fn run_app(
             }
         }
 
-        // Check if the application should terminate.
+        let start_draw = Instant::now();
+        terminal.draw(|f| {
+            let mut app = tokio::task::block_in_place(|| app.blocking_lock());
+            ui::draw(f, &mut app)
+        })?;
+        let draw_duration = start_draw.elapsed();
+
+        frame_count += 1;
+        if last_frame_time.elapsed() >= Duration::from_secs(1) {
+            let mut app = app.lock().await;
+            app.add_debug_message(format!(
+                "FPS: {}, Last frame draw time: {:?}",
+                frame_count, draw_duration
+            ));
+            frame_count = 0;
+            last_frame_time = Instant::now();
+        }
+
         if app.lock().await.should_quit {
             return Ok(());
         }
+
+        // Ensure consistent tick rate
+        let elapsed = last_tick.elapsed();
+        if elapsed < tick_rate {
+            tokio::time::sleep(tick_rate - elapsed).await;
+        }
+        last_tick = Instant::now();
     }
 }
