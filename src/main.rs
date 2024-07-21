@@ -97,7 +97,7 @@ async fn run_app(
     mut command_receiver: mpsc::UnboundedReceiver<AppCommand>,
     mut ai_receiver: mpsc::UnboundedReceiver<AIMessage>,
 ) -> io::Result<()> {
-    let tick_rate = Duration::from_millis(10); // Duration for each tick in the main loop.
+    let tick_rate = Duration::from_millis(100); // Duration for each tick in the main loop.
     let mut last_tick = Instant::now(); // Timestamp of the last tick.
 
     loop {
@@ -136,19 +136,19 @@ async fn run_app(
                 match command {
                     AppCommand::LoadGame(path) => {
                         if let Err(e) = app.load_game(&path).await {
-                            app.add_message(Message::new( MessageType::System, format!("Failed to load game: {:?}", e)));
+                            app.add_message(Message::new( MessageType::System, format!("Failed to load game: {:#?}", e)));
                         }
                     },
                     AppCommand::StartNewGame(save_name) => {
 
 
                         if let Err(e) = app.start_new_game(save_name).await {
-                            app.add_message(Message::new( MessageType::System, format!("Failed to start new game: {:?}", e)));
+                            app.add_message(Message::new( MessageType::System, format!("Failed to start new game: {:#?}", e)));
                         }
                     },
                     AppCommand::ProcessMessage(message) => {
                         if let Err(e) = app.send_message(message).await {
-                            app.add_message(Message::new( MessageType::System, format!("Failed to process message: {:?}", e)));
+                            app.add_message(Message::new( MessageType::System, format!("Failed to process message: {:#?}", e)));
                         }
                             app.scroll_to_bottom();
                     },
@@ -165,7 +165,7 @@ async fn run_app(
                     },
                     AIMessage::Response(ai_response) => {
                         if let Some(last_message) = app.game_content.last() {
-                            if last_message.content == "AI is thinking..." && last_message.message_type == MessageType::System {
+                            if last_message.message_type == MessageType::System {
                                 app.game_content.pop();
                             }
                         }

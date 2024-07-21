@@ -536,6 +536,8 @@ impl GameAI {
                                         serde_json::from_value(items.clone())?
                                     } else if items.is_object() && items.get("name").is_some() {
                                         vec![items["name"].as_str().unwrap().to_string()]
+                                    } else if items.is_object() && items.get("name").is_none() {
+                                        items.as_object().unwrap().keys().cloned().collect()
                                     } else {
                                         return Err(AppError::GameStateParseError(
                                             "Invalid items format for removal".to_string(),
