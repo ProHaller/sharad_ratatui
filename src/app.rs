@@ -9,6 +9,7 @@ use crate::message::{self, AIMessage, Message, MessageType};
 use crate::settings::Settings;
 use crate::settings_state::SettingsState;
 use crate::ui::game;
+use crate::ui::utils::Spinner;
 
 use chrono::Local;
 use copypasta::{ClipboardContext, ClipboardProvider};
@@ -69,6 +70,8 @@ pub struct App {
     pub current_game_response: Option<GameMessage>,
     pub last_user_message: Option<UserMessage>,
     pub backspace_counter: bool,
+    pub spinner: Spinner,
+    pub spinner_active: bool,
 }
 
 impl App {
@@ -125,6 +128,8 @@ impl App {
             current_game_response: None,
             last_user_message: None,
             backspace_counter: false,
+            spinner: Spinner::new(),
+            spinner_active: false,
         };
 
         (app, command_receiver)
@@ -415,6 +420,7 @@ impl App {
     fn submit_user_input(&mut self) {
         let input = self.user_input.value().trim().to_string();
         if !input.is_empty() {
+            self.spinner_active = true;
             self.add_message(Message::new(MessageType::User, input.clone()));
 
             // Send a command to process the message
@@ -424,11 +430,7 @@ impl App {
                     format!("Error sending message command: {:#?}", e),
                 ));
             } else {
-                // Add a "thinking" message to indicate that the AI is processing
-                self.add_message(Message::new(
-                    MessageType::System,
-                    "AI is thinking...".to_string(),
-                ));
+                self.spinner_active = true;
             }
 
             // Clear the user input
@@ -640,6 +642,10 @@ impl App {
             self.game_content_scroll += 1;
         }
     }
+    pub fn scroll_to_bottom(&mut self) {
+        self.game_content_scroll = self.total_lines.saturating_sub(self.visible_lines);
+        self.update_scroll();
+    }
 
     pub fn update_scroll(&mut self) {
         let max_scroll = self.total_lines.saturating_sub(self.visible_lines);
@@ -695,7 +701,11 @@ impl App {
 
         match (&mut self.ai_client, &mut self.current_game) {
             (Some(ai), Some(game_state)) => {
+                self.spinner_active = true;
+
                 let game_message = ai.send_message(&formatted_message, game_state).await?;
+
+                self.spinner_active = false;
 
                 self.add_debug_message(format!(
                     "Received game message from AI: {:#?}",
@@ -842,6 +852,7 @@ impl App {
     // Update the handle_ai_response method
 
     pub fn handle_ai_response(&mut self, response: String) {
+        self.spinner_active = false;
         self.add_debug_message(format!("Received AI response: {}", response));
 
         // Remove the "AI is thinking..." message if it exists
@@ -1099,11 +1110,6 @@ impl App {
         self.scroll_to_bottom();
 
         Ok(())
-    }
-
-    pub fn scroll_to_bottom(&mut self) {
-        self.game_content_scroll = self.total_lines.saturating_sub(self.visible_lines);
-        self.update_scroll();
     }
 
     fn handle_create_image_input(&mut self, key: KeyEvent) {

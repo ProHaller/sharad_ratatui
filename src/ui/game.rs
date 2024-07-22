@@ -1,6 +1,7 @@
 use crate::app::{App, InputMode};
 use crate::character::CharacterSheet;
 use crate::message::{GameMessage, MessageType, UserMessage};
+use crate::ui::utils::spinner_frame;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -48,8 +49,24 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
         let (_, ref main_chunks, ref left_chunks) = cache.as_ref().unwrap();
         (main_chunks.clone(), left_chunks.clone(), main_chunks[1])
     });
-
     draw_game_content(f, app, left_chunks[0]);
+
+    // Render spinner at the bottom if active
+    if app.spinner_active {
+        let spinner_area = Rect::new(
+            left_chunks[0].x,
+            left_chunks[0].bottom() - 1,
+            left_chunks[0].width,
+            1,
+        );
+
+        let spinner_text = spinner_frame(&mut app.spinner);
+        let spinner_widget = Paragraph::new(spinner_text)
+            .style(Style::default().fg(Color::Yellow))
+            .alignment(Alignment::Center);
+
+        f.render_widget(spinner_widget, spinner_area);
+    }
     draw_user_input(f, app, left_chunks[1]);
 
     if let Some(game_state) = &app.current_game {
