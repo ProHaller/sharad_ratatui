@@ -31,34 +31,51 @@ pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
         .split(popup_layout[1])[1]
 }
 
-use std::time::Instant;
+use std::sync::{Arc, Mutex};
+use std::thread;
 
 const SPINNER_CHARS: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const SPINNER_INTERVAL: Duration = Duration::from_millis(100);
 
 pub struct Spinner {
-    last_update: Instant,
-    current_frame: usize,
+    current_frame: Arc<Mutex<usize>>,
+    is_spinning: Arc<Mutex<bool>>,
 }
 
 impl Spinner {
     pub fn new() -> Self {
         Spinner {
-            last_update: Instant::now(),
-            current_frame: 0,
+            current_frame: Arc::new(Mutex::new(0)),
+            is_spinning: Arc::new(Mutex::new(false)),
         }
     }
 
-    pub fn get_frame(&mut self) -> char {
-        let now = Instant::now();
-        if now.duration_since(self.last_update) >= SPINNER_INTERVAL {
-            self.current_frame = (self.current_frame + 1) % SPINNER_CHARS.len();
-            self.last_update = now;
-        }
-        SPINNER_CHARS[self.current_frame]
+    pub fn start(&self) {
+        let current_frame = Arc::clone(&self.current_frame);
+        let is_spinning = Arc::clone(&self.is_spinning);
+
+        *is_spinning.lock().unwrap() = true;
+
+        thread::spawn(move || {
+            while *is_spinning.lock().unwrap() {
+                let mut frame = current_frame.lock().unwrap();
+                *frame = (*frame + 1) % SPINNER_CHARS.len();
+                drop(frame); // Explicitly drop the lock
+                thread::sleep(SPINNER_INTERVAL);
+            }
+        });
+    }
+
+    pub fn stop(&self) {
+        *self.is_spinning.lock().unwrap() = false;
+    }
+
+    pub fn get_frame(&self) -> char {
+        let frame = *self.current_frame.lock().unwrap();
+        SPINNER_CHARS[frame]
     }
 }
 
-pub fn spinner_frame(spinner: &mut Spinner) -> String {
+pub fn spinner_frame(spinner: &Spinner) -> String {
     format!("AI is thinking {}", spinner.get_frame())
 }

@@ -154,7 +154,7 @@ impl App {
             let _ = ai_sender.send(message::AIMessage::Debug(message));
         };
 
-        self.ai_client = Some(GameAI::new(api_key, debug_callback)?);
+        self.ai_client = Some(GameAI::new(api_key, debug_callback).await?);
 
         Ok(())
     }
@@ -420,7 +420,7 @@ impl App {
     fn submit_user_input(&mut self) {
         let input = self.user_input.value().trim().to_string();
         if !input.is_empty() {
-            self.spinner_active = true;
+            self.start_spinner();
             self.add_message(Message::new(MessageType::User, input.clone()));
 
             // Send a command to process the message
@@ -430,7 +430,7 @@ impl App {
                     format!("Error sending message command: {:#?}", e),
                 ));
             } else {
-                self.spinner_active = true;
+                self.start_spinner();
             }
 
             // Clear the user input
@@ -631,6 +631,16 @@ impl App {
         self.select_main_menu_option();
     }
 
+    pub fn start_spinner(&mut self) {
+        self.spinner.start();
+        self.spinner_active = true;
+    }
+
+    pub fn stop_spinner(&mut self) {
+        self.spinner.stop();
+        self.spinner_active = false;
+    }
+
     pub fn scroll_up(&mut self) {
         if self.game_content_scroll > 0 {
             self.game_content_scroll -= 1;
@@ -699,13 +709,12 @@ impl App {
         let user_message = create_user_message(&self.settings.language, &message);
         let formatted_message = serde_json::to_string(&user_message)?;
 
+        self.start_spinner();
         match (&mut self.ai_client, &mut self.current_game) {
             (Some(ai), Some(game_state)) => {
-                self.spinner_active = true;
-
                 let game_message = ai.send_message(&formatted_message, game_state).await?;
 
-                self.spinner_active = false;
+                self.stop_spinner();
 
                 self.add_debug_message(format!(
                     "Received game message from AI: {:#?}",
@@ -780,8 +789,10 @@ impl App {
                 format!("New game '{}' started!", save_name),
             ));
 
+            self.start_spinner();
             self.send_message(format!("Start the game. When necessary, create a character sheet by calling the `create_character_sheet` function with the necessary details including the inventory. Respond only in the following language: {}", self.settings.language).to_string())
             .await?;
+            self.stop_spinner();
 
             Ok(())
         } else {
@@ -852,7 +863,7 @@ impl App {
     // Update the handle_ai_response method
 
     pub fn handle_ai_response(&mut self, response: String) {
-        self.spinner_active = false;
+        self.stop_spinner();
         self.add_debug_message(format!("Received AI response: {}", response));
 
         // Remove the "AI is thinking..." message if it exists

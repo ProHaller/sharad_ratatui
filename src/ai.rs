@@ -117,7 +117,7 @@ pub struct GameAI {
 // Implementation of the GameAI structure.
 impl GameAI {
     // Constructor to initialize a new GameAI instance.
-    pub fn new(
+    pub async fn new(
         api_key: String,
         debug_callback: impl Fn(String) + Send + Sync + 'static,
     ) -> Result<Self, AppError> {

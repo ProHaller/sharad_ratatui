@@ -100,8 +100,6 @@ async fn run_app(
 ) -> io::Result<()> {
     let mut last_tick = Instant::now();
     let tick_rate = Duration::from_millis(16); // Increased tick rate for more responsive input
-                                               // let mut frame_count = 0;
-                                               // let mut last_frame_time = Instant::now();
 
     loop {
         let timeout = tick_rate
@@ -145,8 +143,6 @@ async fn run_app(
                         }
                     },
                     AppCommand::StartNewGame(save_name) => {
-
-
                         if let Err(e) = app.start_new_game(save_name).await {
                             app.add_message(Message::new( MessageType::System, format!("Failed to start new game: {:#?}", e)));
                         }
@@ -155,7 +151,7 @@ async fn run_app(
                         if let Err(e) = app.send_message(message).await {
                             app.add_message(Message::new( MessageType::System, format!("Failed to process message: {:#?}", e)));
                         }
-                            app.scroll_to_bottom();
+                        app.scroll_to_bottom();
                     },
                     AppCommand::ApiKeyValidationResult(is_valid) => {
                         app.handle_api_key_validation_result(is_valid);
@@ -186,17 +182,6 @@ async fn run_app(
             ui::draw(f, &mut app)
         })?;
         let draw_duration = start_draw.elapsed();
-
-        // frame_count += 1;
-        // if last_frame_time.elapsed() >= Duration::from_secs(1) {
-        //     let mut app = app.lock().await;
-        //     app.add_debug_message(format!(
-        //         "FPS: {}, Last frame draw time: {:#?}",
-        //         frame_count, draw_duration
-        //     ));
-        //     frame_count = 0;
-        //     last_frame_time = Instant::now();
-        // }
 
         if app.lock().await.should_quit {
             return Ok(());
