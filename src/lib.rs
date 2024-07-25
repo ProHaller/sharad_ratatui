@@ -11,6 +11,7 @@ pub mod message;
 pub mod settings;
 pub mod settings_state;
 pub mod ui;
+pub mod utils;
 
 // Re-export commonly used items for easier access
 pub use ai::AIError;

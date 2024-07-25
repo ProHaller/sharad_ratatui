@@ -122,7 +122,7 @@ pub fn render_console(f: &mut Frame, app: &App, area: Rect) {
             horizontal: 1,
         }))[1];
 
-    let finaly = if let Some(content) = app.game_content.last() {
+    let finaly = if let Some(content) = app.game_content.borrow().last() {
         if content.message_type == MessageType::System {
             Some(content.content.to_string())
         } else {

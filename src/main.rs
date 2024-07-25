@@ -28,6 +28,7 @@ pub mod message;
 pub mod settings;
 pub mod settings_state;
 pub mod ui;
+pub mod utils;
 
 // Constants for minimum terminal size.
 const MIN_WIDTH: u16 = 100;
@@ -99,7 +100,7 @@ async fn run_app(
     mut ai_receiver: mpsc::UnboundedReceiver<AIMessage>,
 ) -> io::Result<()> {
     let mut last_tick = Instant::now();
-    let tick_rate = Duration::from_millis(16); // Increased tick rate for more responsive input
+    let tick_rate = Duration::from_millis(16);
 
     loop {
         let timeout = tick_rate
@@ -135,25 +136,37 @@ async fn run_app(
                 }
             }
             Some(command) = command_receiver.recv() => {
-                let mut app = app.lock().await;
                 match command {
+                    AppCommand::ProcessMessage(message) => {
+                        let mut app = app.lock().await;
+                        app.process_message(message);
+                        // Release the lock immediately after starting the process
+                        drop(app);
+                    },
+                    AppCommand::AIResponse(result) => {
+                        let mut app = app.lock().await;
+                        app.handle_ai_response(result);
+                    },
                     AppCommand::LoadGame(path) => {
-                        if let Err(e) = app.load_game(&path).await {
-                            app.add_message(Message::new( MessageType::System, format!("Failed to load game: {:#?}", e)));
+                        if let Err(e) = app.lock().await.load_game(&path).await {
+                            app.lock().await.add_message(Message::new( MessageType::System, format!("Failed to load game: {:#?}", e)));
                         }
                     },
                     AppCommand::StartNewGame(save_name) => {
-                        if let Err(e) = app.start_new_game(save_name).await {
-                            app.add_message(Message::new( MessageType::System, format!("Failed to start new game: {:#?}", e)));
-                        }
+                        let app = app.clone();
+                        if let Err(e) = app.lock().await.start_new_game(save_name).await {
+                            app.lock().await.add_message(Message::new( MessageType::System, format!("Failed to start new game: {:#?}", e)));
+                        };
                     },
                     AppCommand::ProcessMessage(message) => {
+                        let mut app = app.lock().await;
                         if let Err(e) = app.send_message(message).await {
-                            app.add_message(Message::new( MessageType::System, format!("Failed to process message: {:#?}", e)));
+                            app.add_message(Message::new(MessageType::System, format!("Failed to process message: {:#?}", e)));
                         }
                         app.scroll_to_bottom();
                     },
                     AppCommand::ApiKeyValidationResult(is_valid) => {
+                        let mut app = app.lock().await;
                         app.handle_api_key_validation_result(is_valid);
                     }
                 }
@@ -164,24 +177,22 @@ async fn run_app(
                     AIMessage::Debug(debug_message) => {
                         app.add_debug_message(debug_message);
                     },
-                    AIMessage::Response(ai_response) => {
-                        if let Some(last_message) = app.game_content.last() {
+                    AIMessage::Response(response) => {
+                        if let Some(last_message) = app.game_content.borrow().last() {
                             if last_message.message_type == MessageType::System {
-                                app.game_content.pop();
+                                app.game_content.borrow_mut().pop();
                             }
                         }
-                        app.handle_ai_response(ai_response);
+                        app.handle_ai_response(response);
                     }
                 }
             }
         }
 
-        let start_draw = Instant::now();
         terminal.draw(|f| {
             let mut app = tokio::task::block_in_place(|| app.blocking_lock());
             ui::draw(f, &mut app)
         })?;
-        let draw_duration = start_draw.elapsed();
 
         if app.lock().await.should_quit {
             return Ok(());

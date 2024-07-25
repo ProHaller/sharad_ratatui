@@ -1,6 +1,5 @@
 // src/ai_response.rs
 // Import necessary modules and structs from other parts of the application or crates.
-use crate::character::CharacterSheet;
 use serde::{Deserialize, Serialize};
 
 // Define a structure for user-generated messages with fields for instructions and player actions.
@@ -14,14 +13,6 @@ pub struct UserMessage {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SystemMessage {
     pub message: String, // Content of the system message.
-}
-
-// Define a structure for messages generated within the game's mechanics.
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct GameMessage {
-    pub crunch: String, // Explanation of why this message is generated.
-    pub fluff: String,  // Narrative content for the game's story.
-    pub character_sheet: Option<CharacterSheet>, // Optional character sheet if relevant to the message.
 }
 
 // Implementation block for UserMessage with a constructor method.

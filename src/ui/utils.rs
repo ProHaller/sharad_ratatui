@@ -1,14 +1,6 @@
 // ui/utils.rs
 
-use crossterm::execute;
-use crossterm::{
-    cursor::{Hide, MoveTo, Show},
-    style::Print,
-    terminal::{Clear, ClearType},
-};
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use std::io::{self, Write};
-use std::thread::sleep;
 use std::time::Duration;
 
 pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {

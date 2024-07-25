@@ -1,11 +1,11 @@
-// Import necessary modules and data structures from other parts of the application and external crates.
 use crate::character::{
     CharacterSheet, CharacterSheetBuilder, CharacterSheetUpdate, Contact, Item, MatrixAttributes,
     Quality, Race, Skills, UpdateOperation,
 };
 use crate::dice::{perform_dice_roll, DiceRollRequest, DiceRollResponse};
 use crate::game_state::GameState;
-use crate::message::{GameMessage, Message, MessageType};
+use crate::message;
+use crate::message::{Message, MessageType};
 use async_openai::{
     config::OpenAIConfig,
     types::{
@@ -17,11 +17,13 @@ use async_openai::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::Arc;
 use thiserror::Error;
+use tokio::sync::Mutex;
 use tokio::time::{Duration, Instant};
 
 // Define a struct to hold conversation state specific to the game.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameConversationState {
     pub assistant_id: String, // Unique identifier for the assistant.
     pub thread_id: String,    // Unique identifier for the conversation thread.
@@ -110,8 +112,18 @@ pub enum AIError {
 // Structure representing the game's AI component.
 pub struct GameAI {
     pub client: Client<OpenAIConfig>, // OpenAI client configured with an API key.
-    pub conversation_state: Option<GameConversationState>, // Optional state of the ongoing conversation.
-    debug_callback: Box<dyn Fn(String) + Send + Sync>,     // Debug callback for logging purposes.
+    pub conversation_state: Arc<Mutex<Option<GameConversationState>>>,
+    pub debug_callback: Arc<dyn Fn(String) + Send + Sync>, // Debug callback for logging purposes.
+}
+
+impl Clone for GameAI {
+    fn clone(&self) -> Self {
+        GameAI {
+            client: self.client.clone(),
+            conversation_state: self.conversation_state.clone(),
+            debug_callback: Arc::clone(&self.debug_callback),
+        }
+    }
 }
 
 // Implementation of the GameAI structure.
@@ -126,8 +138,8 @@ impl GameAI {
 
         Ok(Self {
             client,
-            conversation_state: None,
-            debug_callback: Box::new(debug_callback),
+            conversation_state: Arc::new(Mutex::new(None)),
+            debug_callback: Arc::new(debug_callback),
         })
     }
 
@@ -148,11 +160,11 @@ impl GameAI {
             .create(CreateThreadRequestArgs::default().build()?)
             .await?;
 
-        self.conversation_state = Some(GameConversationState {
+        self.conversation_state = Arc::new(tokio::sync::Mutex::new(Some(GameConversationState {
             assistant_id: assistant_id.to_string(),
             thread_id: thread.id.clone(),
             ..initial_game_state
-        });
+        })));
 
         let initial_message = CreateMessageRequestArgs::default()
             .role(MessageRole::User)
@@ -169,31 +181,24 @@ impl GameAI {
     }
 
     // Asynchronous method to load an existing conversation state.
-    pub async fn load_conversation(&mut self, state: GameConversationState) {
-        self.conversation_state = Some(state);
+
+    pub async fn load_conversation(&self, state: GameConversationState) {
+        let mut _conversation_state = self.conversation_state.lock().await;
     }
 
     // Asynchronous method to send a message within the conversation, handling game state updates.
+
     pub async fn send_message(
-        &mut self,
-        message: &str,
+        &self,
+        formatted_message: &str,
         game_state: &mut GameState,
-    ) -> Result<GameMessage, AppError> {
-        let (thread_id, assistant_id) = self.get_conversation_ids()?;
-
-        // Add the user message
-        self.add_message_to_thread(&thread_id, message).await?;
-
-        // Create and wait for the run to complete
-        let run = self.create_run(&thread_id, &assistant_id).await?;
-        self.wait_for_run_completion(&thread_id, &run.id, game_state)
+    ) -> Result<message::GameMessage, AppError> {
+        let mut game_state = game_state;
+        // Change the return type to message::GameMessage
+        let result: message::GameMessage = self
+            .update_game_state(&mut game_state, formatted_message)
             .await?;
-
-        // Get the latest message and update the game state
-        let response = self.get_latest_message(&thread_id).await?;
-        let game_message = self.update_game_state(game_state, &response)?;
-
-        Ok(game_message)
+        Ok(result)
     }
 
     async fn wait_for_run_completion(
@@ -235,12 +240,12 @@ impl GameAI {
         }
     }
 
-    fn update_game_state(
-        &mut self,
+    async fn update_game_state(
+        &self,
         game_state: &mut GameState,
         response: &str,
-    ) -> Result<GameMessage, AppError> {
-        let game_message: GameMessage = serde_json::from_str(response).map_err(|e| {
+    ) -> Result<message::GameMessage, AppError> {
+        let game_message: message::GameMessage = serde_json::from_str(response).map_err(|e| {
             AppError::GameStateParseError(format!("Failed to parse GameMessage: {}", e))
         })?;
 
@@ -317,7 +322,7 @@ impl GameAI {
                                 game_state.character_sheet = Some(character_sheet.clone());
                             }
                             game_state.characters.push(character_sheet.clone());
-                            if let Some(state) = &mut self.conversation_state {
+                            if let Some(state) = &mut *self.conversation_state.lock().await {
                                 state.character_sheet = Some(character_sheet.clone());
                             }
                             self.add_debug_message(format!(
@@ -1015,8 +1020,9 @@ impl GameAI {
     }
 
     // Helper methods
-    fn get_conversation_ids(&self) -> Result<(String, String), AppError> {
-        self.conversation_state
+    async fn get_conversation_ids(&self) -> Result<(String, String), AppError> {
+        let state = self.conversation_state.lock().await;
+        state
             .as_ref()
             .map(|state| (state.thread_id.clone(), state.assistant_id.clone()))
             .ok_or(AppError::ConversationNotInitialized)

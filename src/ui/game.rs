@@ -9,6 +9,7 @@ use ratatui::{
     widgets::*,
     Frame,
 };
+use std::borrow::Borrow;
 use std::cell::RefCell;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
@@ -19,7 +20,7 @@ thread_local! {
 
 pub fn draw_in_game(f: &mut Frame, app: &mut App) {
     let size = f.size();
-    app.debug_info = format!("Terminal size: {}x{}", size.width, size.height);
+    *app.debug_info.borrow_mut() = format!("Terminal size: {}x{}", size.width, size.height);
 
     if size.width < 101 || size.height < 50 {
         let warning = Paragraph::new("Terminal too small. Please resize.")
@@ -52,7 +53,7 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
     draw_game_content(f, app, left_chunks[0]);
 
     // Render spinner at the bottom if active
-    if app.spinner_active {
+    if *app.spinner_active.borrow() {
         let spinner_area = Rect::new(
             left_chunks[0].x,
             left_chunks[0].bottom() - 1,
@@ -70,13 +71,22 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
     draw_user_input(f, app, left_chunks[1]);
 
     if let Some(game_state) = &app.current_game {
-        if let Some(sheet) = &game_state.character_sheet {
-            draw_character_sheet(f, sheet, game_info_area);
+        // Use try_lock() instead of blocking_lock()
+        if let Ok(game_state) = game_state.try_lock() {
+            if let Some(sheet) = &game_state.character_sheet {
+                draw_character_sheet(f, sheet, game_info_area);
+            } else {
+                let no_character = Paragraph::new("No character sheet available.")
+                    .style(Style::default().fg(Color::Yellow))
+                    .alignment(Alignment::Center);
+                f.render_widget(no_character, game_info_area);
+            }
         } else {
-            let no_character = Paragraph::new("No character sheet available.")
+            // If we can't get the lock, display a message
+            let locked_message = Paragraph::new("Character sheet is being updated...")
                 .style(Style::default().fg(Color::Yellow))
                 .alignment(Alignment::Center);
-            f.render_widget(no_character, game_info_area);
+            f.render_widget(locked_message, game_info_area);
         }
     } else {
         app.add_debug_message("No active game".to_string());
@@ -89,7 +99,7 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
     if app.settings.debug_mode {
         let debug_area = Rect::new(size.x, size.bottom() - 1, size.width, 1);
         let debug_text =
-            Paragraph::new(app.debug_info.clone()).style(Style::default().fg(Color::Gray));
+            Paragraph::new(app.debug_info.borrow().clone()).style(Style::default().fg(Color::Gray));
         f.render_widget(debug_text, debug_area);
     }
 }
@@ -481,11 +491,18 @@ fn create_table<'a>(info: &'a [String], title: &'a str) -> Table<'a> {
 }
 
 pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
+    let save_name = app
+        .current_save_name
+        .try_read()
+        .map(|guard| guard.clone())
+        .unwrap_or_else(|_| String::from("Loading..."));
+
     let fluff_block = Block::default()
-        .title(app.current_game.as_ref().map_or_else(
-            || "Game will start momentarily".to_string(),
-            |game| game.save_name.clone(),
-        ))
+        .title(if save_name.is_empty() {
+            "Game will start momentarily".to_string()
+        } else {
+            save_name
+        })
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Green));
 
@@ -496,14 +513,16 @@ pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
     let max_width = fluff_area.width.saturating_sub(2) as usize;
     let max_height = fluff_area.height.saturating_sub(2) as usize;
 
-    if app.cached_game_content.is_none() || app.cached_content_len != app.game_content.len() {
+    if app.cached_game_content.is_none()
+        || app.cached_content_len != app.game_content.borrow().len()
+    {
         app.update_cached_content(max_width);
     }
 
     let all_lines = app.cached_game_content.as_ref().unwrap();
 
     app.total_lines = all_lines.len();
-    app.debug_info += &format!(", Total lines: {}", app.total_lines);
+    *app.debug_info.borrow_mut() += &format!(", Total lines: {}", app.total_lines);
 
     let visible_lines: Vec<Line> = all_lines
         .iter()
@@ -516,7 +535,7 @@ pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
         })
         .collect();
 
-    app.debug_info += &format!(", Visible lines: {}", visible_lines.len());
+    *app.debug_info.borrow_mut() += &format!(", Visible lines: {}", visible_lines.len());
 
     let content = Paragraph::new(visible_lines)
         .block(Block::default().borders(Borders::NONE))
@@ -532,7 +551,7 @@ pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
 pub fn parse_game_content(app: &App, max_width: usize) -> Vec<(Line<'static>, Alignment)> {
     let mut all_lines = Vec::new();
 
-    for message in &app.game_content {
+    for message in app.game_content.borrow().iter() {
         let (content, base_style, alignment) = match message.message_type {
             MessageType::Game => {
                 if let Ok(game_message) = serde_json::from_str::<GameMessage>(&message.content) {
