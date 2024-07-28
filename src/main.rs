@@ -157,7 +157,7 @@ async fn run_app(
                     AppCommand::ProcessMessage(message) => {
                         let mut app = app.lock().await;
                         app.process_message(message);
-                        // Release the lock immediately after starting the process
+                        app.scroll_to_bottom();
                         drop(app);
                     },
                     AppCommand::AIResponse(result) => {
@@ -174,13 +174,6 @@ async fn run_app(
                         if let Err(e) = app.lock().await.start_new_game(save_name).await {
                             app.lock().await.add_message(Message::new( MessageType::System, format!("Failed to start new game: {:#?}", e)));
                         };
-                    },
-                    AppCommand::ProcessMessage(message) => {
-                        let mut app = app.lock().await;
-                        if let Err(e) = app.send_message(message).await {
-                            app.add_message(Message::new(MessageType::System, format!("Failed to process message: {:#?}", e)));
-                        }
-                        app.scroll_to_bottom();
                     },
                     AppCommand::ApiKeyValidationResult(is_valid) => {
                         let mut app = app.lock().await;

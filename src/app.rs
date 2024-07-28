@@ -15,6 +15,7 @@ use copypasta::{ClipboardContext, ClipboardProvider};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::widgets::ListState;
 use ratatui::{layout::Alignment, text::Line};
+use std::borrow::BorrowMut;
 use std::cell::RefCell;
 use std::fs;
 use std::path::Path;
@@ -754,17 +755,18 @@ impl App {
     }
 
     pub fn update_debug_info(&mut self) {
-        if self.settings.debug_mode {
-            self.debug_info = format!(
-                "Scroll: {}/{}, Visible Lines: {}, Total Lines: {}, Messages: {}",
-                self.game_content_scroll,
-                self.total_lines.saturating_sub(self.visible_lines),
-                self.visible_lines,
-                self.total_lines,
-                self.game_content.borrow().len()
-            )
-            .into();
+        if !self.settings.debug_mode {
+            return;
         }
+        self.debug_info = format!(
+            "Scroll: {}/{}, Visible Lines: {}, Total Lines: {}, Messages: {}",
+            self.game_content_scroll,
+            self.total_lines.saturating_sub(self.visible_lines),
+            self.visible_lines,
+            self.total_lines,
+            self.game_content.borrow().len()
+        )
+        .into();
     }
 
     pub fn add_message(&self, message: message::Message) {
@@ -1096,7 +1098,7 @@ impl App {
         };
 
         // Clone the Arc to get a new reference to the AI client
-        let ai_client = self.ai_client.as_ref().unwrap();
+        let ai_client = self.ai_client.as_mut().unwrap().borrow_mut();
 
         // Use the cloned Arc to call load_conversation
         ai_client.load_conversation(conversation_state).await;

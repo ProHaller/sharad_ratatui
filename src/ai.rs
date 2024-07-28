@@ -182,9 +182,11 @@ impl GameAI {
         Ok(())
     }
 
-    //FIX: Why did I put this here?
-    pub async fn load_conversation(&self, _state: GameConversationState) {
-        let mut _conversation_state = self.conversation_state.lock().await;
+    pub async fn load_conversation(&mut self, state: GameConversationState) {
+        self.add_debug_message("loading conversation state ".to_string());
+        let mut conversation_state = self.conversation_state.lock().await;
+        *conversation_state = Some(state);
+        self.add_debug_message("loaded conversation state".to_string());
     }
 
     pub async fn send_message(
@@ -224,19 +226,28 @@ impl GameAI {
                 .retrieve(run_id)
                 .await?;
 
+            self.add_debug_message(format!("Run status: {:#?}", run.status));
             match run.status {
-                RunStatus::Completed => return Ok(()),
+                RunStatus::Completed => {
+                    self.add_debug_message("Run completed".to_string());
+                    return Ok(());
+                }
                 RunStatus::RequiresAction => {
+                    self.add_debug_message("Run requires action".to_string());
                     self.handle_required_action(thread_id, run_id, &run, game_state)
                         .await?;
                 }
                 RunStatus::Failed | RunStatus::Cancelled | RunStatus::Expired => {
+                    self.add_debug_message("Run failed, cancelled, or expired".to_string());
                     return Err(AppError::GameStateParseError(format!(
                         "Run failed with status: {:#?}",
                         run.status
                     )));
                 }
-                _ => tokio::time::sleep(Duration::from_secs(1)).await,
+                _ => {
+                    self.add_debug_message("Run is in progress".to_string());
+                    tokio::time::sleep(Duration::from_secs(1)).await
+                }
             }
         }
     }
@@ -255,6 +266,10 @@ impl GameAI {
         })?;
 
         if let Some(new_character_sheet) = game_message.character_sheet.clone() {
+            self.add_debug_message(format!(
+                "Update Game state: Character sheet: {:#?}",
+                new_character_sheet
+            ));
             self.update_character_sheet(game_state, new_character_sheet)?;
         }
 
@@ -266,6 +281,10 @@ impl GameAI {
         game_state: &mut GameState,
         new_sheet: CharacterSheet,
     ) -> Result<(), AppError> {
+        self.add_debug_message(format!(
+            "Update Character sheet: Character sheet: {:#?}",
+            new_sheet
+        ));
         // Update the main character sheet
         game_state.character_sheet = Some(new_sheet.clone());
 
@@ -303,6 +322,10 @@ impl GameAI {
         run: &RunObject,
         game_state: &mut GameState,
     ) -> Result<(), AppError> {
+        self.add_debug_message(format!(
+            "Handling required action: {:#?}",
+            run.required_action
+        ));
         if let Some(required_action) = &run.required_action {
             if required_action.r#type == "submit_tool_outputs" {
                 let mut tool_outputs = Vec::new();
@@ -911,6 +934,7 @@ impl GameAI {
         attribute: &str,
         value: &Value,
     ) -> Result<crate::character::Value, AppError> {
+        self.add_debug_message(format!("Parsing value for attribute: {:#?}", attribute));
         match attribute {
             "name" | "gender" | "backstory" | "lifestyle" => Ok(crate::character::Value::String(
                 value
@@ -1009,6 +1033,10 @@ impl GameAI {
 
     // Asynchronous method to retrieve the latest message from a conversation thread.
     async fn get_latest_message(&self, thread_id: &str) -> Result<String, AIError> {
+        self.add_debug_message(format!(
+            "Retrieving latest message from thread: {:#?}",
+            thread_id
+        ));
         let messages = self
             .client
             .threads()
@@ -1018,6 +1046,7 @@ impl GameAI {
 
         if let Some(latest_message) = messages.data.first() {
             if let Some(MessageContent::Text(text_content)) = latest_message.content.first() {
+                self.add_debug_message(format!("Latest message: {:#?}", latest_message,));
                 return Ok(text_content.text.value.clone());
             }
         }
@@ -1026,7 +1055,9 @@ impl GameAI {
 
     // Helper methods
     pub async fn get_conversation_ids(&self) -> Result<(String, String), AppError> {
+        self.add_debug_message("Getting conversation IDs".to_string());
         let state = self.conversation_state.lock().await;
+        self.add_debug_message(format!("Conversation state: {:#?}", state));
         state
             .as_ref()
             .map(|state| (state.thread_id.clone(), state.assistant_id.clone()))
@@ -1034,6 +1065,10 @@ impl GameAI {
     }
 
     async fn add_message_to_thread(&self, thread_id: &str, message: &str) -> Result<(), AppError> {
+        self.add_debug_message(format!(
+            "Adding message to thread: {:#?} - {:#?}",
+            thread_id, message
+        ));
         let message_request = CreateMessageRequestArgs::default()
             .role(MessageRole::User)
             .content(message)
@@ -1047,6 +1082,7 @@ impl GameAI {
     }
 
     async fn create_run(&self, thread_id: &str, assistant_id: &str) -> Result<RunObject, AppError> {
+        self.add_debug_message(format!("Creating run for thread: {:#?}", thread_id));
         let run_request = CreateRunRequestArgs::default()
             .assistant_id(assistant_id)
             .build()?;
@@ -1065,6 +1101,7 @@ impl GameAI {
         run_id: &str,
         tool_outputs: Vec<ToolsOutputs>,
     ) -> Result<(), AppError> {
+        self.add_debug_message(format!("Submitting tool outputs: {:#?}", tool_outputs));
         let submit_request = SubmitToolOutputsRunRequest {
             tool_outputs,
             stream: None,
@@ -1082,6 +1119,7 @@ impl GameAI {
     // Asynchronous method to create a character based on provided arguments, handling attributes and skills.
 
     pub async fn create_character(&self, args: &Value) -> Result<CharacterSheet, AIError> {
+        self.add_debug_message(format!("Creating character: {:#?}", args));
         // Helper function to extract a string
         fn extract_str(args: &Value, field: &str) -> Result<String, AIError> {
             args.get(field)
@@ -1279,13 +1317,14 @@ impl GameAI {
             .contacts(contacts)
             .build();
 
-        self.add_debug_message("Character creation successful".to_string());
+        self.add_debug_message(format!("Character created: {:#?}", character));
 
         Ok(character)
     }
 
     // Method to create a dummy character as a fallback during error handling.
     fn create_dummy_character(&self) -> CharacterSheet {
+        self.add_debug_message(format!("Creating dummy character."));
         let dummy_skills = Skills {
             combat: [
                 ("Unarmed Combat".to_string(), 1),
