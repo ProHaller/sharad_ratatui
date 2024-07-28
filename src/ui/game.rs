@@ -51,7 +51,7 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
     draw_game_content(f, app, left_chunk[0]);
 
     // Render spinner at the bottom of left_chunk[0]
-    if !app.show_spinner {
+    if !app.spinner_active {
         let spinner_area = Rect::new(
             left_chunk[0].x,
             left_chunk[0].bottom() - 1,

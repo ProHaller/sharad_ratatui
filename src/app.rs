@@ -76,7 +76,7 @@ pub struct App {
     pub last_user_message: Option<UserMessage>,
     pub backspace_counter: bool,
     pub spinner: Spinner,
-    pub show_spinner: bool,
+    pub spinner_active: bool,
     pub command_sender: mpsc::UnboundedSender<AppCommand>,
 }
 
@@ -135,7 +135,7 @@ impl App {
             last_user_message: None,
             backspace_counter: false,
             spinner: Spinner::new(),
-            show_spinner: false,
+            spinner_active: false,
             current_save_name: Arc::new(RwLock::new(String::new())),
         };
 
@@ -189,7 +189,7 @@ impl App {
 
     pub async fn handle_ai_response(&mut self, result: Result<GameMessage, AppError>) {
         self.stop_spinner();
-        self.add_debug_message(format!("Spinner: {:#?}", self.show_spinner));
+        self.add_debug_message(format!("Spinner: {:#?}", self.spinner_active));
 
         match result {
             Ok(game_message) => {
@@ -710,11 +710,13 @@ impl App {
     }
 
     pub fn start_spinner(&mut self) {
-        self.show_spinner = true;
+        self.spinner.start();
+        self.spinner_active = true;
     }
 
     pub fn stop_spinner(&mut self) {
-        self.show_spinner = false;
+        self.spinner.stop();
+        self.spinner_active = false;
     }
 
     pub fn scroll_up(&mut self) {
@@ -820,7 +822,6 @@ impl App {
     }
 
     pub fn on_tick(&mut self) {
-        self.spinner.tick();
         if self.settings.debug_mode {
             self.update_debug_info();
         }
