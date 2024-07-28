@@ -81,27 +81,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create an unbounded channel for AI messages.
     let (ai_sender, ai_receiver) = mpsc::unbounded_channel::<AIMessage>();
-    let (spinner_tx, mut spinner_rx) = mpsc::channel(1);
-    let spinner = Arc::new(Mutex::new(Spinner::new()));
 
-    // Initialize the application with AI message sender.
-    let (app, command_receiver) = App::new(ai_sender.clone(), Some(spinner_tx.clone())).await;
+    // Initialize the application with AI message sender
+    let (app, command_receiver) = App::new(ai_sender.clone()).await;
     let app = Arc::new(Mutex::new(app));
 
-    tokio::spawn({
-        let spinner = Arc::clone(&spinner);
-        async move {
-            while let Some(should_spin) = spinner_rx.recv().await {
-                let mut spinner = spinner.lock().await;
-                if should_spin {
-                    spinner.start();
-                } else {
-                    spinner.stop();
-                }
-            }
-        }
-    });
-    // Run the application in the terminal and handle any errors.
+    // Run the application in the terminal and handle any errors
     if let Err(err) = run_app(&mut terminal, app, command_receiver, ai_receiver).await {
         println!("Error: {:#?}", err);
     }

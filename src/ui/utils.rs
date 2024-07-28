@@ -22,45 +22,24 @@ pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
         .split(popup_layout[1])[1]
 }
 
-const SPINNER_CHARS: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-
 pub struct Spinner {
-    pub current_frame: usize,
-    pub is_spinning: bool,
-}
-impl Default for Spinner {
-    fn default() -> Self {
-        Self::new()
-    }
+    frames: Vec<char>,
+    current: usize,
 }
 
 impl Spinner {
     pub fn new() -> Self {
         Spinner {
-            current_frame: 0,
-            is_spinning: false,
+            frames: vec!['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'],
+            current: 0,
         }
-    }
-
-    pub fn start(&mut self) {
-        self.is_spinning = true;
-    }
-
-    pub fn stop(&mut self) {
-        self.is_spinning = false;
     }
 
     pub fn tick(&mut self) {
-        if self.is_spinning {
-            self.current_frame = (self.current_frame + 1) % SPINNER_CHARS.len();
-        }
+        self.current = (self.current + 1) % self.frames.len();
     }
 
-    pub fn get_frame(&self) -> char {
-        SPINNER_CHARS[self.current_frame]
+    pub fn render(&self) -> String {
+        format!(" {} ", self.frames[self.current])
     }
-}
-
-pub fn spinner_frame(spinner: &Spinner) -> String {
-    format!("AI is thinking {}", spinner.get_frame())
 }

@@ -11,6 +11,7 @@ use crate::settings_state::SettingsState;
 use crate::ui::game;
 use crate::ui::utils::Spinner;
 
+use chrono::Local;
 use copypasta::{ClipboardContext, ClipboardProvider};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::widgets::ListState;
@@ -18,6 +19,8 @@ use ratatui::{layout::Alignment, text::Line};
 use std::borrow::BorrowMut;
 use std::cell::RefCell;
 use std::fs;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -73,15 +76,13 @@ pub struct App {
     pub last_user_message: Option<UserMessage>,
     pub backspace_counter: bool,
     pub spinner: Spinner,
+    pub show_spinner: bool,
     pub command_sender: mpsc::UnboundedSender<AppCommand>,
-    pub spinner_sender: Option<mpsc::Sender<bool>>,
-    pub spinner_active: RefCell<bool>,
 }
 
 impl App {
     pub async fn new(
         ai_sender: mpsc::UnboundedSender<AIMessage>,
-        spinner_sender: Option<mpsc::Sender<bool>>,
     ) -> (Self, mpsc::UnboundedReceiver<AppCommand>) {
         let (command_sender, command_receiver) = mpsc::unbounded_channel();
 
@@ -134,9 +135,8 @@ impl App {
             last_user_message: None,
             backspace_counter: false,
             spinner: Spinner::new(),
+            show_spinner: false,
             current_save_name: Arc::new(RwLock::new(String::new())),
-            spinner_sender,
-            spinner_active: RefCell::new(false),
         };
 
         (app, command_receiver)
@@ -175,32 +175,21 @@ impl App {
         let ai_client = self.ai_client.clone();
         let current_game = self.current_game.clone();
         let sender = self.command_sender.clone();
-        let spinner_sender = self.spinner_sender.clone();
 
         tokio::spawn(async move {
             if let (Some(mut ai), Some(game_state)) = (ai_client, current_game) {
                 let mut game_state = game_state.lock().await;
                 let result = ai.send_message(&formatted_message, &mut game_state).await;
-                match result {
-                    Ok(game_message) => {
-                        let _ = sender.send(AppCommand::AIResponse(Ok(game_message)));
-                    }
-                    Err(e) => {
-                        let _ = sender.send(AppCommand::AIResponse(Err(e)));
-                    }
-                }
+                let _ = sender.send(AppCommand::AIResponse(result));
             } else {
                 let _ = sender.send(AppCommand::AIResponse(Err(AppError::NoCurrentGame)));
-            }
-            // Stop the spinner after processing is complete
-            if let Some(spinner_sender) = spinner_sender {
-                let _ = spinner_sender.try_send(false);
             }
         });
     }
 
     pub async fn handle_ai_response(&mut self, result: Result<GameMessage, AppError>) {
         self.stop_spinner();
+        self.add_debug_message(format!("Spinner: {:#?}", self.show_spinner));
 
         match result {
             Ok(game_message) => {
@@ -210,25 +199,31 @@ impl App {
                 ));
 
                 let game_message_json = serde_json::to_string(&game_message).unwrap();
+                self.add_debug_message(format!("Game message: {:#?}", game_message_json.clone()));
                 self.add_message(Message::new(MessageType::Game, game_message_json));
 
                 // Update the UI
                 self.cached_game_content = None; // Force recalculation of cached content
                 self.cached_content_len = 0;
-                self.scroll_to_bottom();
 
                 if let Some(character_sheet) = game_message.character_sheet {
+                    self.add_debug_message("Updating character sheet".to_string());
                     self.update_character_sheet(character_sheet).await;
                 }
+                self.add_debug_message("Updated character sheet".to_string());
 
                 if let Err(e) = self.save_current_game().await {
+                    self.add_debug_message(format!("Failed to save game: {:#?}", e));
                     self.add_message(Message::new(
                         MessageType::System,
                         format!("Failed to save game after AI response: {:#?}", e),
                     ));
                 }
+                self.add_debug_message("saved game".to_string());
+                self.scroll_to_bottom();
             }
             Err(e) => {
+                self.add_debug_message(format!("Error: {:#?}", e));
                 self.add_message(Message::new(
                     MessageType::System,
                     format!("AI Error: {:#?}", e),
@@ -714,18 +709,12 @@ impl App {
         self.select_main_menu_option();
     }
 
-    pub fn start_spinner(&self) {
-        if let Some(sender) = &self.spinner_sender {
-            let _ = sender.try_send(true);
-        }
-        *self.spinner_active.borrow_mut() = true;
+    pub fn start_spinner(&mut self) {
+        self.show_spinner = true;
     }
 
-    pub fn stop_spinner(&self) {
-        if let Some(sender) = &self.spinner_sender {
-            let _ = sender.try_send(false);
-        }
-        *self.spinner_active.borrow_mut() = false;
+    pub fn stop_spinner(&mut self) {
+        self.show_spinner = false;
     }
 
     pub fn scroll_up(&mut self) {
@@ -752,6 +741,19 @@ impl App {
     pub fn add_debug_message(&self, message: String) {
         self.debug_info.borrow_mut().push_str(&message);
         self.debug_info.borrow_mut().push('\n');
+
+        if !self.settings.debug_mode {
+            return;
+        }
+
+        if let Ok(mut file) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("sharad_debug.log")
+        {
+            let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
+            let _ = writeln!(file, "[{}] {}", timestamp, &message);
+        }
     }
 
     pub fn update_debug_info(&mut self) {
@@ -818,6 +820,7 @@ impl App {
     }
 
     pub fn on_tick(&mut self) {
+        self.spinner.tick();
         if self.settings.debug_mode {
             self.update_debug_info();
         }
@@ -909,9 +912,12 @@ impl App {
     }
 
     pub async fn save_current_game(&self) -> Result<(), AppError> {
+        self.add_debug_message("Saving current game".to_string());
         if let Some(game_state) = &self.current_game {
             let game_state = game_state.lock().await;
+            self.add_debug_message(format!("Saving Current game 2: {:#?}", game_state));
             let save_name = &game_state.save_name;
+            self.add_debug_message(format!("Saving Current game. Save name: {}", save_name));
             self.save_game(save_name).await?;
             self.add_debug_message(format!("Game saved with name: {}", save_name));
             Ok(())
@@ -922,25 +928,45 @@ impl App {
     }
 
     pub async fn save_game(&self, save_name: &str) -> Result<(), AppError> {
-        if let Some(game_state) = &self.current_game {
-            let game_state = game_state.lock().await;
+        self.add_debug_message("Saving game, function save game".to_string());
+
+        let game_state = match &self.current_game {
+            Some(arc_mutex) => arc_mutex,
+            None => return Err(AppError::NoCurrentGame),
+        };
+
+        // Clone the Arc to get a new reference
+        let game_state_clone = Arc::clone(game_state);
+
+        // Clone the save_name to own the data
+        let save_name = save_name.to_string();
+
+        // Spawn a new task to handle the saving process
+        tokio::spawn(async move {
             let save_dir = "./data/save";
             if !std::path::Path::new(save_dir).exists() {
-                tokio::fs::create_dir_all(save_dir)
-                    .await
-                    .map_err(AppError::IO)?;
+                if let Err(e) = tokio::fs::create_dir_all(save_dir).await {
+                    return Err(AppError::IO(e));
+                }
             }
 
             let save_path = format!("{}/{}.json", save_dir, save_name);
-            game_state
-                .save_to_file(&save_path)
-                .map_err(|e| AppError::IO(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
 
-            self.update_save_name(game_state.save_name.clone()).await;
+            // Now we can safely lock the mutex without blocking the main thread
+            let game_state = game_state_clone.lock().await;
+
+            if let Err(e) = game_state.save_to_file(&save_path) {
+                return Err(AppError::IO(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    e,
+                )));
+            }
+
             Ok(())
-        } else {
-            Err(AppError::NoCurrentGame)
-        }
+        });
+
+        self.add_debug_message("Save process initiated".to_string());
+        Ok(())
     }
 
     pub fn scan_save_files() -> Vec<String> {
