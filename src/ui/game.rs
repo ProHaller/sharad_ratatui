@@ -9,7 +9,6 @@ use ratatui::{
     widgets::*,
     Frame,
 };
-use std::borrow::Borrow;
 use std::cell::RefCell;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
@@ -30,45 +29,45 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
         return;
     }
 
-    let (main_chunks, left_chunks, game_info_area) = CACHED_LAYOUTS.with(|cache| {
+    let (_main_chunk, left_chunk, game_info_area) = CACHED_LAYOUTS.with(|cache| {
         let mut cache = cache.borrow_mut();
         if cache.as_ref().map_or(true, |&(area, _, _)| area != size) {
-            let main_chunks = Layout::default()
+            let main_chunk = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
                 .split(size);
 
-            let left_chunks = Layout::default()
+            let left_chunk = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Percentage(80), Constraint::Percentage(20)])
-                .split(main_chunks[0]);
+                .split(main_chunk[0]);
 
-            let new_cache = (size, main_chunks.to_vec(), left_chunks.to_vec());
+            let new_cache = (size, main_chunk.to_vec(), left_chunk.to_vec());
             *cache = Some(new_cache);
         }
 
         let (_, ref main_chunks, ref left_chunks) = cache.as_ref().unwrap();
         (main_chunks.clone(), left_chunks.clone(), main_chunks[1])
     });
-    draw_game_content(f, app, left_chunks[0]);
+    draw_game_content(f, app, left_chunk[0]);
 
     // Render spinner at the bottom if active
-    if *app.spinner_active.borrow() {
+    if app.spinner.is_spinning {
         let spinner_area = Rect::new(
-            left_chunks[0].x,
-            left_chunks[0].bottom() - 1,
-            left_chunks[0].width,
+            left_chunk[0].x,
+            left_chunk[0].bottom() - 1,
+            left_chunk[0].width,
             1,
         );
 
-        let spinner_text = spinner_frame(&mut app.spinner);
+        let spinner_text = spinner_frame(&app.spinner);
         let spinner_widget = Paragraph::new(spinner_text)
             .style(Style::default().fg(Color::Yellow))
             .alignment(Alignment::Center);
 
         f.render_widget(spinner_widget, spinner_area);
     }
-    draw_user_input(f, app, left_chunks[1]);
+    draw_user_input(f, app, left_chunk[1]);
 
     if let Some(game_state) = &app.current_game {
         // Use try_lock() instead of blocking_lock()
@@ -210,7 +209,7 @@ fn draw_attributes(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
 
 // Display derived attributes like initiative and limits.
 fn draw_derived_attributes(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
-    let derived = vec![
+    let derived = [
         format!(
             "Initiative: {}+{}d6",
             sheet.initiative.0, sheet.initiative.1
@@ -541,6 +540,16 @@ pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
         .block(Block::default().borders(Borders::NONE))
         .wrap(Wrap { trim: true });
 
+    if *app.spinner_active.borrow() {
+        let spinner_area = Rect::new(fluff_area.x, fluff_area.bottom() - 1, fluff_area.width, 1);
+
+        let spinner_text = spinner_frame(&app.spinner);
+        let spinner_widget = Paragraph::new(spinner_text)
+            .style(Style::default().fg(Color::Yellow))
+            .alignment(Alignment::Center);
+
+        f.render_widget(spinner_widget, spinner_area);
+    }
     f.render_widget(content, fluff_area);
 
     app.visible_lines = max_height;
@@ -711,11 +720,9 @@ fn parse_markdown(line: String, base_style: Style) -> Line<'static> {
                         ));
                         current_text.clear();
                     }
-                } else {
-                    if !current_text.is_empty() {
-                        spans.push(Span::styled(current_text.clone(), base_style));
-                        current_text.clear();
-                    }
+                } else if !current_text.is_empty() {
+                    spans.push(Span::styled(current_text.clone(), base_style));
+                    current_text.clear();
                 }
                 in_bold = !in_bold;
             } else {

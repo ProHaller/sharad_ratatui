@@ -110,17 +110,18 @@ pub enum AIError {
 }
 
 // Structure representing the game's AI component.
+
 pub struct GameAI {
-    pub client: Client<OpenAIConfig>, // OpenAI client configured with an API key.
+    pub client: Client<OpenAIConfig>,
     pub conversation_state: Arc<Mutex<Option<GameConversationState>>>,
-    pub debug_callback: Arc<dyn Fn(String) + Send + Sync>, // Debug callback for logging purposes.
+    pub debug_callback: Arc<dyn Fn(String) + Send + Sync>,
 }
 
 impl Clone for GameAI {
     fn clone(&self) -> Self {
         GameAI {
             client: self.client.clone(),
-            conversation_state: self.conversation_state.clone(),
+            conversation_state: Arc::clone(&self.conversation_state),
             debug_callback: Arc::clone(&self.debug_callback),
         }
     }
@@ -150,7 +151,7 @@ impl GameAI {
 
     // Asynchronous method to start a new conversation thread.
     pub async fn start_new_conversation(
-        &mut self,
+        &self,
         assistant_id: &str,
         initial_game_state: GameConversationState,
     ) -> Result<(), AIError> {
@@ -160,11 +161,12 @@ impl GameAI {
             .create(CreateThreadRequestArgs::default().build()?)
             .await?;
 
-        self.conversation_state = Arc::new(tokio::sync::Mutex::new(Some(GameConversationState {
+        let mut state = self.conversation_state.lock().await;
+        *state = Some(GameConversationState {
             assistant_id: assistant_id.to_string(),
             thread_id: thread.id.clone(),
             ..initial_game_state
-        })));
+        });
 
         let initial_message = CreateMessageRequestArgs::default()
             .role(MessageRole::User)
@@ -180,25 +182,24 @@ impl GameAI {
         Ok(())
     }
 
-    // Asynchronous method to load an existing conversation state.
-
-    pub async fn load_conversation(&self, state: GameConversationState) {
+    //FIX: Why did I put this here?
+    pub async fn load_conversation(&self, _state: GameConversationState) {
         let mut _conversation_state = self.conversation_state.lock().await;
     }
 
-    // Asynchronous method to send a message within the conversation, handling game state updates.
-
     pub async fn send_message(
-        &self,
+        &mut self,
         formatted_message: &str,
         game_state: &mut GameState,
     ) -> Result<message::GameMessage, AppError> {
-        let mut game_state = game_state;
-        // Change the return type to message::GameMessage
-        let result: message::GameMessage = self
-            .update_game_state(&mut game_state, formatted_message)
+        let (thread_id, assistant_id) = self.get_conversation_ids().await?;
+        self.add_message_to_thread(&thread_id, formatted_message)
             .await?;
-        Ok(result)
+        let run = self.create_run(&thread_id, &assistant_id).await?;
+        self.wait_for_run_completion(&thread_id, &run.id, game_state)
+            .await?;
+        let response = self.get_latest_message(&thread_id).await?;
+        self.update_game_state(game_state, &response).await
     }
 
     async fn wait_for_run_completion(
@@ -245,8 +246,12 @@ impl GameAI {
         game_state: &mut GameState,
         response: &str,
     ) -> Result<message::GameMessage, AppError> {
+        self.add_debug_message(format!("Response: {:#?}", response));
         let game_message: message::GameMessage = serde_json::from_str(response).map_err(|e| {
-            AppError::GameStateParseError(format!("Failed to parse GameMessage: {}", e))
+            AppError::GameStateParseError(format!(
+                "Failed to parse GameMessage: {:#?}\n Message: {:#?}",
+                e, response
+            ))
         })?;
 
         if let Some(new_character_sheet) = game_message.character_sheet.clone() {
@@ -1020,7 +1025,7 @@ impl GameAI {
     }
 
     // Helper methods
-    async fn get_conversation_ids(&self) -> Result<(String, String), AppError> {
+    pub async fn get_conversation_ids(&self) -> Result<(String, String), AppError> {
         let state = self.conversation_state.lock().await;
         state
             .as_ref()
@@ -1224,7 +1229,7 @@ impl GameAI {
                     })
                     .collect::<HashMap<String, Item>>()
             })
-            .unwrap_or_else(HashMap::new);
+            .unwrap_or_default();
 
         // Extract contacts
         let contacts = args
@@ -1251,7 +1256,7 @@ impl GameAI {
                     })
                     .collect::<HashMap<String, Contact>>()
             })
-            .unwrap_or_else(HashMap::new);
+            .unwrap_or_default();
 
         // Create base character sheet using the builder pattern
         let character = CharacterSheetBuilder::new(name, race, gender, backstory, main)

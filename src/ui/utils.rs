@@ -1,7 +1,6 @@
 // ui/utils.rs
 
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use std::time::Duration;
 
 pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     let popup_layout = Layout::default()
@@ -23,48 +22,42 @@ pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
         .split(popup_layout[1])[1]
 }
 
-use std::sync::{Arc, Mutex};
-use std::thread;
-
 const SPINNER_CHARS: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-const SPINNER_INTERVAL: Duration = Duration::from_millis(100);
 
 pub struct Spinner {
-    current_frame: Arc<Mutex<usize>>,
-    is_spinning: Arc<Mutex<bool>>,
+    pub current_frame: usize,
+    pub is_spinning: bool,
+}
+impl Default for Spinner {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Spinner {
     pub fn new() -> Self {
         Spinner {
-            current_frame: Arc::new(Mutex::new(0)),
-            is_spinning: Arc::new(Mutex::new(false)),
+            current_frame: 0,
+            is_spinning: false,
         }
     }
 
-    pub fn start(&self) {
-        let current_frame = Arc::clone(&self.current_frame);
-        let is_spinning = Arc::clone(&self.is_spinning);
-
-        *is_spinning.lock().unwrap() = true;
-
-        thread::spawn(move || {
-            while *is_spinning.lock().unwrap() {
-                let mut frame = current_frame.lock().unwrap();
-                *frame = (*frame + 1) % SPINNER_CHARS.len();
-                drop(frame); // Explicitly drop the lock
-                thread::sleep(SPINNER_INTERVAL);
-            }
-        });
+    pub fn start(&mut self) {
+        self.is_spinning = true;
     }
 
-    pub fn stop(&self) {
-        *self.is_spinning.lock().unwrap() = false;
+    pub fn stop(&mut self) {
+        self.is_spinning = false;
+    }
+
+    pub fn tick(&mut self) {
+        if self.is_spinning {
+            self.current_frame = (self.current_frame + 1) % SPINNER_CHARS.len();
+        }
     }
 
     pub fn get_frame(&self) -> char {
-        let frame = *self.current_frame.lock().unwrap();
-        SPINNER_CHARS[frame]
+        SPINNER_CHARS[self.current_frame]
     }
 }
 

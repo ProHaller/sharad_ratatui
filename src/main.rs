@@ -2,6 +2,8 @@
 use crate::app::{App, AppCommand};
 use crate::cleanup::cleanup;
 use crate::message::{AIMessage, Message, MessageType};
+use crate::ui::utils::Spinner;
+
 use crossterm::{
     event::{self, Event, KeyEventKind}, // Event handling from crossterm for input events.
     execute,                            // Helper macro to execute terminal commands.
@@ -79,11 +81,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create an unbounded channel for AI messages.
     let (ai_sender, ai_receiver) = mpsc::unbounded_channel::<AIMessage>();
+    let (spinner_tx, mut spinner_rx) = mpsc::channel(1);
+    let spinner = Arc::new(Mutex::new(Spinner::new()));
 
     // Initialize the application with AI message sender.
-    let (app, command_receiver) = App::new(ai_sender.clone()).await;
+    let (app, command_receiver) = App::new(ai_sender.clone(), Some(spinner_tx.clone())).await;
     let app = Arc::new(Mutex::new(app));
 
+    tokio::spawn({
+        let spinner = Arc::clone(&spinner);
+        async move {
+            while let Some(should_spin) = spinner_rx.recv().await {
+                let mut spinner = spinner.lock().await;
+                if should_spin {
+                    spinner.start();
+                } else {
+                    spinner.stop();
+                }
+            }
+        }
+    });
     // Run the application in the terminal and handle any errors.
     if let Err(err) = run_app(&mut terminal, app, command_receiver, ai_receiver).await {
         println!("Error: {:#?}", err);
@@ -145,7 +162,7 @@ async fn run_app(
                     },
                     AppCommand::AIResponse(result) => {
                         let mut app = app.lock().await;
-                        app.handle_ai_response(result);
+                        app.handle_ai_response(result).await;
                     },
                     AppCommand::LoadGame(path) => {
                         if let Err(e) = app.lock().await.load_game(&path).await {
@@ -183,7 +200,7 @@ async fn run_app(
                                 app.game_content.borrow_mut().pop();
                             }
                         }
-                        app.handle_ai_response(response);
+                        app.handle_ai_response(response).await;
                     }
                 }
             }

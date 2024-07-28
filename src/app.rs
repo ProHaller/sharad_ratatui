@@ -10,7 +10,6 @@ use crate::settings::Settings;
 use crate::settings_state::SettingsState;
 use crate::ui::game;
 use crate::ui::utils::Spinner;
-use crate::utils::blocking_lock;
 
 use copypasta::{ClipboardContext, ClipboardProvider};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
@@ -45,7 +44,7 @@ pub struct App {
     pub should_quit: bool,
     pub state: AppState,
     pub main_menu_state: ListState,
-    pub ai_client: Option<Arc<GameAI>>,
+    pub ai_client: Option<GameAI>,
     pub current_game: Option<Arc<Mutex<GameState>>>,
     pub debug_info: RefCell<String>,
     pub game_content: RefCell<Vec<message::Message>>,
@@ -73,13 +72,15 @@ pub struct App {
     pub last_user_message: Option<UserMessage>,
     pub backspace_counter: bool,
     pub spinner: Spinner,
-    pub spinner_active: RefCell<bool>,
     pub command_sender: mpsc::UnboundedSender<AppCommand>,
+    pub spinner_sender: Option<mpsc::Sender<bool>>,
+    pub spinner_active: RefCell<bool>,
 }
 
 impl App {
     pub async fn new(
         ai_sender: mpsc::UnboundedSender<AIMessage>,
+        spinner_sender: Option<mpsc::Sender<bool>>,
     ) -> (Self, mpsc::UnboundedReceiver<AppCommand>) {
         let (command_sender, command_receiver) = mpsc::unbounded_channel();
 
@@ -132,8 +133,9 @@ impl App {
             last_user_message: None,
             backspace_counter: false,
             spinner: Spinner::new(),
-            spinner_active: RefCell::new(false),
             current_save_name: Arc::new(RwLock::new(String::new())),
+            spinner_sender,
+            spinner_active: RefCell::new(false),
         };
 
         (app, command_receiver)
@@ -158,27 +160,26 @@ impl App {
             let _ = ai_sender.send(message::AIMessage::Debug(message));
         };
 
-        self.ai_client = Some(Arc::new(GameAI::new(api_key, debug_callback).await?));
+        self.ai_client = Some(GameAI::new(api_key, debug_callback).await?);
 
         Ok(())
     }
 
-    pub fn process_message(&self, message: String) {
+    pub fn process_message(&mut self, message: String) {
         let user_message = create_user_message(&self.settings.language, &message);
         let formatted_message = serde_json::to_string(&user_message).unwrap();
 
         self.start_spinner();
 
-        // Clone necessary data for the task
         let ai_client = self.ai_client.clone();
         let current_game = self.current_game.clone();
         let sender = self.command_sender.clone();
+        let spinner_sender = self.spinner_sender.clone();
 
-        // Spawn a new task for the API call
         tokio::spawn(async move {
-            if let (Some(ai), Some(game_state)) = (ai_client, current_game) {
+            if let (Some(mut ai), Some(game_state)) = (ai_client, current_game) {
                 let mut game_state = game_state.lock().await;
-                let result = ai.send_message(&formatted_message, &mut *game_state).await;
+                let result = ai.send_message(&formatted_message, &mut game_state).await;
                 match result {
                     Ok(game_message) => {
                         let _ = sender.send(AppCommand::AIResponse(Ok(game_message)));
@@ -190,10 +191,16 @@ impl App {
             } else {
                 let _ = sender.send(AppCommand::AIResponse(Err(AppError::NoCurrentGame)));
             }
+            // Stop the spinner after processing is complete
+            if let Some(spinner_sender) = spinner_sender {
+                let _ = spinner_sender.try_send(false);
+            }
         });
     }
 
     pub async fn handle_ai_response(&mut self, result: Result<GameMessage, AppError>) {
+        self.stop_spinner();
+
         match result {
             Ok(game_message) => {
                 self.add_debug_message(format!(
@@ -204,8 +211,13 @@ impl App {
                 let game_message_json = serde_json::to_string(&game_message).unwrap();
                 self.add_message(Message::new(MessageType::Game, game_message_json));
 
+                // Update the UI
+                self.cached_game_content = None; // Force recalculation of cached content
+                self.cached_content_len = 0;
+                self.scroll_to_bottom();
+
                 if let Some(character_sheet) = game_message.character_sheet {
-                    self.update_character_sheet(character_sheet);
+                    self.update_character_sheet(character_sheet).await;
                 }
 
                 if let Err(e) = self.save_current_game().await {
@@ -701,14 +713,18 @@ impl App {
         self.select_main_menu_option();
     }
 
-    fn start_spinner(&self) {
+    pub fn start_spinner(&self) {
+        if let Some(sender) = &self.spinner_sender {
+            let _ = sender.try_send(true);
+        }
         *self.spinner_active.borrow_mut() = true;
-        self.spinner.start();
     }
 
-    fn stop_spinner(&self) {
+    pub fn stop_spinner(&self) {
+        if let Some(sender) = &self.spinner_sender {
+            let _ = sender.try_send(false);
+        }
         *self.spinner_active.borrow_mut() = false;
-        self.spinner.stop();
     }
 
     pub fn scroll_up(&mut self) {
@@ -760,27 +776,43 @@ impl App {
         let formatted_message = serde_json::to_string(&user_message)?;
 
         self.start_spinner();
+
         let result = {
-            let ai_client = &self.ai_client;
-            let current_game = self.current_game.clone();
-            match (ai_client, current_game) {
-                (Some(ai), Some(game_state)) => {
-                    let mut game_state = game_state.lock().await;
-                    ai.send_message(&formatted_message, &mut *game_state).await
-                }
-                (None, _) => Err(AppError::AIClientNotInitialized),
-                (_, None) => Err(AppError::NoCurrentGame),
+            if let (Some(ai), Some(game_state)) = (&mut self.ai_client, &self.current_game) {
+                let mut game_state = game_state.lock().await;
+                ai.send_message(&formatted_message, &mut game_state).await
+            } else if self.ai_client.is_none() {
+                Err(AppError::AIClientNotInitialized)
+            } else {
+                Err(AppError::NoCurrentGame)
             }
         };
 
         self.stop_spinner();
 
         // Send the result through the AI message channel
-        if let Err(e) = self.ai_sender.send(AIMessage::Response(result)) {
-            eprintln!("Failed to send AI response: {}", e);
+        match &result {
+            Ok(game_message) => {
+                if let Err(e) = self
+                    .ai_sender
+                    .send(AIMessage::Response(Ok(game_message.clone())))
+                {
+                    eprintln!("Failed to send AI response: {}", e);
+                }
+                self.add_message(Message::new(
+                    MessageType::Game,
+                    serde_json::to_string(game_message)?,
+                ));
+                if let Some(character_sheet) = &game_message.character_sheet {
+                    self.update_character_sheet(character_sheet.clone()).await;
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to send AI error response {:?}", e);
+            }
         }
 
-        Ok(())
+        result.map(|_| ())
     }
 
     pub fn on_tick(&mut self) {
@@ -793,6 +825,7 @@ impl App {
         &mut self,
         save_name: String,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // Initialize AI client if not already initialized
         if self.ai_client.is_none() {
             self.initialize_ai_client().await?;
         }
@@ -800,27 +833,28 @@ impl App {
         let assistant_id = "asst_4kaphuqlAkwnsbBrf482Z6dR";
 
         if let Some(ai) = &self.ai_client {
-            let mut ai = Arc::clone(ai);
-            Arc::make_mut(&mut ai)
-                .start_new_conversation(
-                    assistant_id,
-                    GameConversationState {
-                        assistant_id: assistant_id.to_string(),
-                        thread_id: String::new(),
-                        character_sheet: None,
-                    },
-                )
-                .await?;
+            // Start a new conversation
+            ai.start_new_conversation(
+                assistant_id,
+                GameConversationState {
+                    assistant_id: assistant_id.to_string(),
+                    thread_id: String::new(),
+                    character_sheet: None,
+                },
+            )
+            .await?;
 
+            // Get the thread_id from the conversation state
             let thread_id = ai
                 .conversation_state
                 .lock()
                 .await
                 .as_ref()
-                .unwrap()
+                .ok_or("Conversation state not initialized")?
                 .thread_id
                 .clone();
 
+            // Create a new game state
             let new_game_state = Arc::new(Mutex::new(GameState {
                 assistant_id: assistant_id.to_string(),
                 thread_id,
@@ -832,6 +866,7 @@ impl App {
 
             self.current_game = Some(new_game_state);
 
+            // Save the game
             self.save_game(&save_name).await?;
 
             self.state = AppState::InGame;
@@ -840,8 +875,14 @@ impl App {
                 format!("New game '{}' started!", save_name),
             ));
 
+            // Start the spinner
             self.start_spinner();
-            self.process_message(format!("Start the game. When necessary, create a character sheet by calling the `create_character_sheet` function with the necessary details including the inventory. Respond only in the following language: {}", self.settings.language));
+
+            // Send initial message to start the game
+            self.process_message(format!(
+            "Start the game. When necessary, create a character sheet by calling the `create_character_sheet` function with the necessary details including the inventory. Respond only in the following language: {}",
+            self.settings.language
+        ));
 
             Ok(())
         } else {
@@ -851,30 +892,17 @@ impl App {
 
     pub async fn update_character_sheet(&mut self, character_sheet: CharacterSheet) {
         if let Some(game_state) = &self.current_game {
-            let mut game_state = blocking_lock(game_state);
-            // Update the main character sheet
-            game_state.character_sheet = Some(character_sheet.clone());
-
-            // Update the character in the characters vector
-            if let Some(existing_character) = game_state
-                .characters
-                .iter_mut()
-                .find(|c| c.name == character_sheet.name)
-            {
-                *existing_character = character_sheet;
-            } else {
-                game_state.characters.push(character_sheet);
+            let mut game_state = game_state.lock().await;
+            if let Some(ai) = &self.ai_client {
+                if let Err(e) = ai.update_character_sheet(&mut game_state, character_sheet) {
+                    self.add_message(Message::new(
+                        MessageType::System,
+                        format!("Failed to update character sheet: {:#?}", e),
+                    ));
+                } else {
+                    self.add_debug_message("Character sheet updated successfully".to_string());
+                }
             }
-        }
-
-        // Save the updated game state
-        if let Err(e) = self.save_current_game().await {
-            self.add_message(Message::new(
-                MessageType::System,
-                format!("Failed to save game after character sheet update: {:#?}", e),
-            ));
-        } else {
-            self.add_debug_message("Game saved after character sheet update".to_string());
         }
     }
 
@@ -1068,7 +1096,7 @@ impl App {
         };
 
         // Clone the Arc to get a new reference to the AI client
-        let ai_client = Arc::clone(self.ai_client.as_ref().unwrap());
+        let ai_client = self.ai_client.as_ref().unwrap();
 
         // Use the cloned Arc to call load_conversation
         ai_client.load_conversation(conversation_state).await;
