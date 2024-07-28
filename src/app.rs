@@ -24,6 +24,7 @@ use std::io::Write;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 use tokio::sync::{mpsc, Mutex};
 use tui_input::backend::crossterm::EventHandler;
@@ -77,6 +78,7 @@ pub struct App {
     pub backspace_counter: bool,
     pub spinner: Spinner,
     pub spinner_active: bool,
+    pub last_spinner_update: Instant,
     pub command_sender: mpsc::UnboundedSender<AppCommand>,
 }
 
@@ -136,6 +138,7 @@ impl App {
             backspace_counter: false,
             spinner: Spinner::new(),
             spinner_active: false,
+            last_spinner_update: Instant::now(),
             current_save_name: Arc::new(RwLock::new(String::new())),
         };
 
@@ -710,13 +713,19 @@ impl App {
     }
 
     pub fn start_spinner(&mut self) {
-        self.spinner.start();
         self.spinner_active = true;
+        self.last_spinner_update = Instant::now();
     }
 
     pub fn stop_spinner(&mut self) {
-        self.spinner.stop();
         self.spinner_active = false;
+    }
+
+    pub fn update_spinner(&mut self) {
+        if self.spinner_active && self.last_spinner_update.elapsed() >= Duration::from_millis(100) {
+            self.spinner.next_frame();
+            self.last_spinner_update = Instant::now();
+        }
     }
 
     pub fn scroll_up(&mut self) {

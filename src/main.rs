@@ -9,12 +9,13 @@ use crossterm::{
     execute,                            // Helper macro to execute terminal commands.
     terminal::{enable_raw_mode, EnterAlternateScreen, SetSize}, // Terminal manipulation utilities.
 };
-use ratatui::{backend::CrosstermBackend, Terminal}; // Terminal backend for drawing UI.
+use ratatui::{backend::CrosstermBackend, Terminal};
 use std::panic; // Panic handling for cleanup.
 use std::{io, sync::Arc, time::Duration}; // Standard I/O and concurrency utilities.
 use tokio::sync::mpsc; // Asynchronous message passing channel.
 use tokio::time::sleep;
-use tokio::{sync::Mutex, time::Instant}; // Asynchronous mutex and time utilities.
+use tokio::{sync::Mutex, time::Instant};
+use ui::utils::spinner_frame; // Terminal backend for drawing UI. // Asynchronous mutex and time utilities.
 
 // Modules are declared which should be assumed to be part of the application architecture.
 pub mod ai;

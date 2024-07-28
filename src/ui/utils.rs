@@ -22,48 +22,28 @@ pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
         .split(popup_layout[1])[1]
 }
 
-use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::Duration;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 const SPINNER_CHARS: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-const SPINNER_INTERVAL: Duration = Duration::from_millis(100);
 
 pub struct Spinner {
-    current_frame: Arc<Mutex<usize>>,
-    is_spinning: Arc<Mutex<bool>>,
+    current_frame: Arc<AtomicUsize>,
 }
 
 impl Spinner {
     pub fn new() -> Self {
         Spinner {
-            current_frame: Arc::new(Mutex::new(0)),
-            is_spinning: Arc::new(Mutex::new(false)),
+            current_frame: Arc::new(AtomicUsize::new(0)),
         }
     }
 
-    pub fn start(&self) {
-        let current_frame = Arc::clone(&self.current_frame);
-        let is_spinning = Arc::clone(&self.is_spinning);
-
-        *is_spinning.lock().unwrap() = true;
-
-        thread::spawn(move || {
-            while *is_spinning.lock().unwrap() {
-                let mut frame = current_frame.lock().unwrap();
-                *frame = (*frame + 1) % SPINNER_CHARS.len();
-                drop(frame); // Explicitly drop the lock
-                thread::sleep(SPINNER_INTERVAL);
-            }
-        });
-    }
-
-    pub fn stop(&self) {
-        *self.is_spinning.lock().unwrap() = false;
+    pub fn next_frame(&self) {
+        self.current_frame.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn get_frame(&self) -> char {
-        let frame = *self.current_frame.lock().unwrap();
+        let frame = self.current_frame.load(Ordering::Relaxed) % SPINNER_CHARS.len();
         SPINNER_CHARS[frame]
     }
 }
