@@ -51,6 +51,7 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
     });
     draw_game_content(f, app, left_chunk[0]);
 
+    draw_user_input(f, app, left_chunk[1]);
     app.update_spinner();
     if app.spinner_active {
         let spinner_area = Rect::new(
@@ -67,25 +68,33 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
 
         f.render_widget(spinner_widget, spinner_area);
     }
-    draw_user_input(f, app, left_chunk[1]);
 
     if let Some(game_state) = &app.current_game {
-        // Use try_lock() instead of blocking_lock()
-        if let Ok(game_state) = game_state.try_lock() {
-            if let Some(sheet) = &game_state.character_sheet {
-                draw_character_sheet(f, sheet, game_info_area);
-            } else {
-                let no_character = Paragraph::new("No character sheet available.")
-                    .style(Style::default().fg(Color::Yellow))
-                    .alignment(Alignment::Center);
-                f.render_widget(no_character, game_info_area);
+        match game_state.try_lock() {
+            Ok(locked_game_state) => {
+                if let Some(sheet) = &locked_game_state.character_sheet {
+                    // Update the last known character sheet
+                    app.last_known_character_sheet = Some(sheet.clone());
+                    draw_character_sheet(f, sheet, game_info_area);
+                } else {
+                    app.last_known_character_sheet = None;
+                    let no_character = Paragraph::new("No character sheet available.")
+                        .style(Style::default().fg(Color::Yellow))
+                        .alignment(Alignment::Center);
+                    f.render_widget(no_character, game_info_area);
+                }
             }
-        } else {
-            // If we can't get the lock, display a message
-            let locked_message = Paragraph::new("Character sheet is being updated...")
-                .style(Style::default().fg(Color::Yellow))
-                .alignment(Alignment::Center);
-            f.render_widget(locked_message, game_info_area);
+            Err(_) => {
+                // If we can't get the lock, use the last known character sheet
+                if let Some(last_sheet) = &app.last_known_character_sheet {
+                    draw_character_sheet(f, last_sheet, game_info_area);
+                } else {
+                    let no_character = Paragraph::new("No character sheet available.")
+                        .style(Style::default().fg(Color::Yellow))
+                        .alignment(Alignment::Center);
+                    f.render_widget(no_character, game_info_area);
+                }
+            }
         }
     } else {
         app.add_debug_message("No active game".to_string());

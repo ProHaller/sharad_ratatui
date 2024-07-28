@@ -80,6 +80,7 @@ pub struct App {
     pub spinner_active: bool,
     pub last_spinner_update: Instant,
     pub command_sender: mpsc::UnboundedSender<AppCommand>,
+    pub last_known_character_sheet: Option<CharacterSheet>,
 }
 
 impl App {
@@ -140,6 +141,7 @@ impl App {
             spinner_active: false,
             last_spinner_update: Instant::now(),
             current_save_name: Arc::new(RwLock::new(String::new())),
+            last_known_character_sheet: None,
         };
 
         (app, command_receiver)
