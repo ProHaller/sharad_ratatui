@@ -55,7 +55,7 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
     if app.spinner_active {
         let spinner_area = Rect::new(
             left_chunk[0].x,
-            left_chunk[0].bottom(),
+            left_chunk[0].bottom() - 1,
             left_chunk[0].width,
             1,
         );
