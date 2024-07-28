@@ -52,19 +52,21 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
     draw_game_content(f, app, left_chunk[0]);
 
     app.update_spinner();
-    let spinner_area = Rect::new(
-        left_chunk[0].x,
-        left_chunk[0].bottom(),
-        left_chunk[0].width,
-        1,
-    );
+    if app.spinner_active {
+        let spinner_area = Rect::new(
+            left_chunk[0].x,
+            left_chunk[0].bottom(),
+            left_chunk[0].width,
+            1,
+        );
 
-    let spinner_text = spinner_frame(&app.spinner);
-    let spinner_widget = Paragraph::new(spinner_text)
-        .style(Style::default().fg(Color::Yellow))
-        .alignment(Alignment::Center);
+        let spinner_text = spinner_frame(&app.spinner);
+        let spinner_widget = Paragraph::new(spinner_text)
+            .style(Style::default().fg(Color::Yellow))
+            .alignment(Alignment::Center);
 
-    f.render_widget(spinner_widget, spinner_area);
+        f.render_widget(spinner_widget, spinner_area);
+    }
     draw_user_input(f, app, left_chunk[1]);
 
     if let Some(game_state) = &app.current_game {
