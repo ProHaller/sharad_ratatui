@@ -314,7 +314,6 @@ impl GameAI {
     }
 
     // Asynchronous method to handle required actions based on the status of an active run.
-
     async fn handle_required_action(
         &mut self,
         thread_id: &str,

@@ -2,11 +2,10 @@
 use crate::app::{App, AppCommand};
 use crate::cleanup::cleanup;
 use crate::message::{AIMessage, Message, MessageType};
-use crate::ui::utils::Spinner;
 
 use crossterm::{
-    event::{self, Event, KeyEventKind}, // Event handling from crossterm for input events.
-    execute,                            // Helper macro to execute terminal commands.
+    event::{Event, KeyEventKind}, // Event handling from crossterm for input events.
+    execute,                      // Helper macro to execute terminal commands.
     terminal::{enable_raw_mode, EnterAlternateScreen, SetSize}, // Terminal manipulation utilities.
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
@@ -15,7 +14,6 @@ use std::{io, sync::Arc, time::Duration}; // Standard I/O and concurrency utilit
 use tokio::sync::mpsc; // Asynchronous message passing channel.
 use tokio::time::sleep;
 use tokio::{sync::Mutex, time::Instant};
-use ui::utils::spinner_frame; // Terminal backend for drawing UI. // Asynchronous mutex and time utilities.
 
 // Modules are declared which should be assumed to be part of the application architecture.
 pub mod ai;

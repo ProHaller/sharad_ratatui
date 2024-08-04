@@ -49,5 +49,5 @@ impl Spinner {
 }
 
 pub fn spinner_frame(spinner: &Spinner) -> String {
-    format!(" AI is thinking {} ", spinner.get_frame())
+    format!(" Game Master is thinking {} ", spinner.get_frame())
 }
