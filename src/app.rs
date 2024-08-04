@@ -1,9 +1,10 @@
-use crate::ai::{AppError, GameAI, GameConversationState};
+use crate::ai::{GameAI, GameConversationState};
 use crate::ai_response::{create_user_message, UserMessage};
 use crate::app_state::AppState;
 use crate::audio;
 use crate::character::CharacterSheet;
 use crate::cleanup::cleanup;
+use crate::error::AppError;
 use crate::game_state::GameState;
 use crate::image;
 use crate::message::{self, AIMessage, GameMessage, Message, MessageType};
@@ -280,6 +281,8 @@ impl App {
                 ));
             }
         }
+
+        self.scroll_to_bottom();
     }
 
     fn handle_paste(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -491,6 +494,9 @@ impl App {
             InputMode::Normal => match key.code {
                 KeyCode::Char('e') => {
                     self.input_mode = InputMode::Editing;
+                }
+                KeyCode::Char('r') => {
+                    let _ = audio::record_audio();
                 }
                 KeyCode::Esc => {
                     self.state = AppState::MainMenu;

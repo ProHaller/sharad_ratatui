@@ -3,6 +3,7 @@ use crate::character::{
     Quality, Race, Skills, UpdateOperation,
 };
 use crate::dice::{perform_dice_roll, DiceRollRequest, DiceRollResponse};
+use crate::error::{AIError, AppError, GameError};
 use crate::game_state::GameState;
 use crate::message;
 use crate::message::{Message, MessageType};
@@ -18,7 +19,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
-use thiserror::Error;
 use tokio::sync::Mutex;
 use tokio::time::{Duration, Instant};
 
@@ -28,103 +28,6 @@ pub struct GameConversationState {
     pub assistant_id: String, // Unique identifier for the assistant.
     pub thread_id: String,    // Unique identifier for the conversation thread.
     pub character_sheet: Option<CharacterSheet>, // Optional character sheet for the active session.
-}
-
-// Enum for handling various application-level errors.
-#[derive(Debug, Error)]
-pub enum AppError {
-    #[error("AI error: {:#}", 0)]
-    AI(#[from] AIError), // Errors related to AI operations.
-
-    #[error("Game error: {:#}", 0)]
-    Game(#[from] GameError), // Errors specific to game logic or state.
-
-    #[error("Serialization error: {:#}", 0)]
-    Serialization(#[from] serde_json::Error), // Errors related to data serialization.
-
-    #[error("IO error: {:#}", 0)]
-    IO(#[from] std::io::Error), // Input/output errors.
-
-    #[error("AI client not initialized")]
-    AIClientNotInitialized, // Specific error when the AI client is not properly initialized.
-
-    #[error("No current game")]
-    NoCurrentGame, // Error when no game session is active.
-
-    #[error("OpenAI API error: {:#}", 0)]
-    OpenAI(#[from] async_openai::error::OpenAIError), // Errors from the OpenAI API.
-
-    #[error("Conversation not initialized")]
-    ConversationNotInitialized, // Error for uninitialized conversation state.
-
-    #[error("Timeout occurred")]
-    Timeout, // Error when an operation exceeds its allotted time.
-
-    #[error("No message found")]
-    NoMessageFound, // Error when no message is found where one is expected.
-
-    #[error("Max Attempts Reached")]
-    MaxAttemptsReached,
-
-    #[error("Failed to parse game state: {:#}", 0)]
-    GameStateParseError(String), // Error for issues when parsing game state.
-
-    #[error("Character sheet update error: {:#}", 0)]
-    CharacterSheetUpdateError(String),
-}
-
-impl From<String> for AppError {
-    fn from(error: String) -> Self {
-        AppError::CharacterSheetUpdateError(error)
-    }
-}
-
-// Enum for game-specific errors.
-#[derive(Debug, Error)]
-pub enum GameError {
-    #[error("Invalid game state: {:#}", 0)]
-    InvalidGameState(String), // Error for invalid game state conditions.
-
-    #[error("Character not found: {:#}", 0)]
-    CharacterNotFound(String), // Error when a specified character cannot be found.
-                               // Potential additional game-specific errors could be defined here.
-}
-
-// Errors related to AI operations are separated into their own enum for clarity.
-#[derive(Debug, Error)]
-pub enum AIError {
-    #[error("OpenAI API error: {:#}", 0)]
-    OpenAI(#[from] async_openai::error::OpenAIError), // Errors from the OpenAI API.
-
-    #[error("Conversation not initialized")]
-    ConversationNotInitialized, // Error for uninitialized conversation state.
-
-    #[error("Timeout occurred")]
-    Timeout, // Error when an AI operation exceeds its time limit.
-
-    #[error("No message found")]
-    NoMessageFound, // Error when expected message content is not found.
-
-    #[error("Failed to parse game state: {:#}", 0)]
-    GameStateParseError(String), // Error during parsing of game state.
-
-    #[error("Audio recording error: {:#}", 0)]
-    AudioRecordingError(String),
-
-    #[error("Audio playback error: {:#}", 0)]
-    AudioPlaybackError(String),
-
-    #[error("Error handling IO: {:#}", 0)]
-    Io(std::io::Error),
-
-    #[error("Thread join error: {:#}", 0)]
-    ThreadJoinError(String),
-}
-
-impl From<tokio::task::JoinError> for AIError {
-    fn from(err: tokio::task::JoinError) -> Self {
-        AIError::ThreadJoinError(err.to_string())
-    }
 }
 
 // Structure representing the game's AI component.

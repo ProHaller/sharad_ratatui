@@ -1,6 +1,6 @@
 // Import the necessary modules and structs from other parts of the application or crates.
-use crate::ai::AppError;
 use crate::character::CharacterSheet;
+use crate::error::AppError;
 use serde::{Deserialize, Serialize};
 
 // Define an enumeration to categorize message types within the game.
