@@ -1,4 +1,4 @@
-use crate::ai::AIError;
+use crate::ai::{AIError, AppError};
 use async_openai::{
     config::OpenAIConfig,
     types::{CreateSpeechRequestArgs, SpeechModel, Voice},
@@ -6,8 +6,8 @@ use async_openai::{
 };
 use chrono::Local;
 use rodio::{Decoder, OutputStream, Sink};
-use std::fs::File;
 use std::io::BufReader;
+use std::{fs::File, path::PathBuf};
 use std::{
     fs::{self},
     path::Path,
@@ -60,4 +60,8 @@ fn play_audio(file_path: String) -> Result<(), AIError> {
     });
 
     Ok(())
+}
+
+fn record_audio() -> Result<PathBuf, AppError> {
+    unimplemented!()
 }
