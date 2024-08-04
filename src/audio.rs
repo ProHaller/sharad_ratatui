@@ -7,8 +7,7 @@ use async_openai::{
 use chrono::Local;
 use rodio::{Decoder, OutputStream, Sink};
 use std::fs::File;
-use std::fs::OpenOptions;
-use std::io::{BufReader, Write};
+use std::io::BufReader;
 use std::{
     fs::{self},
     path::Path,
@@ -27,7 +26,7 @@ pub async fn generate_and_play_audio(
                 .input(text)
                 .voice(voice)
                 .model(SpeechModel::Tts1)
-                .speed(1.2)
+                .speed(1.3)
                 .build()
                 .map_err(AIError::OpenAI)?,
         )
@@ -44,12 +43,6 @@ pub async fn generate_and_play_audio(
 
     play_audio(file_path.to_str().unwrap().to_string())?;
 
-    let log_message = "-------------------------------------- audio generated ------------------------------------\n";
-    let mut file = OpenOptions::new()
-        .append(true)
-        .open("/Users/Haller/Dev/Rust/projects/sharad_ratatui/sharad_debug.log")
-        .unwrap();
-    file.write_all(log_message.as_bytes()).unwrap();
     Ok(())
 }
 
