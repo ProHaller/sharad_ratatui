@@ -15,6 +15,7 @@ libc = "0.2.155"
 rand = "0.8.5"
 ratatui = "0.27.0"
 reqwest = { version = "0.12.5", features = ["json"] }
+rodio = "0.19.0"
 ropey = "1.6.1"
 serde = { version = "1.0.203", features = ["derive"] }
 serde_json = "1.0.118"

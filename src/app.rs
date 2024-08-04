@@ -1,6 +1,7 @@
 use crate::ai::{AppError, GameAI, GameConversationState};
 use crate::ai_response::{create_user_message, UserMessage};
 use crate::app_state::AppState;
+use crate::audio;
 use crate::character::CharacterSheet;
 use crate::cleanup::cleanup;
 use crate::game_state::GameState;
@@ -46,26 +47,31 @@ pub enum InputMode {
 }
 
 pub struct App {
+    // Application state and control flow
     pub should_quit: bool,
     pub state: AppState,
+    pub input_mode: InputMode,
+    pub openai_api_key_valid: bool,
+
+    // Menu states
     pub main_menu_state: ListState,
+    pub load_game_menu_state: ListState,
+    pub settings_state: SettingsState,
+
+    // Game state and AI interaction
     pub ai_client: Option<GameAI>,
     pub current_game: Option<Arc<Mutex<GameState>>>,
-    pub debug_info: RefCell<String>,
-    pub game_content: RefCell<Vec<message::Message>>,
-    pub settings: Settings,
+    pub current_game_response: Option<GameMessage>,
+
+    // User inputs and interaction handling
     pub user_input: Input,
     pub api_key_input: Input,
     pub save_name_input: Input,
     pub current_save_name: Arc<RwLock<String>>,
     pub image_prompt: Input,
-    pub input_mode: InputMode,
-    pub openai_api_key_valid: bool,
-    pub settings_state: SettingsState,
-    clipboard: ClipboardContext,
-    pub load_game_menu_state: ListState,
-    pub available_saves: Vec<String>,
-    ai_sender: mpsc::UnboundedSender<AIMessage>,
+
+    // Game content management
+    pub game_content: RefCell<Vec<message::Message>>,
     pub visible_messages: usize,
     pub game_content_scroll: usize,
     pub cached_game_content: Option<Rc<Vec<(Line<'static>, Alignment)>>>,
@@ -73,13 +79,31 @@ pub struct App {
     pub visible_lines: usize,
     pub total_lines: usize,
     pub message_line_counts: Vec<usize>,
-    pub current_game_response: Option<GameMessage>,
     pub last_user_message: Option<UserMessage>,
+
+    // Debugging and logging
+    pub debug_info: RefCell<String>,
+
+    // Settings and configurations
+    pub settings: Settings,
+
+    // Clipboard handling
+    clipboard: ClipboardContext,
+
+    // Saves and available options
+    pub available_saves: Vec<String>,
+
+    // Asynchronous message handling
+    ai_sender: mpsc::UnboundedSender<AIMessage>,
+    pub command_sender: mpsc::UnboundedSender<AppCommand>,
+
+    // UI components and helpers
     pub backspace_counter: bool,
     pub spinner: Spinner,
     pub spinner_active: bool,
     pub last_spinner_update: Instant,
-    pub command_sender: mpsc::UnboundedSender<AppCommand>,
+
+    // Last known data
     pub last_known_character_sheet: Option<CharacterSheet>,
 }
 
@@ -205,7 +229,25 @@ impl App {
 
                 let game_message_json = serde_json::to_string(&game_message).unwrap();
                 self.add_debug_message(format!("Game message: {:#?}", game_message_json.clone()));
-                self.add_message(Message::new(MessageType::Game, game_message_json));
+                self.add_message(Message::new(MessageType::Game, game_message_json.clone()));
+
+                self.add_debug_message("generating audio".to_string());
+                if self.settings.audio_output_enabled {
+                    if let Some(ai_client) = self.ai_client.clone() {
+                        let ai_client = ai_client.clone();
+                        let game_message_json = game_message_json.clone();
+                        tokio::spawn(async move {
+                            if let Err(e) = audio::generate_and_play_audio(
+                                &ai_client.client,
+                                &game_message_json,
+                            )
+                            .await
+                            {
+                                eprintln!("Failed to generate or play audio: {:?}", e);
+                            }
+                        });
+                    };
+                }
 
                 // Update the UI
                 self.cached_game_content = None; // Force recalculation of cached content

@@ -107,6 +107,24 @@ pub enum AIError {
 
     #[error("Failed to parse game state: {:#}", 0)]
     GameStateParseError(String), // Error during parsing of game state.
+
+    #[error("Audio recording error: {:#}", 0)]
+    AudioRecordingError(String),
+
+    #[error("Audio playback error: {:#}", 0)]
+    AudioPlaybackError(String),
+
+    #[error("Error handling IO: {:#}", 0)]
+    Io(std::io::Error),
+
+    #[error("Thread join error: {:#}", 0)]
+    ThreadJoinError(String),
+}
+
+impl From<tokio::task::JoinError> for AIError {
+    fn from(err: tokio::task::JoinError) -> Self {
+        AIError::ThreadJoinError(err.to_string())
+    }
 }
 
 // Structure representing the game's AI component.
