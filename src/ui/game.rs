@@ -616,11 +616,13 @@ pub fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
         .title(match app.input_mode {
             InputMode::Normal => "Press 'e' to edit",
             InputMode::Editing => "Editing",
+            InputMode::Recording => "Recording…",
         })
         .borders(Borders::ALL)
         .border_style(Style::default().fg(match app.input_mode {
             InputMode::Normal => Color::DarkGray,
             InputMode::Editing => Color::White,
+            InputMode::Recording => Color::Red,
         }));
 
     let inner_area = block.inner(area);
@@ -677,6 +679,7 @@ pub fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
         .style(Style::default().fg(match app.input_mode {
             InputMode::Normal => Color::DarkGray,
             InputMode::Editing => Color::Yellow,
+            InputMode::Recording => Color::Red,
         }))
         .alignment(Alignment::Left)
         .wrap(Wrap { trim: false });

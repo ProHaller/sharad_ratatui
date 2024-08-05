@@ -25,8 +25,10 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 use tokio::sync::{mpsc, Mutex};
 use tui_input::backend::crossterm::EventHandler;
@@ -45,6 +47,7 @@ pub enum AppCommand {
 pub enum InputMode {
     Normal,
     Editing,
+    Recording,
 }
 
 pub struct App {
@@ -70,6 +73,7 @@ pub struct App {
     pub save_name_input: Input,
     pub current_save_name: Arc<RwLock<String>>,
     pub image_prompt: Input,
+    pub is_recording: Arc<AtomicBool>,
 
     // Game content management
     pub game_content: RefCell<Vec<message::Message>>,
@@ -167,6 +171,7 @@ impl App {
             last_spinner_update: Instant::now(),
             current_save_name: Arc::new(RwLock::new(String::new())),
             last_known_character_sheet: None,
+            is_recording: Arc::new(AtomicBool::new(false)),
         };
 
         (app, command_receiver)
@@ -327,6 +332,55 @@ impl App {
                 AppState::CreateImage => self.handle_create_image_editing(key),
                 _ => {} // Other states don't have editing mode
             },
+            InputMode::Recording => {
+                match key.code {
+                    KeyCode::Esc => {
+                        self.stop_recording();
+                    }
+                    _ => {
+                        // Ignore other keys during recording
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn start_recording(&mut self) {
+        self.is_recording.store(true, Ordering::SeqCst);
+        audio::start_recording(&self.is_recording);
+        self.input_mode = InputMode::Recording;
+    }
+
+    pub fn stop_recording(&mut self) {
+        self.is_recording.store(false, Ordering::SeqCst);
+
+        // Wait a bit to ensure the recording has stopped
+        std::thread::sleep(Duration::from_millis(100));
+
+        self.input_mode = InputMode::Editing;
+
+        let ai_client = self.ai_client.clone();
+        let user_input = Arc::new(tokio::sync::Mutex::new(self.user_input.clone()));
+
+        // Use the current runtime instead of creating a new one
+        if let Ok(handle) = Handle::try_current() {
+            handle.spawn(async move {
+                if let Some(ai_client) = ai_client {
+                    match audio::transcribe_audio(&ai_client.client).await {
+                        Ok(transcription) => {
+                            let mut input = user_input.lock().await;
+                            for ch in transcription.chars() {
+                                input.handle(tui_input::InputRequest::InsertChar(ch));
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to transcribe audio: {}", e);
+                        }
+                    }
+                }
+            });
+        } else {
+            eprintln!("Failed to get runtime handle for transcription");
         }
     }
 
@@ -462,6 +516,14 @@ impl App {
                     self.save_name_input.handle_event(&Event::Key(key));
                 }
             },
+            InputMode::Recording => match key.code {
+                KeyCode::Esc => {
+                    self.input_mode = InputMode::Normal;
+                }
+                _ => {
+                    self.input_mode = InputMode::Normal;
+                }
+            },
         }
     }
 
@@ -489,6 +551,7 @@ impl App {
             }
         }
     }
+
     fn handle_in_game_input(&mut self, key: KeyEvent) {
         match self.input_mode {
             InputMode::Normal => match key.code {
@@ -496,7 +559,7 @@ impl App {
                     self.input_mode = InputMode::Editing;
                 }
                 KeyCode::Char('r') => {
-                    let _ = audio::record_audio();
+                    self.start_recording();
                 }
                 KeyCode::Esc => {
                     self.state = AppState::MainMenu;
@@ -548,6 +611,16 @@ impl App {
                     self.user_input.handle_event(&Event::Key(key));
                 }
             },
+            InputMode::Recording => {
+                match key.code {
+                    KeyCode::Esc => {
+                        self.stop_recording();
+                    }
+                    _ => {
+                        // Ignore other keys during recording
+                    }
+                }
+            }
         }
     }
 
@@ -1232,6 +1305,9 @@ impl App {
                 KeyCode::Char('e') => {
                     self.input_mode = InputMode::Editing;
                 }
+                KeyCode::Char('r') => {
+                    self.input_mode = InputMode::Recording;
+                }
                 KeyCode::Esc => self.state = AppState::MainMenu,
                 KeyCode::Enter => {
                     let prompt = self.image_prompt.value().to_owned();
@@ -1268,6 +1344,14 @@ impl App {
                 }
                 _ => {
                     self.image_prompt.handle_event(&Event::Key(key));
+                }
+            },
+            InputMode::Recording => match key.code {
+                KeyCode::Esc => {
+                    self.input_mode = InputMode::Normal;
+                }
+                _ => {
+                    self.input_mode = InputMode::Normal;
                 }
             },
         }

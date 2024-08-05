@@ -112,11 +112,17 @@ pub enum AudioError {
     #[error("Cpal play stream error: {:#}", 0)]
     CpalPlayStream(#[from] cpal::PlayStreamError),
 
+    #[error("Pause Stream Error: {:#}", 0)]
+    CpalPauseStream(#[from] cpal::PauseStreamError),
+
     #[error("Audio from string error: {:#}", 0)]
     FromStringAudioError(String),
 
     #[error("std io AudioError: {:#}", 0)]
     IO(#[from] std::io::Error),
+
+    #[error("OpenAI Error: {:#}", 0)]
+    OpenAI(#[from] async_openai::error::OpenAIError),
 }
 
 impl From<String> for AudioError {

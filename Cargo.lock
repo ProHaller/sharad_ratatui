@@ -1146,6 +1146,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "lame"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3cfaeb7731c451e48225df8143a7a19bb9bc651d0415b5399a5f9d1cc76f002f"
+
+[[package]]
 name = "lazy-bytes-cast"
 version = "5.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2124,6 +2130,7 @@ dependencies = [
  "ctrlc",
  "hound",
  "hyphenation",
+ "lame",
  "libc",
  "rand",
  "ratatui",

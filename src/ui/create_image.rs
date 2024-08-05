@@ -45,10 +45,12 @@ pub fn draw_create_image(f: &mut Frame, app: &App) {
                 .title(match app.input_mode {
                     InputMode::Normal => "Press 'e' to edit",
                     InputMode::Editing => "Editing",
+                    InputMode::Recording => "Recording…",
                 })
                 .border_style(Style::default().fg(match app.input_mode {
                     InputMode::Normal => Color::DarkGray,
                     InputMode::Editing => Color::Yellow,
+                    InputMode::Recording => Color::Red,
                 })),
         );
     f.render_widget(input, chunks[1]);
@@ -56,6 +58,7 @@ pub fn draw_create_image(f: &mut Frame, app: &App) {
     let mode_indicator = match app.input_mode {
         InputMode::Normal => "NORMAL",
         InputMode::Editing => "EDITING",
+        InputMode::Recording => "RECORDING",
     };
     let instructions = Paragraph::new(format!("{} | Enter: confirm | Esc: cancel", mode_indicator))
         .style(Style::default().fg(Color::Gray))

@@ -1,21 +1,23 @@
+use crate::app::InputMode;
 use crate::error::{AIError, AudioError};
 use async_openai::{
     config::OpenAIConfig,
-    types::{CreateSpeechRequestArgs, SpeechModel, Voice},
+    types::{CreateSpeechRequestArgs, CreateTranscriptionRequestArgs, SpeechModel, Voice},
     Audio,
 };
 use chrono::Local;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, Sample};
 use rodio::{Decoder, OutputStream, Sink};
-use std::io::BufReader;
-use std::io::BufWriter;
+use std::fs::File;
+use std::io::{BufReader, BufWriter, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
-use std::{fs::File, thread::sleep};
 use std::{
     fs::{self},
     path::Path,
+    thread,
+    time::Duration,
 };
 
 pub async fn generate_and_play_audio(
@@ -67,10 +69,10 @@ fn play_audio(file_path: String) -> Result<(), AIError> {
     Ok(())
 }
 
-pub fn record_audio() -> Result<(), AudioError> {
-    // Get the default audio host for the system
-    let host = cpal::default_host();
+const PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/data/recording.wav");
 
+pub fn record_audio(is_recording: Arc<AtomicBool>) -> Result<(), AudioError> {
+    let host = cpal::default_host();
     let device = host
         .default_input_device()
         .ok_or_else(|| AudioError::AudioRecordingError("No input device available".into()))?;
@@ -79,51 +81,76 @@ pub fn record_audio() -> Result<(), AudioError> {
         .default_input_config()
         .map_err(|e| AudioError::AudioRecordingError(e.to_string()))?;
 
-    const PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/data/recording.wav");
     let spec = wav_spec_from_config(&config);
     let writer = hound::WavWriter::create(PATH, spec)?;
     let writer = Arc::new(Mutex::new(Some(writer)));
-    let writer_2 = writer.clone();
+    let writer_clone = writer.clone();
+
     let err_fn = move |err| {
         eprintln!("an error occurred on stream: {}", err);
     };
+
     let stream = match config.sample_format() {
         cpal::SampleFormat::I8 => device.build_input_stream(
             &config.into(),
-            move |data, _: &_| write_input_data::<i8, i8>(data, &writer_2),
+            move |data, _: &_| write_input_data::<i8, i8>(data, &writer_clone),
             err_fn,
             None,
         )?,
         cpal::SampleFormat::I16 => device.build_input_stream(
             &config.into(),
-            move |data, _: &_| write_input_data::<i16, i16>(data, &writer_2),
+            move |data, _: &_| write_input_data::<i16, i16>(data, &writer_clone),
             err_fn,
             None,
         )?,
         cpal::SampleFormat::I32 => device.build_input_stream(
             &config.into(),
-            move |data, _: &_| write_input_data::<i32, i32>(data, &writer_2),
+            move |data, _: &_| write_input_data::<i32, i32>(data, &writer_clone),
             err_fn,
             None,
         )?,
         cpal::SampleFormat::F32 => device.build_input_stream(
             &config.into(),
-            move |data, _: &_| write_input_data::<f32, f32>(data, &writer_2),
+            move |data, _: &_| write_input_data::<f32, f32>(data, &writer_clone),
             err_fn,
             None,
         )?,
         sample_format => {
-            return Err((format!("Unsupported sample format '{sample_format}'")).into())
+            return Err(AudioError::AudioRecordingError(format!(
+                "Unsupported sample format '{sample_format}'"
+            )))
         }
     };
 
     // Play the stream (start recording)
     stream.play()?;
 
-    let period = Duration::from_secs(10);
-    sleep(period);
+    // Recording loop
+    while is_recording.load(Ordering::SeqCst) {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    // Stop the stream (end recording)
+    drop(stream);
+
+    // Finalize the WAV file
+    if let Ok(mut guard) = writer.lock() {
+        if let Some(writer) = guard.take() {
+            writer.finalize().map_err(AudioError::Hound)?;
+        }
+    }
 
     Ok(())
+}
+
+pub fn start_recording(is_recording: &Arc<AtomicBool>) {
+    let is_recording_clone = is_recording.clone();
+
+    thread::spawn(move || {
+        if let Err(e) = record_audio(is_recording_clone) {
+            eprintln!("Error recording audio: {:?}", e);
+        }
+    });
 }
 
 fn sample_format(format: cpal::SampleFormat) -> hound::SampleFormat {
@@ -157,5 +184,26 @@ where
                 writer.write_sample(sample).ok();
             }
         }
+    }
+}
+
+pub async fn transcribe_audio(
+    client: &async_openai::Client<OpenAIConfig>,
+) -> Result<String, AudioError> {
+    let audio = Audio::new(client);
+    let recording_path = PATH;
+
+    match audio
+        .transcribe(
+            CreateTranscriptionRequestArgs::default()
+                .file(recording_path)
+                .model("whisper-1")
+                .build()
+                .map_err(AudioError::OpenAI)?,
+        )
+        .await
+    {
+        Ok(transcription) => Ok(transcription.text),
+        Err(e) => Err(AudioError::OpenAI(e)),
     }
 }
