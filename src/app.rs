@@ -31,6 +31,7 @@ use std::time::{Duration, Instant};
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 use tokio::sync::{mpsc, Mutex};
+use tokio::task;
 use tui_input::backend::crossterm::EventHandler;
 use tui_input::Input;
 use tui_input::InputRequest;
@@ -359,28 +360,41 @@ impl App {
 
         self.input_mode = InputMode::Editing;
 
-        let ai_client = self.ai_client.clone();
-        let user_input = Arc::new(tokio::sync::Mutex::new(self.user_input.clone()));
-
-        // Use the current runtime instead of creating a new one
-        if let Ok(handle) = Handle::try_current() {
-            handle.spawn(async move {
-                if let Some(ai_client) = ai_client {
-                    match audio::transcribe_audio(&ai_client.client).await {
-                        Ok(transcription) => {
-                            let mut input = user_input.lock().await;
-                            for ch in transcription.chars() {
-                                input.handle(tui_input::InputRequest::InsertChar(ch));
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("Failed to transcribe audio: {}", e);
-                        }
-                    }
-                }
+        if let Some(ai_client) = &self.ai_client {
+            // Use block_in_place to wait for the async operation
+            let transcription_result = task::block_in_place(|| {
+                Handle::current()
+                    .block_on(async { audio::transcribe_audio(&ai_client.client).await })
             });
+
+            match transcription_result {
+                Ok(transcription) => {
+                    // Reset and update the user input with the transcription
+                    self.user_input.reset();
+                    for ch in transcription.chars() {
+                        self.user_input
+                            .handle(tui_input::InputRequest::InsertChar(ch));
+                    }
+                    // Add a debug message
+                    self.add_debug_message(format!("Transcription successful: {}", transcription));
+                }
+                Err(e) => {
+                    // Add an error message to the game content
+                    self.add_message(Message::new(
+                        MessageType::System,
+                        format!("Failed to transcribe audio: {}", e),
+                    ));
+                    // Add a debug message
+                    self.add_debug_message(format!("Transcription error: {:?}", e));
+                }
+            }
         } else {
-            eprintln!("Failed to get runtime handle for transcription");
+            // Add an error message if AI client is not initialized
+            self.add_message(Message::new(
+                MessageType::System,
+                "AI client not initialized. Cannot transcribe audio.".to_string(),
+            ));
+            self.add_debug_message("Transcription failed: AI client not initialized".to_string());
         }
     }
 
