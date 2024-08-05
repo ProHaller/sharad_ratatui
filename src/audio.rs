@@ -1,4 +1,3 @@
-use crate::app::InputMode;
 use crate::error::{AIError, AudioError};
 use async_openai::{
     config::OpenAIConfig,
@@ -10,7 +9,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, Sample};
 use rodio::{Decoder, OutputStream, Sink};
 use std::fs::File;
-use std::io::{BufReader, BufWriter, Write};
+use std::io::{BufReader, BufWriter};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::{
