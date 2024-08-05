@@ -614,9 +614,9 @@ pub fn parse_game_content(app: &App, max_width: usize) -> Vec<(Line<'static>, Al
 pub fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .title(match app.input_mode {
-            InputMode::Normal => "Press 'e' to edit",
-            InputMode::Editing => "Editing",
-            InputMode::Recording => "Recording…",
+            InputMode::Normal => " Press 'e' to edit or 'r' to record ",
+            InputMode::Editing => " Editing ",
+            InputMode::Recording => " Recording… ",
         })
         .borders(Borders::ALL)
         .border_style(Style::default().fg(match app.input_mode {
