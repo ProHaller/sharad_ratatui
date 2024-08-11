@@ -56,9 +56,9 @@ pub fn draw_create_image(f: &mut Frame, app: &App) {
     f.render_widget(input, chunks[1]);
 
     let mode_indicator = match app.input_mode {
-        InputMode::Normal => "NORMAL",
-        InputMode::Editing => "EDITING",
-        InputMode::Recording => "RECORDING",
+        InputMode::Normal => " NORMAL ",
+        InputMode::Editing => " EDITING ",
+        InputMode::Recording => " RECORDING ",
     };
     let instructions = Paragraph::new(format!("{} | Enter: confirm | Esc: cancel", mode_indicator))
         .style(Style::default().fg(Color::Gray))
