@@ -104,7 +104,6 @@ pub fn render_settings(f: &mut Frame, app: &App, area: Rect) {
 
     let outer_block = Block::default()
         .borders(Borders::NONE)
-        // .title("Settings")
         .style(Style::default().fg(Color::DarkGray));
 
     let settings_area = centered_rect(100, 100, area);

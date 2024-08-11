@@ -31,7 +31,7 @@ pub fn draw_save_name_input(f: &mut Frame, app: &App) {
         )
         .split(f.size());
 
-    let title = Paragraph::new("Enter Save Name")
+    let title = Paragraph::new(" Enter Save Name ")
         .style(Style::default().fg(Color::Cyan))
         .alignment(Alignment::Center);
     f.render_widget(title, chunks[0]);
@@ -42,9 +42,9 @@ pub fn draw_save_name_input(f: &mut Frame, app: &App) {
             Block::default()
                 .borders(Borders::ALL)
                 .title(match app.input_mode {
-                    InputMode::Normal => "Press 'e' to edit",
-                    InputMode::Editing => "Editing",
-                    InputMode::Recording => "Recording…",
+                    InputMode::Normal => " Press 'e' to edit ",
+                    InputMode::Editing => " Editing ",
+                    InputMode::Recording => " Recording… Press 'Esc' to stop ",
                 })
                 .border_style(Style::default().fg(match app.input_mode {
                     InputMode::Normal => Color::DarkGray,

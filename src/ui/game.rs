@@ -161,7 +161,7 @@ fn draw_basic_info(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("Basic Information"),
+                .title(" Basic Information "),
         )
         .alignment(Alignment::Center)
         .wrap(Wrap { trim: true });
@@ -208,7 +208,7 @@ fn draw_attributes(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
         .collect();
 
     let table = Table::new(rows, vec![Constraint::Percentage(25); 4])
-        .block(Block::default().borders(Borders::ALL).title("Attributes"))
+        .block(Block::default().borders(Borders::ALL).title(" Attributes "))
         .style(Style::default().fg(Color::White))
         .highlight_style(Style::default().add_modifier(Modifier::BOLD))
         .column_spacing(1);
@@ -251,7 +251,7 @@ fn draw_derived_attributes(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("Derived Attributes"),
+                .title(" Derived Attributes "),
         )
         .style(Style::default().fg(Color::White))
         .highlight_style(Style::default().add_modifier(Modifier::BOLD))
@@ -310,7 +310,7 @@ fn draw_skills(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
         rows,
         vec![Constraint::Percentage(20), Constraint::Percentage(80)],
     )
-    .block(Block::default().borders(Borders::ALL).title("Skills"))
+    .block(Block::default().borders(Borders::ALL).title(" Skills "))
     .style(Style::default().fg(Color::White))
     .highlight_style(Style::default().add_modifier(Modifier::BOLD))
     .column_spacing(1);
@@ -339,7 +339,7 @@ fn draw_qualities(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
         .collect();
 
     let qualities_paragraph = Paragraph::new(Line::from(qualities))
-        .block(Block::default().borders(Borders::ALL).title("Qualities"))
+        .block(Block::default().borders(Borders::ALL).title(" Qualities "))
         .wrap(Wrap { trim: true });
     f.render_widget(qualities_paragraph, area);
 }
@@ -406,11 +406,11 @@ fn draw_augmentations(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
         .collect();
 
     let cyberware_paragraph = Paragraph::new(cyberware_elements)
-        .block(Block::default().borders(Borders::ALL).title("Cyberware"))
+        .block(Block::default().borders(Borders::ALL).title(" Cyberware "))
         .wrap(Wrap { trim: true });
 
     let bioware_paragraph = Paragraph::new(bioware_elements)
-        .block(Block::default().borders(Borders::ALL).title("Bioware"))
+        .block(Block::default().borders(Borders::ALL).title(" Bioware "))
         .wrap(Wrap { trim: true });
 
     f.render_widget(cyberware_paragraph, chunks[0]);
@@ -450,7 +450,7 @@ fn draw_contacts(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     ];
     let table = Table::new(rows, widths)
         .header(header)
-        .block(Block::default().borders(Borders::ALL).title("Contacts"));
+        .block(Block::default().borders(Borders::ALL).title(" Contacts "));
 
     f.render_widget(table, area);
 }
@@ -469,7 +469,7 @@ fn draw_inventory(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
 
     let widths = vec![Constraint::Percentage(100)];
     let inventory_table = Table::new(inventory_items, widths)
-        .block(Block::default().borders(Borders::ALL).title("Inventory"))
+        .block(Block::default().borders(Borders::ALL).title(" Inventory "))
         .widths([Constraint::Percentage(100)])
         .column_spacing(1);
 
@@ -491,7 +491,11 @@ fn create_table<'a>(info: &'a [String], title: &'a str) -> Table<'a> {
     let widths = vec![Constraint::Percentage(100)];
 
     Table::new(rows, widths)
-        .block(Block::default().borders(Borders::ALL).title(title))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(format!(" {} ", title)),
+        )
         .style(Style::default().fg(Color::White))
         .highlight_style(Style::default().add_modifier(Modifier::BOLD))
         .highlight_symbol(">>")
@@ -507,7 +511,7 @@ pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
 
     let fluff_block = Block::default()
         .title(if save_name.is_empty() {
-            "Game will start momentarily".to_string()
+            " Game will start momentarily ".to_string()
         } else {
             save_name
         })
@@ -616,7 +620,7 @@ pub fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
         .title(match app.input_mode {
             InputMode::Normal => " Press 'e' to edit or 'r' to record ",
             InputMode::Editing => " Editing ",
-            InputMode::Recording => " Recording… ",
+            InputMode::Recording => " Recording… Press 'Esc' to stop ",
         })
         .borders(Borders::ALL)
         .border_style(Style::default().fg(match app.input_mode {

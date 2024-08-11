@@ -32,7 +32,7 @@ pub fn draw_create_image(f: &mut Frame, app: &App) {
         )
         .split(f.size());
 
-    let title = Paragraph::new("Enter an image prompt")
+    let title = Paragraph::new(" Enter an image prompt ")
         .style(Style::default().fg(Color::Cyan))
         .alignment(Alignment::Center);
     f.render_widget(title, chunks[0]);
@@ -43,9 +43,9 @@ pub fn draw_create_image(f: &mut Frame, app: &App) {
             Block::default()
                 .borders(Borders::ALL)
                 .title(match app.input_mode {
-                    InputMode::Normal => "Press 'e' to edit",
-                    InputMode::Editing => "Editing",
-                    InputMode::Recording => "Recording…",
+                    InputMode::Normal => " Press 'e' to edit ",
+                    InputMode::Editing => " Editing ",
+                    InputMode::Recording => " Recording… ",
                 })
                 .border_style(Style::default().fg(match app.input_mode {
                     InputMode::Normal => Color::DarkGray,
