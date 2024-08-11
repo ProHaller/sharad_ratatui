@@ -368,16 +368,39 @@ impl App {
             });
 
             match transcription_result {
-                Ok(transcription) => {
-                    // Reset and update the user input with the transcription
-                    self.user_input.reset();
-                    for ch in transcription.chars() {
-                        self.user_input
-                            .handle(tui_input::InputRequest::InsertChar(ch));
+                Ok(transcription) => match self.state {
+                    AppState::InGame => {
+                        for ch in transcription.chars() {
+                            self.user_input
+                                .handle(tui_input::InputRequest::InsertChar(ch));
+                        }
+                        self.add_debug_message(format!(
+                            "Transcription successful: {}",
+                            transcription
+                        ));
                     }
-                    // Add a debug message
-                    self.add_debug_message(format!("Transcription successful: {}", transcription));
-                }
+                    AppState::InputSaveName => {
+                        for ch in transcription.chars() {
+                            self.save_name_input
+                                .handle(tui_input::InputRequest::InsertChar(ch));
+                        }
+                        self.add_debug_message(format!(
+                            "Transcription successful: {}",
+                            transcription
+                        ));
+                    }
+                    AppState::CreateImage => {
+                        for ch in transcription.chars() {
+                            self.image_prompt
+                                .handle(tui_input::InputRequest::InsertChar(ch));
+                        }
+                        self.add_debug_message(format!(
+                            "Transcription successful: {}",
+                            transcription
+                        ));
+                    }
+                    _ => {}
+                },
                 Err(e) => {
                     // Add an error message to the game content
                     self.add_message(Message::new(
@@ -424,6 +447,63 @@ impl App {
             _ => {
                 self.save_name_input.handle_event(&Event::Key(key));
             }
+        }
+    }
+
+    fn handle_save_name_input(&mut self, key: KeyEvent) {
+        match self.input_mode {
+            InputMode::Normal => match key.code {
+                KeyCode::Char('e') => {
+                    self.input_mode = InputMode::Editing;
+                }
+                KeyCode::Char('r') => {
+                    self.start_recording();
+                }
+                KeyCode::Esc => {
+                    self.state = AppState::MainMenu;
+                    self.save_name_input.reset();
+                }
+                KeyCode::Enter => {
+                    if !self.save_name_input.value().is_empty() {
+                        self.game_content.borrow_mut().clear();
+                        self.current_game = None;
+                        if let Err(e) = self.command_sender.send(AppCommand::StartNewGame(
+                            self.save_name_input.value().to_string(),
+                        )) {
+                            self.add_message(Message::new(
+                                MessageType::System,
+                                format!("Failed to send start new game command: {:#?}", e),
+                            ));
+                        }
+                        self.save_name_input.reset();
+                        self.state = AppState::InGame;
+                    }
+                }
+                _ => {}
+            },
+            InputMode::Editing => match key.code {
+                KeyCode::Esc => {
+                    self.input_mode = InputMode::Normal;
+                }
+                KeyCode::Char('v') => {
+                    if key.modifiers.contains(KeyModifiers::CONTROL) {
+                        if let Err(e) = self.handle_paste() {
+                            self.add_debug_message(format!("Failed to paste: {:#?}", e));
+                        }
+                    } else {
+                        self.save_name_input.handle_event(&Event::Key(key));
+                    }
+                }
+                _ => {
+                    self.save_name_input.handle_event(&Event::Key(key));
+                }
+            },
+            InputMode::Recording => match key.code {
+                KeyCode::Esc => {
+                    self.stop_recording();
+                }
+                _ => {}
+            },
         }
     }
 
@@ -482,62 +562,6 @@ impl App {
             _ => {
                 self.api_key_input.handle_event(&Event::Key(key));
             }
-        }
-    }
-
-    fn handle_save_name_input(&mut self, key: KeyEvent) {
-        match self.input_mode {
-            InputMode::Normal => match key.code {
-                KeyCode::Char('e') => {
-                    self.input_mode = InputMode::Editing;
-                }
-                KeyCode::Esc => {
-                    self.state = AppState::MainMenu;
-                    self.save_name_input.reset();
-                }
-                KeyCode::Enter => {
-                    if !self.save_name_input.value().is_empty() {
-                        self.game_content.borrow_mut().clear();
-                        self.current_game = None;
-                        if let Err(e) = self.command_sender.send(AppCommand::StartNewGame(
-                            self.save_name_input.value().to_string(),
-                        )) {
-                            self.add_message(Message::new(
-                                MessageType::System,
-                                format!("Failed to send start new game command: {:#?}", e),
-                            ));
-                        }
-                        self.save_name_input.reset();
-                        self.state = AppState::InGame;
-                    }
-                }
-                _ => {}
-            },
-            InputMode::Editing => match key.code {
-                KeyCode::Esc => {
-                    self.input_mode = InputMode::Normal;
-                }
-                KeyCode::Char('v') => {
-                    if key.modifiers.contains(KeyModifiers::CONTROL) {
-                        if let Err(e) = self.handle_paste() {
-                            self.add_debug_message(format!("Failed to paste: {:#?}", e));
-                        }
-                    } else {
-                        self.save_name_input.handle_event(&Event::Key(key));
-                    }
-                }
-                _ => {
-                    self.save_name_input.handle_event(&Event::Key(key));
-                }
-            },
-            InputMode::Recording => match key.code {
-                KeyCode::Esc => {
-                    self.input_mode = InputMode::Normal;
-                }
-                _ => {
-                    self.input_mode = InputMode::Normal;
-                }
-            },
         }
     }
 
@@ -635,27 +659,6 @@ impl App {
                     }
                 }
             }
-        }
-    }
-
-    fn submit_user_input(&mut self) {
-        let input = self.user_input.value().trim().to_string();
-        if !input.is_empty() {
-            self.start_spinner();
-            self.add_message(Message::new(MessageType::User, input.clone()));
-
-            // Send a command to process the message
-            if let Err(e) = self.command_sender.send(AppCommand::ProcessMessage(input)) {
-                self.add_message(Message::new(
-                    MessageType::System,
-                    format!("Error sending message command: {:#?}", e),
-                ));
-            } else {
-                self.start_spinner();
-            }
-
-            // Clear the user input
-            self.user_input = Input::default();
         }
     }
 
@@ -758,21 +761,68 @@ impl App {
         }
     }
 
-    pub fn apply_settings(&mut self) {
-        // Apply changes from settings_state to settings
-        self.settings.language = match self.settings_state.selected_options[0] {
-            0 => "English".to_string(),
-            1 => "Français".to_string(),
-            2 => "日本語".to_string(),
-            _ => self.settings.language.clone(),
-        };
-        self.settings.audio_output_enabled = self.settings_state.selected_options[2] == 0;
-        self.settings.audio_input_enabled = self.settings_state.selected_options[3] == 0;
-        self.settings.debug_mode = self.settings_state.selected_options[4] == 1;
+    fn handle_load_game_input(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Enter => {
+                if let Some(selected) = self.load_game_menu_state.selected() {
+                    if selected < self.available_saves.len() {
+                        let save_path = format!("./data/save/{}", self.available_saves[selected]);
+                        if let Err(e) = self.command_sender.send(AppCommand::LoadGame(save_path)) {
+                            self.add_message(Message::new(
+                                MessageType::System,
+                                format!("Failed to send load game command: {:#?}", e),
+                            ));
+                        } else {
+                            // Add a message to indicate that the game is being loaded
+                            self.add_message(Message::new(
+                                MessageType::System,
+                                "Loading game...".to_string(),
+                            ));
+                        }
+                    }
+                }
+            }
+            KeyCode::Esc => {
+                self.state = AppState::MainMenu;
+            }
+            KeyCode::Up => {
+                self.backspace_counter = false;
+                self.navigate_load_game_menu(-1)
+            }
+            KeyCode::Down => {
+                self.backspace_counter = false;
+                self.navigate_load_game_menu(1)
+            }
+            KeyCode::Backspace => {
+                if self.backspace_counter {
+                    if !self.available_saves.is_empty() {
+                        self.delete_save();
+                    }
+                    self.backspace_counter = false;
+                } else {
+                    self.backspace_counter = true;
+                }
+            }
 
-        // Save settings to file
-        if let Err(e) = self.settings.save_to_file("./data/settings.json") {
-            eprintln!("Failed to save settings: {:#?}", e);
+            KeyCode::Char(c) => {
+                if let Some(digit) = c.to_digit(10) {
+                    let selected = (digit as usize - 1) % self.available_saves.len();
+                    self.load_game_menu_state.select(Some(selected));
+                    let save_path = format!("./data/save/{}", self.available_saves[selected]);
+                    if let Err(e) = self.command_sender.send(AppCommand::LoadGame(save_path)) {
+                        self.add_message(Message::new(
+                            MessageType::System,
+                            format!("Failed to send load game command: {:#?}", e),
+                        ));
+                    } else {
+                        self.add_message(Message::new(
+                            MessageType::System,
+                            "Loading game...".to_string(),
+                        ));
+                    }
+                }
+            }
+            _ => {}
         }
     }
 
@@ -812,6 +862,125 @@ impl App {
                 std::process::exit(0);
             }
             _ => {}
+        }
+    }
+
+    fn handle_create_image_input(&mut self, key: KeyEvent) {
+        match self.input_mode {
+            InputMode::Normal => match key.code {
+                KeyCode::Char('e') => {
+                    self.input_mode = InputMode::Editing;
+                }
+                KeyCode::Char('r') => {
+                    self.start_recording();
+                }
+                KeyCode::Esc => self.state = AppState::MainMenu,
+                KeyCode::Enter => {
+                    let prompt = self.image_prompt.value().to_owned();
+                    let api_key = self
+                        .settings
+                        .openai_api_key
+                        .clone()
+                        .unwrap_or("".to_string());
+
+                    tokio::spawn(async move {
+                        let _ = image::generate_and_save_image(&api_key, &prompt).await;
+                    });
+                    self.add_message(Message::new(
+                        MessageType::System,
+                        "Generating image...".to_string(),
+                    ));
+                    self.image_prompt.reset();
+                    self.state = AppState::MainMenu;
+                }
+                _ => {}
+            },
+            InputMode::Editing => match key.code {
+                KeyCode::Esc => {
+                    self.input_mode = InputMode::Normal;
+                }
+                KeyCode::Char('v') => {
+                    if key.modifiers.contains(KeyModifiers::CONTROL) {
+                        if let Err(e) = self.handle_paste() {
+                            self.add_debug_message(format!("Failed to paste: {:#?}", e));
+                        }
+                    } else {
+                        self.image_prompt.handle_event(&Event::Key(key));
+                    }
+                }
+                _ => {
+                    self.image_prompt.handle_event(&Event::Key(key));
+                }
+            },
+            InputMode::Recording => match key.code {
+                KeyCode::Esc => {
+                    self.stop_recording();
+                }
+                _ => {}
+            },
+        }
+    }
+
+    fn handle_create_image_editing(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Enter => {
+                // Handle save name submission
+                self.input_mode = InputMode::Normal;
+            }
+            KeyCode::Esc => {
+                self.input_mode = InputMode::Normal;
+            }
+            KeyCode::Char('v') => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    if let Err(e) = self.handle_paste() {
+                        self.add_debug_message(format!("Failed to paste: {:#?}", e));
+                    }
+                } else {
+                    self.image_prompt.handle_event(&Event::Key(key));
+                }
+            }
+            _ => {
+                self.image_prompt.handle_event(&Event::Key(key));
+            }
+        }
+    }
+
+    fn submit_user_input(&mut self) {
+        let input = self.user_input.value().trim().to_string();
+        if !input.is_empty() {
+            self.start_spinner();
+            self.add_message(Message::new(MessageType::User, input.clone()));
+
+            // Send a command to process the message
+            if let Err(e) = self.command_sender.send(AppCommand::ProcessMessage(input)) {
+                self.add_message(Message::new(
+                    MessageType::System,
+                    format!("Error sending message command: {:#?}", e),
+                ));
+            } else {
+                self.start_spinner();
+            }
+
+            // Clear the user input
+            self.user_input = Input::default();
+        }
+    }
+
+    pub fn apply_settings(&mut self) {
+        // Apply changes from settings_state to settings
+        self.settings.language = match self.settings_state.selected_options[0] {
+            0 => "English".to_string(),
+            1 => "Français".to_string(),
+            2 => "日本語".to_string(),
+            _ => self.settings.language.clone(),
+        };
+        self.settings.audio_output_enabled = self.settings_state.selected_options[2] == 0;
+        self.settings.audio_input_enabled = self.settings_state.selected_options[3] == 0;
+        self.settings.debug_mode = self.settings_state.selected_options[4] == 1;
+
+        // Save settings to file
+        if let Err(e) = self.settings.save_to_file("./data/settings.json") {
+            eprintln!("Failed to save settings: {:#?}", e);
         }
     }
 
@@ -1139,71 +1308,6 @@ impl App {
             .collect()
     }
 
-    fn handle_load_game_input(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Enter => {
-                if let Some(selected) = self.load_game_menu_state.selected() {
-                    if selected < self.available_saves.len() {
-                        let save_path = format!("./data/save/{}", self.available_saves[selected]);
-                        if let Err(e) = self.command_sender.send(AppCommand::LoadGame(save_path)) {
-                            self.add_message(Message::new(
-                                MessageType::System,
-                                format!("Failed to send load game command: {:#?}", e),
-                            ));
-                        } else {
-                            // Add a message to indicate that the game is being loaded
-                            self.add_message(Message::new(
-                                MessageType::System,
-                                "Loading game...".to_string(),
-                            ));
-                        }
-                    }
-                }
-            }
-            KeyCode::Esc => {
-                self.state = AppState::MainMenu;
-            }
-            KeyCode::Up => {
-                self.backspace_counter = false;
-                self.navigate_load_game_menu(-1)
-            }
-            KeyCode::Down => {
-                self.backspace_counter = false;
-                self.navigate_load_game_menu(1)
-            }
-            KeyCode::Backspace => {
-                if self.backspace_counter {
-                    if !self.available_saves.is_empty() {
-                        self.delete_save();
-                    }
-                    self.backspace_counter = false;
-                } else {
-                    self.backspace_counter = true;
-                }
-            }
-
-            KeyCode::Char(c) => {
-                if let Some(digit) = c.to_digit(10) {
-                    let selected = (digit as usize - 1) % self.available_saves.len();
-                    self.load_game_menu_state.select(Some(selected));
-                    let save_path = format!("./data/save/{}", self.available_saves[selected]);
-                    if let Err(e) = self.command_sender.send(AppCommand::LoadGame(save_path)) {
-                        self.add_message(Message::new(
-                            MessageType::System,
-                            format!("Failed to send load game command: {:#?}", e),
-                        ));
-                    } else {
-                        self.add_message(Message::new(
-                            MessageType::System,
-                            "Loading game...".to_string(),
-                        ));
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-
     fn delete_save(&mut self) {
         if let Some(selected) = self.load_game_menu_state.selected() {
             let save_path = format!("./data/save/{}", self.available_saves[selected]);
@@ -1311,87 +1415,5 @@ impl App {
         self.scroll_to_bottom();
 
         Ok(())
-    }
-
-    fn handle_create_image_input(&mut self, key: KeyEvent) {
-        match self.input_mode {
-            InputMode::Normal => match key.code {
-                KeyCode::Char('e') => {
-                    self.input_mode = InputMode::Editing;
-                }
-                KeyCode::Char('r') => {
-                    self.input_mode = InputMode::Recording;
-                }
-                KeyCode::Esc => self.state = AppState::MainMenu,
-                KeyCode::Enter => {
-                    let prompt = self.image_prompt.value().to_owned();
-                    let api_key = self
-                        .settings
-                        .openai_api_key
-                        .clone()
-                        .unwrap_or("".to_string());
-
-                    tokio::spawn(async move {
-                        let _ = image::generate_and_save_image(&api_key, &prompt).await;
-                    });
-                    self.add_message(Message::new(
-                        MessageType::System,
-                        "Generating image...".to_string(),
-                    ));
-                    self.image_prompt.reset();
-                    self.state = AppState::MainMenu;
-                }
-                _ => {}
-            },
-            InputMode::Editing => match key.code {
-                KeyCode::Esc => {
-                    self.input_mode = InputMode::Normal;
-                }
-                KeyCode::Char('v') => {
-                    if key.modifiers.contains(KeyModifiers::CONTROL) {
-                        if let Err(e) = self.handle_paste() {
-                            self.add_debug_message(format!("Failed to paste: {:#?}", e));
-                        }
-                    } else {
-                        self.image_prompt.handle_event(&Event::Key(key));
-                    }
-                }
-                _ => {
-                    self.image_prompt.handle_event(&Event::Key(key));
-                }
-            },
-            InputMode::Recording => match key.code {
-                KeyCode::Esc => {
-                    self.input_mode = InputMode::Normal;
-                }
-                _ => {
-                    self.input_mode = InputMode::Normal;
-                }
-            },
-        }
-    }
-
-    fn handle_create_image_editing(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Enter => {
-                // Handle save name submission
-                self.input_mode = InputMode::Normal;
-            }
-            KeyCode::Esc => {
-                self.input_mode = InputMode::Normal;
-            }
-            KeyCode::Char('v') => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    if let Err(e) = self.handle_paste() {
-                        self.add_debug_message(format!("Failed to paste: {:#?}", e));
-                    }
-                } else {
-                    self.image_prompt.handle_event(&Event::Key(key));
-                }
-            }
-            _ => {
-                self.image_prompt.handle_event(&Event::Key(key));
-            }
-        }
     }
 }

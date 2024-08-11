@@ -104,6 +104,7 @@ async fn run_app(
 ) -> io::Result<()> {
     let mut last_tick = Instant::now();
     let tick_rate = Duration::from_millis(16);
+    let _ai_client = app.lock().await.initialize_ai_client().await;
 
     loop {
         let timeout = tick_rate
