@@ -68,7 +68,7 @@ fn play_audio(file_path: String) -> Result<(), AIError> {
     Ok(())
 }
 
-const PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/data/recording.wav");
+const PATH: &str = "./data/recording.wav";
 
 pub fn record_audio(is_recording: Arc<AtomicBool>) -> Result<(), AudioError> {
     let host = cpal::default_host();
