@@ -238,6 +238,7 @@ impl App {
                 self.add_debug_message(format!("Game message: {:#?}", game_message_json.clone()));
                 self.add_message(Message::new(MessageType::Game, game_message_json.clone()));
 
+                self.scroll_to_bottom();
                 self.add_debug_message(format!(
                     "generating audio from {:#?}",
                     game_message.fluff.clone()
@@ -277,7 +278,6 @@ impl App {
                     ));
                 }
                 self.add_debug_message("saved game".to_string());
-                self.scroll_to_bottom();
             }
             Err(e) => {
                 self.add_debug_message(format!("Error: {:#?}", e));
@@ -287,8 +287,6 @@ impl App {
                 ));
             }
         }
-
-        self.scroll_to_bottom();
     }
 
     fn handle_paste(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -634,6 +632,9 @@ impl App {
             },
             InputMode::Editing => match key.code {
                 KeyCode::Esc => {
+                    self.input_mode = InputMode::Normal;
+                }
+                KeyCode::Enter => {
                     self.input_mode = InputMode::Normal;
                 }
                 KeyCode::Char('v') => {
@@ -1048,6 +1049,7 @@ impl App {
             self.game_content_scroll += 1;
         }
     }
+
     pub fn scroll_to_bottom(&mut self) {
         self.game_content_scroll = self.total_lines.saturating_sub(self.visible_lines);
         self.update_scroll();
@@ -1204,9 +1206,9 @@ impl App {
 
             // Send initial message to start the game
             self.process_message(format!(
-            "Start the game. When necessary, create a character sheet by calling the `create_character_sheet` function with the necessary details including the inventory. Respond only in the following language: {}",
-            self.settings.language
-        ));
+                "Start the game. Respond with the fluff in the following language: {}",
+                self.settings.language
+            ));
 
             Ok(())
         } else {

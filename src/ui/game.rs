@@ -63,7 +63,7 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
 
         let spinner_text = spinner_frame(&app.spinner);
         let spinner_widget = Paragraph::new(spinner_text)
-            .style(Style::default().fg(Color::Yellow))
+            .style(Style::default().fg(Color::Green))
             .alignment(Alignment::Center);
 
         f.render_widget(spinner_widget, spinner_area);
