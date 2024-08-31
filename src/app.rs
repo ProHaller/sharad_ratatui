@@ -1,7 +1,7 @@
 use crate::ai::{GameAI, GameConversationState};
 use crate::ai_response::{create_user_message, UserMessage};
 use crate::app_state::AppState;
-use crate::audio;
+use crate::audio::{self, play_audio};
 use crate::character::CharacterSheet;
 use crate::cleanup::cleanup;
 use crate::error::AppError;
@@ -16,8 +16,10 @@ use crate::ui::utils::Spinner;
 use chrono::Local;
 use copypasta::{ClipboardContext, ClipboardProvider};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use futures::stream::{FuturesOrdered, StreamExt};
 use ratatui::widgets::ListState;
 use ratatui::{layout::Alignment, text::Line};
+use rayon::prelude::*;
 use std::borrow::BorrowMut;
 use std::cell::RefCell;
 use std::fs;
@@ -228,7 +230,7 @@ impl App {
         self.add_debug_message(format!("Spinner: {:#?}", self.spinner_active));
 
         match result {
-            Ok(game_message) => {
+            Ok(mut game_message) => {
                 self.add_debug_message(format!(
                     "Received game message from AI: {:#?}",
                     game_message
@@ -239,26 +241,70 @@ impl App {
                 self.add_message(Message::new(MessageType::Game, game_message_json.clone()));
 
                 self.scroll_to_bottom();
-                // if self.settings.audio_output_enabled {
-                //     self.add_debug_message(format!(
-                //         "generating audio from {:#?}",
-                //         game_message.fluff.clone()
-                //     ));
-                //     if let Some(ai_client) = self.ai_client.clone() {
-                //         let ai_client = ai_client.clone();
-                //         let game_message_json = game_message.fluff.clone();
-                //         tokio::spawn(async move {
-                //             if let Err(e) = audio::generate_and_play_audio(
-                //                 &ai_client.client,
-                //                 &game_message_json,
-                //             )
-                //             .await
-                //             {
-                //                 eprintln!("Failed to generate or play audio: {:?}", e);
-                //             }
-                //         });
-                //     };
-                // }
+                if self.settings.audio_output_enabled {
+                    self.add_debug_message(format!(
+                        "generating audio from {:#?}",
+                        game_message.fluff.clone()
+                    ));
+                    if let Some(ai_client) = self.ai_client.clone() {
+                        game_message
+                            .fluff
+                            .speakers
+                            .iter_mut()
+                            .for_each(|speaker| speaker.assign_voice());
+
+                        let mut audio_futures = FuturesOrdered::new();
+
+                        for (index, fluff_line) in
+                            game_message.fluff.dialogue.iter_mut().enumerate()
+                        {
+                            let voice = game_message
+                                .fluff
+                                .speakers
+                                .iter()
+                                .find(|s| s.index == fluff_line.speaker_index)
+                                .and_then(|s| s.voice.clone())
+                                .expect("Voice not found for speaker");
+
+                            let ai_client = ai_client.clone();
+                            let text = fluff_line.text.clone();
+
+                            // Generate the audio in parallel, keeping track of the index
+                            audio_futures.push_back(async move {
+                                let result =
+                                    audio::generate_audio(&ai_client.client, &text, voice).await;
+                                (result, index)
+                            });
+                        }
+
+                        // Process the results in order
+                        while let Some((result, index)) = audio_futures.next().await {
+                            let fluff_line = &mut game_message.fluff.dialogue[index];
+                            match result {
+                                Ok(path) => {
+                                    fluff_line.audio = Some(path);
+                                    self.add_debug_message(format!(
+                                        "Audio generated for: {}",
+                                        fluff_line.text
+                                    ));
+                                }
+                                Err(e) => {
+                                    self.add_debug_message(format!(
+                                        "Failed to generate audio: {:?}",
+                                        e
+                                    ));
+                                }
+                            }
+                        }
+
+                        // Play audio sequentially
+                        for file in game_message.fluff.dialogue.iter() {
+                            if let Some(audio_path) = &file.audio {
+                                let _status = audio::play_audio(audio_path.clone());
+                            }
+                        }
+                    }
+                }
 
                 // Update the UI
                 self.cached_game_content = None; // Force recalculation of cached content

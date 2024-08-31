@@ -22,31 +22,31 @@ pub struct UserMessage {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-struct Speaker {
-    index: usize,
-    name: String,
-    gender: Gender,
-    voice: Option<Voice>,
+pub struct Speaker {
+    pub index: usize,
+    pub name: String,
+    pub gender: Gender,
+    pub voice: Option<Voice>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-enum Gender {
+pub enum Gender {
     NonBinary,
     Female,
     Male,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-struct FluffLine {
-    speaker_index: usize,
-    text: String,
-    audio: Option<PathBuf>,
+pub struct FluffLine {
+    pub speaker_index: usize,
+    pub text: String,
+    pub audio: Option<PathBuf>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Fluff {
-    speakers: Vec<Speaker>,
-    dialogue: Vec<FluffLine>,
+    pub speakers: Vec<Speaker>,
+    pub dialogue: Vec<FluffLine>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -85,7 +85,7 @@ impl Fluff {
                 rendered_fluff.push_str(&format!(
                     "{} {}\n",
                     (if &speaker.name != "Narrator" {
-                        format!("{}:\t", speaker.name)
+                        format!("\n{}: ", speaker.name)
                     } else {
                         "\n".to_string()
                     }),
@@ -96,6 +96,35 @@ impl Fluff {
         rendered_fluff.to_string()
     }
 }
+
+impl Speaker {
+    pub fn assign_voice(&mut self) {
+        match self.gender {
+            Gender::NonBinary => {
+                self.voice = Some(if rand::random() {
+                    Voice::Alloy
+                } else {
+                    Voice::Fable
+                })
+            }
+            Gender::Female => {
+                self.voice = Some(if rand::random() {
+                    Voice::Shimmer
+                } else {
+                    Voice::Nova
+                })
+            }
+            Gender::Male => {
+                self.voice = Some(if rand::random() {
+                    Voice::Onyx
+                } else {
+                    Voice::Echo
+                })
+            }
+        }
+    }
+}
+
 // Custom implementation of the Debug trait for the Message struct.
 impl std::fmt::Debug for Message {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
