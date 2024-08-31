@@ -131,7 +131,7 @@ impl GameAI {
         run_id: &str,
         game_state: &mut GameState,
     ) -> Result<(), AppError> {
-        let timeout_duration = Duration::from_secs(300);
+        let timeout_duration = Duration::from_secs(60);
         let start_time = Instant::now();
 
         loop {
