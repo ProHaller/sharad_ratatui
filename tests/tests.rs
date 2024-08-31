@@ -1,7 +1,4 @@
-use sharad_ratatui::character::{
-    CharacterSheet, CharacterSheetBuilder, CharacterSheetUpdate, Contact, Quality, Race, Skills,
-    UpdateOperation, Value,
-};
+use sharad_ratatui::*;
 use std::collections::HashMap;
 use std::fs;
 
@@ -171,10 +168,10 @@ fn test_character_sheet_update_from_json() {
     let args = &json_value["function"]["arguments"];
 
     // Step 5: Parse the update arguments
-    let update = CharacterSheetUpdate::UpdateAttribute {
+    let update = character::CharacterSheetUpdate::UpdateAttribute {
         attribute: args["update"]["attribute"].as_str().unwrap().to_string(),
         operation: match args["update"]["operation"].as_str().unwrap() {
-            "Add" => UpdateOperation::Add(Value::VecQuality(
+            "Add" => character::UpdateOperation::Add(character::Value::VecQuality(
                 args["update"]["value"]
                     .as_array()
                     .unwrap()

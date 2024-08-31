@@ -570,7 +570,8 @@ pub fn parse_game_content(app: &App, max_width: usize) -> Vec<(Line<'static>, Al
                     (
                         format!(
                             "crunch:\n{}\n\nfluff:\n{}",
-                            game_message.crunch, game_message.fluff
+                            game_message.crunch,
+                            game_message.fluff.render()
                         ),
                         Style::default().fg(Color::Green),
                         Alignment::Left,

@@ -239,26 +239,26 @@ impl App {
                 self.add_message(Message::new(MessageType::Game, game_message_json.clone()));
 
                 self.scroll_to_bottom();
-                self.add_debug_message(format!(
-                    "generating audio from {:#?}",
-                    game_message.fluff.clone()
-                ));
-                if self.settings.audio_output_enabled {
-                    if let Some(ai_client) = self.ai_client.clone() {
-                        let ai_client = ai_client.clone();
-                        let game_message_json = game_message.fluff.clone();
-                        tokio::spawn(async move {
-                            if let Err(e) = audio::generate_and_play_audio(
-                                &ai_client.client,
-                                &game_message_json,
-                            )
-                            .await
-                            {
-                                eprintln!("Failed to generate or play audio: {:?}", e);
-                            }
-                        });
-                    };
-                }
+                // if self.settings.audio_output_enabled {
+                //     self.add_debug_message(format!(
+                //         "generating audio from {:#?}",
+                //         game_message.fluff.clone()
+                //     ));
+                //     if let Some(ai_client) = self.ai_client.clone() {
+                //         let ai_client = ai_client.clone();
+                //         let game_message_json = game_message.fluff.clone();
+                //         tokio::spawn(async move {
+                //             if let Err(e) = audio::generate_and_play_audio(
+                //                 &ai_client.client,
+                //                 &game_message_json,
+                //             )
+                //             .await
+                //             {
+                //                 eprintln!("Failed to generate or play audio: {:?}", e);
+                //             }
+                //         });
+                //     };
+                // }
 
                 // Update the UI
                 self.cached_game_content = None; // Force recalculation of cached content

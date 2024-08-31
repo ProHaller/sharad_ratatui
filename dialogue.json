@@ -1,0 +1,96 @@
+{
+  "crunch": "Displaying a dialogue between Olivia and Bob \"The Broker\".",
+  "fluff": {
+    "speakers": [
+      {
+        "index": 0,
+        "name": "Narrator",
+        "gender": "NonBinary"
+      },
+      {
+        "index": 1,
+        "name": "Olivia",
+        "gender": "Female"
+      },
+      {
+        "index": 2,
+        "name": "Bob \"The Broker\"",
+        "gender": "Male"
+      }
+    ],
+    "dialogue": [
+      {
+        "speaker_index": 0,
+        "text": "In a private booth at the back of the dimly lit bar, Olivia sits across from Bob, her fixer, who’s nursing a synth-ale with a faraway look in his eyes as the low hum of chatter mingles with the pulsing bass from the speakers."
+      },
+      {
+        "speaker_index": 1,
+        "text": "You’re awfully quiet tonight, Bob. Got another secret deal cooking?"
+      },
+      {
+        "speaker_index": 2,
+        "text": "What, me? Secrets are my specialty, sweetheart. But I do have something bubbling, just not for you."
+      },
+      {
+        "speaker_index": 1,
+        "text": "Oh really? You know that I have a talent for charming secrets out of you."
+      },
+      {
+        "speaker_index": 2,
+        "text": "Yeah, well, I think you might find this one’s just a bit out of your league. It involves some serious players and an equally serious risk."
+      },
+      {
+        "speaker_index": 0,
+        "text": "The air between them thickens with tension as Olivia leans closer, pretending to contemplate the menu, her curious eyes glimmering."
+      },
+      {
+        "speaker_index": 1,
+        "text": "Risk is my middle name, Bob. What do I need to know?"
+      },
+      {
+        "speaker_index": 2,
+        "text": "You’re pushing it. Alright, there’s a new heist brewing—target’s a high-security corporate lab packed with enough tech to make anyone drool."
+      },
+      {
+        "speaker_index": 1,
+        "text": "And I suppose I’m supposed to sweet-talk my way in, plant a charming little bomb and waltz out?"
+      },
+      {
+        "speaker_index": 2,
+        "text": "Something like that. You’d need a crew, someone to crack their security, and another muscle to play bodyguard."
+      },
+      {
+        "speaker_index": 1,
+        "text": "Damsel in distress, you suggest? Who's on the roster?"
+      },
+      {
+        "speaker_index": 2,
+        "text": "Not my choice, but there’s a decker I know—sloppy but works well under pressure. The muscle, though? It’s as slippery as fish."
+      },
+      {
+        "speaker_index": 0,
+        "text": "Bob lifts his glass, taking a deep drink, clearly weighing the pros and cons."
+      },
+      {
+        "speaker_index": 2,
+        "text": "If you do this, Olivia, you’d need to be sharp, faster than a decker on chips. The heat's going to be thick, and there's no room for mistakes."
+      },
+      {
+        "speaker_index": 1,
+        "text": "When do we move?"
+      },
+      {
+        "speaker_index": 2,
+        "text": "Sooner rather than later. Let me set the stage. Just... don’t let your charm turn into chaos, alright?"
+      },
+      {
+        "speaker_index": 0,
+        "text": "Olivia smirks, a glint in her eye that says all the chaos she might unleash is precisely what she loves."
+      },
+      {
+        "speaker_index": 1,
+        "text": "Chaos is my middle name too, Bob. Let’s make this dance unforgettable."
+      }
+    ]
+  }
+}

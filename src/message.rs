@@ -1,6 +1,9 @@
+use std::path::PathBuf;
+
 // Import the necessary modules and structs from other parts of the application or crates.
 use crate::character::CharacterSheet;
 use crate::error::AppError;
+use async_openai::types::Voice;
 use serde::{Deserialize, Serialize};
 
 // Define an enumeration to categorize message types within the game.
@@ -18,15 +21,43 @@ pub struct UserMessage {
     pub player_action: String, // Specific actions taken by the player.
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct Speaker {
+    index: usize,
+    name: String,
+    gender: Gender,
+    voice: Option<Voice>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+enum Gender {
+    NonBinary,
+    Female,
+    Male,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct FluffLine {
+    speaker_index: usize,
+    text: String,
+    audio: Option<PathBuf>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Fluff {
+    speakers: Vec<Speaker>,
+    dialogue: Vec<FluffLine>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct GameMessage {
     pub crunch: String,
-    pub fluff: String,
+    pub fluff: Fluff,
     pub character_sheet: Option<CharacterSheet>,
 }
 
 impl GameMessage {
-    pub fn new(crunch: String, fluff: String, character_sheet: Option<CharacterSheet>) -> Self {
+    pub fn new(crunch: String, fluff: Fluff, character_sheet: Option<CharacterSheet>) -> Self {
         GameMessage {
             crunch,
             fluff,
@@ -42,6 +73,29 @@ pub struct Message {
     pub content: String,           // The content of the message.
 }
 
+impl Fluff {
+    pub fn render(&self) -> String {
+        let mut rendered_fluff = String::new();
+        for dialogue in self.dialogue.iter() {
+            if let Some(speaker) = self
+                .speakers
+                .iter()
+                .find(|s| s.index == dialogue.speaker_index)
+            {
+                rendered_fluff.push_str(&format!(
+                    "{} {}\n",
+                    (if &speaker.name != "Narrator" {
+                        format!("{}:\t", speaker.name)
+                    } else {
+                        "\n".to_string()
+                    }),
+                    dialogue.text,
+                ));
+            }
+        }
+        rendered_fluff.to_string()
+    }
+}
 // Custom implementation of the Debug trait for the Message struct.
 impl std::fmt::Debug for Message {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
