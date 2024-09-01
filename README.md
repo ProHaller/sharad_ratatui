@@ -1,36 +1,52 @@
 # Sharad Ratatui
 
-Welcome to Sharad Ratatui, an AI-assisted text-based role-playing game built with Rust and the Ratatui library!
+Welcome to Sharad Ratatui, a text-based Shadowrun role-playing game built with Rust and the Ratatui library!
 
-## 🌟 Contribute to Our AI-Powered Adventure
+## 🌟 Join Our Adventure
 
-Are you excited about the intersection of AI and gaming? Do you want to be part of a project that's pushing the boundaries of what's possible with AI-assisted development? Then you've come to the right place!
+Are you passionate about gaming and development? Do you want to be part of a project that combines the excitement of RPGs with the creativity of programming? Then you've come to the right place!
 
-As a complete programming beginner, I've embarked on this journey to create Sharad Ratatui, and I'm thrilled to invite you to join me. This project is a testament to the power of AI in helping newcomers dive into complex programming projects. Whether you're a seasoned developer or a fellow beginner, your contributions are not just welcome – they're essential to our growth!
+As a complete programming beginner, I've started this journey to create Sharad Ratatui, and I'm thrilled to invite you to join me. Whether you're a seasoned developer or just starting out, your contributions are not just welcome – they're essential to our growth!
+
+### About the Game
+
+Sharad Ratatui is a text-based RPG set in the world of Shadowrun, an iconic tabletop RPG known for its blend of cyberpunk and fantasy elements. Traditionally, a game master (GM) guides players through the narrative, responding to their decisions and shaping the world around them.
+
+In Sharad Ratatui, the role of the GM is handled by a mix of AI for the Narration and the game's logic for dice based rules application. Players input natural text commands to decide their actions, and the game generates the narrative, dialogues, and other story elements in real-time. The game keeps track of all the variables, updating the character sheet and world state as the player progresses through their adventure. This approach offers a unique and dynamic storytelling experience, making each playthrough distinct. Furthermore, the narration can be read by the game with multiple voices and styles, allowing for more immersive and engaging gameplay.
 
 ### Why Contribute?
 
-- **Learn AI-Assisted Development**: See firsthand how AI can be leveraged in software development.
-- **Beginner-Friendly**: As a beginner myself, I've structured this project to be accessible to newcomers.
-- **Innovative Gameplay**: Help shape a unique RPG experience powered by AI.
+- **Learn and Grow**: Dive into Rust development and explore the world of terminal user interfaces.
+- **Beginner-Friendly**: As a beginner myself, I definitely won't judge, and although I've tried to structure this project to be accessible to newcomers, it's a bit of a mess right now.
+- **Innovative Gameplay**: Help shape a unique AIRPG experience.
 - **Rust & Ratatui**: Gain experience with Rust and terminal user interfaces.
 
-## 🤖 AI-Powered Development
+### Requirements
 
-Sharad Ratatui is more than just a game – it's an experiment in AI-assisted programming. Here's how AI has been integral to our process:
+To play Sharad Ratatui, you will need an OpenAI API Key. This key is necessary to enable the game's narrative generation and other dynamic features. If you don't have an API key but still want to contribute, you can contact the maiintainer to get sponsored.
 
-- **Code Generation**: Large portions of the codebase were initially generated using AI.
-- **Problem Solving**: AI has been our go-to resource for debugging and implementing new features.
-- **Documentation**: This README and other documentation have been crafted with AI assistance.
+## 🛠️ Project Architecture Overview
 
-By contributing, you'll not only improve the game but also help refine our AI-assisted development approach!
+The project is organized into several key modules, each responsible for different aspects of the game:
+
+- **ai.rs**: Manages the game's narrative flow and state updates, handling player inputs and generating responses.
+- **app.rs**: Oversees the main application logic, including game state transitions, input handling, and interaction with the UI.
+- **game_state.rs**: Contains the structures and logic for maintaining the current game state, including character sheets and world variables.
+- **ui/**: This directory contains the components related to the terminal user interface, including menus, input fields, and the main game screen.
+- **character.rs**: Defines the structure and behavior of the characters within the game, including attributes, skills, and inventory management.
+- **settings.rs** and **settings_state.rs**: Handle the game's configuration and settings, such as API keys for the game and audio settings.
+- **main.rs**: The entry point for the application, initializing the game, and setting up the terminal interface.
+
+The game is built using the [Ratatui](https://github.com/tui-rs-revival/ratatui) library for terminal user interfaces, providing a rich, text-based experience reminiscent of classic text adventures.
 
 ## 🚀 Getting Started
 
 1. Clone the repository
 2. Install Rust if you haven't already (`https://www.rust-lang.org/tools/install`)
-3. Run `cargo build` to compile the project
-4. Start the game with `cargo run`
+3. Obtain an OpenAI API Key from the [OpenAI website](https://beta.openai.com/signup/)
+4. Run `cargo build` to compile the project
+5. Start the game with `cargo run`
+6. Go to settings and set your API key
 
 ## 🤝 How to Contribute
 
@@ -41,14 +57,15 @@ We value every contribution, no matter how small! Here's how you can help:
 3. Make your changes
 4. Submit a **Pull Request** with a clear description of your improvements
 
-Don't worry if you're new to this – we're learning together! Feel free to ask questions, propose ideas, or even just improve documentation. Every contribution counts!
+Don't worry if you're new to this – I am too and we're learning together! Feel free to ask questions, propose ideas, or even just improve documentation. Every contribution counts!
 
 ## 📜 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Licensed under either of [Apache License, Version 2.0](https://www.youtube.com/watch?v=oHg5SJYRHA0) or [MIT license](https://www.youtube.com/watch?v=oHg5SJYRHA0) at your option.
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in this crate by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
 
 ## 🙏 Acknowledgements
 
-A huge thank you to the AI assistants that have made this project possible, and to every contributor who joins us on this exciting journey!
+A huge thank you to everyone who has helped make this project possible, both here on GitHub but also on Reddit and IRL, and to every contributor who joins us on this exciting journey!
 
-Let's push the boundaries of AI-assisted game development together! 🎮✨
+Let's create an something cool together! 🎮✨
