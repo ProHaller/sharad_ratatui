@@ -1,6 +1,6 @@
 use async_openai::{
     config::OpenAIConfig,
-    types::{CreateImageRequestArgs, ImageModel, ImageSize, ResponseFormat},
+    types::{CreateImageRequestArgs, ImageModel, ImageResponseFormat, ImageSize, ResponseFormat},
     Client,
 };
 use std::error::Error;
@@ -13,7 +13,7 @@ pub async fn generate_and_save_image(api_key: &str, prompt: &str) -> Result<(), 
         .prompt(prompt)
         .model(ImageModel::DallE3)
         .n(1)
-        .response_format(ResponseFormat::Url)
+        .response_format(ImageResponseFormat::Url)
         .size(ImageSize::S1024x1792)
         .build()?;
 

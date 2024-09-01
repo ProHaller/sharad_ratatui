@@ -1,0 +1,81 @@
+{
+  "name": "Sharad_schema_3",
+  "strict": true,
+  "schema": {
+    "type": "object",
+    "properties": {
+      "crunch": {
+        "type": "string",
+        "description": "Game master's inner monologue, technical adjudications, and mechanics involved in resolving player actions. Include dice roll results and rule interpretations."
+      },
+      "fluff": {
+        "type": "object",
+        "description": "This section describes the world and action to the player. The content is structured into two arrays: speakers and dialogue. IMPORTANT: The Narrator (index 0) must only be used for narration, never for character speech. The player character must have their own named speaker entry and only use it for direct or reported speech. All other speaking characters should be listed",
+        "properties": {
+          "speakers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "index": {
+                  "type": "integer",
+                  "description": "Index for the speaker. 0 is reserved for the Narrator, 1 for the player character, 2+ for other characters."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Name of the speaker. Must be 'Narrator' for index 0, character's name for the others."
+                },
+                "gender": {
+                  "type": "string",
+                  "enum": [
+                    "NonBinary",
+                    "Male",
+                    "Female"
+                  ],
+                  "description": "Gender of the speaker. Must be 'NonBinary' for the Narrator."
+                }
+              },
+              "required": [
+                "index",
+                "name",
+                "gender"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "dialogue": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "speaker_index": {
+                  "type": "integer",
+                  "description": "Index of the speaker in the 'speakers' array. 0 for Narrator, 1 for player character, 2+ for other characters."
+                },
+                "text": {
+                  "type": "string",
+                  "description": "For narration: Narrator's text, including dialogue tags, action breaks, and general narration but never direct speech. For speech: Direct dialogue of a character but only direct speech."
+                }
+              },
+              "required": [
+                "speaker_index",
+                "text"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "speakers",
+          "dialogue"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "required": [
+      "crunch",
+      "fluff"
+    ],
+    "additionalProperties": false
+  }
+}

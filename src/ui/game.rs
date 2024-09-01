@@ -513,7 +513,7 @@ pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
         .title(if save_name.is_empty() {
             " Game will start momentarily ".to_string()
         } else {
-            save_name
+            format!(" {} ", save_name)
         })
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Green));

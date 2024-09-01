@@ -5,6 +5,8 @@ use crate::character::CharacterSheet;
 use crate::error::AppError;
 use async_openai::types::Voice;
 use serde::{Deserialize, Serialize};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 // Define an enumeration to categorize message types within the game.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -29,7 +31,7 @@ pub struct Speaker {
     pub voice: Option<Voice>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Hash, Clone)]
 pub enum Gender {
     NonBinary,
     Female,
@@ -99,27 +101,34 @@ impl Fluff {
 
 impl Speaker {
     pub fn assign_voice(&mut self) {
+        let gender_name_tuple = (self.gender.clone(), self.name.clone());
+
+        // Create a hasher and hash the tuple
+        let mut hasher = DefaultHasher::new();
+        gender_name_tuple.hash(&mut hasher);
+        let hash = hasher.finish();
+
         match self.gender {
             Gender::NonBinary => {
-                self.voice = Some(if rand::random() {
+                self.voice = Some(if hash % 2 == 0 {
                     Voice::Alloy
                 } else {
                     Voice::Fable
-                })
+                });
             }
             Gender::Female => {
-                self.voice = Some(if rand::random() {
+                self.voice = Some(if hash % 2 == 0 {
                     Voice::Shimmer
                 } else {
                     Voice::Nova
-                })
+                });
             }
             Gender::Male => {
-                self.voice = Some(if rand::random() {
+                self.voice = Some(if hash % 2 == 0 {
                     Voice::Onyx
                 } else {
                     Voice::Echo
-                })
+                });
             }
         }
     }

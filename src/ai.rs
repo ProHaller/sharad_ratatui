@@ -160,6 +160,7 @@ impl GameAI {
                 }
                 RunStatus::Failed | RunStatus::Cancelled | RunStatus::Expired => {
                     self.add_debug_message("Run failed, cancelled, or expired".to_string());
+                    let _ = self.cancel_run(thread_id, run_id).await;
                     return Err(AppError::GameStateParseError(format!(
                         "Run failed with status: {:#?}",
                         run.status
@@ -223,7 +224,7 @@ impl GameAI {
         Ok(())
     }
 
-    async fn cancel_run(&self, thread_id: &str, run_id: &str) -> Result<(), AppError> {
+    pub async fn cancel_run(&self, thread_id: &str, run_id: &str) -> Result<(), AppError> {
         self.client
             .threads()
             .runs(thread_id)
