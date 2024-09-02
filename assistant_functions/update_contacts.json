@@ -1,6 +1,7 @@
 {
   "name": "update_contacts",
   "description": "Update contacts of a Shadowrun character",
+  "strict": true,
   "parameters": {
     "type": "object",
     "required": [
@@ -23,8 +24,8 @@
         "description": "The type of operation to perform on the contacts"
       },
       "contacts": {
-        "type": "object",
-        "additionalProperties": {
+        "type": "array",
+        "items": {
           "type": "object",
           "required": [
             "name",
@@ -41,17 +42,33 @@
             },
             "loyalty": {
               "type": "integer",
-              "minimum": 1,
-              "maximum": 6
+              "enum": [
+                1,
+                2,
+                3,
+                4,
+                5,
+                6
+              ],
+              "description": "Loyalty rating, must be between 1 and 6"
             },
             "connection": {
               "type": "integer",
-              "minimum": 1,
-              "maximum": 6
+              "enum": [
+                1,
+                2,
+                3,
+                4,
+                5,
+                6
+              ],
+              "description": "Connection rating, must be between 1 and 6"
             }
-          }
+          },
+          "additionalProperties": false
         }
       }
-    }
+    },
+    "additionalProperties": false
   }
 }

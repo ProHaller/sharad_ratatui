@@ -34,9 +34,6 @@
           "backstory": {
             "type": "string"
           },
-          "main": {
-            "type": "boolean"
-          },
           "body": {
             "type": "integer",
             "minimum": 1
