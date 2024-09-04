@@ -7,6 +7,7 @@ use crate::error::{AIError, AppError, GameError};
 use crate::game_state::GameState;
 use crate::message;
 use crate::message::{Message, MessageType};
+use async_openai::types::{RequiredAction, RunToolCallObject};
 use async_openai::{
     config::OpenAIConfig,
     types::{
@@ -235,7 +236,6 @@ impl GameAI {
         Ok(())
     }
 
-    // Asynchronous method to handle required actions based on the status of an active run.
     async fn handle_required_action(
         &mut self,
         thread_id: &str,
@@ -247,606 +247,598 @@ impl GameAI {
             "Handling required action: {:#?}",
             run.required_action
         ));
+
         if let Some(required_action) = &run.required_action {
-            if required_action.r#type == "submit_tool_outputs" {
-                let mut tool_outputs = Vec::new();
-
-                for tool_call in &required_action.submit_tool_outputs.tool_calls {
-                    self.add_debug_message(format!("Handling tool call: {:#?}", tool_call));
-                    let output = match tool_call.function.name.as_str() {
-                        "create_character_sheet" => {
-                            let args: serde_json::Value =
-                                serde_json::from_str(&tool_call.function.arguments)?;
-                            let character_sheet = match self.create_character(&args).await {
-                                Ok(sheet) => sheet,
-                                Err(e) => {
-                                    self.add_debug_message(format!(
-                                        "Error creating character: {:#?}",
-                                        e
-                                    ));
-                                    self.create_dummy_character()
-                                }
-                            };
-                            if character_sheet.main {
-                                game_state.character_sheet = Some(character_sheet.clone());
-                            }
-                            game_state.characters.push(character_sheet.clone());
-                            if let Some(state) = &mut *self.conversation_state.lock().await {
-                                state.character_sheet = Some(character_sheet.clone());
-                            }
-                            self.add_debug_message(format!(
-                                "Character sheet: {:#?}",
-                                character_sheet.clone()
-                            ));
-                            serde_json::to_string(&character_sheet)?
-                        }
-                        "perform_dice_roll" => {
-                            let args: DiceRollRequest =
-                                serde_json::from_str(&tool_call.function.arguments)?;
-                            let response = match perform_dice_roll(args, game_state) {
-                                Ok(response) => {
-                                    self.add_debug_message(format!("Dice roll: {:#?}", response));
-                                    response
-                                }
-                                Err(e) => {
-                                    self.add_debug_message(format!(
-                                        "Error performing dice roll: {:#?}",
-                                        e
-                                    ));
-                                    DiceRollResponse {
-                                        hits: 0,
-                                        glitch: false,
-                                        critical_glitch: false,
-                                        critical_success: false,
-                                        dice_results: vec![],
-                                        success: false,
-                                    }
-                                }
-                            };
-                            serde_json::to_string(&response)?
-                        }
-                        "update_basic_attributes" => {
-                            let args: serde_json::Value =
-                                serde_json::from_str(&tool_call.function.arguments)?;
-                            let character_name =
-                                args["character_name"].as_str().ok_or_else(|| {
-                                    AppError::GameStateParseError(
-                                        "Missing character_name".to_string(),
-                                    )
-                                })?;
-                            let updates = &args["updates"];
-
-                            let character = game_state
-                                .characters
-                                .iter_mut()
-                                .find(|c| c.name == character_name)
-                                .ok_or_else(|| {
-                                    AppError::Game(GameError::CharacterNotFound(
-                                        character_name.to_string(),
-                                    ))
-                                })?;
-
-                            for (attr, value) in updates.as_object().unwrap() {
-                                let update = CharacterSheetUpdate::UpdateAttribute {
-                                    attribute: attr.to_string(),
-                                    operation: UpdateOperation::Modify(
-                                        self.parse_value(attr, value)?,
-                                    ),
-                                };
-                                character.apply_update(update)?;
-                            }
-
-                            if game_state
-                                .character_sheet
-                                .as_ref()
-                                .map(|cs| cs.name == character_name)
-                                .unwrap_or(false)
-                            {
-                                game_state.character_sheet = Some(character.clone());
-                            }
-
-                            format!(
-                                "Basic attributes updated for character '{}'",
-                                character_name
-                            )
-                        }
-                        "update_skills" => {
-                            let args: serde_json::Value =
-                                serde_json::from_str(&tool_call.function.arguments)?;
-                            let character_name =
-                                args["character_name"].as_str().ok_or_else(|| {
-                                    AppError::GameStateParseError(
-                                        "Missing character_name".to_string(),
-                                    )
-                                })?;
-                            let updates = &args["updates"]["skills"];
-
-                            let character = game_state
-                                .characters
-                                .iter_mut()
-                                .find(|c| c.name == character_name)
-                                .ok_or_else(|| {
-                                    AppError::Game(GameError::CharacterNotFound(
-                                        character_name.to_string(),
-                                    ))
-                                })?;
-
-                            let update_category =
-                                |category: &str,
-                                 skill_map: &mut HashMap<String, u8>|
-                                 -> Result<(), AppError> {
-                                    if let Some(category_skills) =
-                                        updates.get(category).and_then(|s| s.as_array())
-                                    {
-                                        for skill in category_skills {
-                                            let name = skill["name"].as_str().ok_or_else(|| {
-                                                AppError::GameStateParseError(format!(
-                                                    "Missing skill name in {} category",
-                                                    category
-                                                ))
-                                            })?;
-                                            let rating =
-                                                skill["rating"].as_u64().ok_or_else(|| {
-                                                    AppError::GameStateParseError(format!(
-                                                        "Invalid skill rating in {} category",
-                                                        category
-                                                    ))
-                                                })?
-                                                    as u8;
-                                            skill_map.insert(name.to_string(), rating);
-                                        }
-                                    }
-                                    Ok(())
-                                };
-
-                            // Update regular skills
-                            let mut updated_skills = character.skills.clone();
-                            update_category("combat", &mut updated_skills.combat)?;
-                            update_category("physical", &mut updated_skills.physical)?;
-                            update_category("social", &mut updated_skills.social)?;
-                            update_category("technical", &mut updated_skills.technical)?;
-
-                            let skills_update = CharacterSheetUpdate::UpdateAttribute {
-                                attribute: "skills".to_string(),
-                                operation: UpdateOperation::Modify(
-                                    crate::character::Value::Skills(updated_skills),
-                                ),
-                            };
-                            character.apply_update(skills_update)?;
-
-                            // Update knowledge skills
-                            if let Some(knowledge_skills) = updates.get("knowledge") {
-                                let mut updated_knowledge_skills =
-                                    character.knowledge_skills.clone();
-                                if let Some(knowledge_array) = knowledge_skills.as_array() {
-                                    for skill in knowledge_array {
-                                        let name = skill["name"].as_str().ok_or_else(|| {
-                                            AppError::GameStateParseError(
-                                                "Missing knowledge skill name".to_string(),
-                                            )
-                                        })?;
-                                        let rating = skill["rating"].as_u64().ok_or_else(|| {
-                                            AppError::GameStateParseError(
-                                                "Invalid knowledge skill rating".to_string(),
-                                            )
-                                        })?
-                                            as u8;
-                                        updated_knowledge_skills.insert(name.to_string(), rating);
-                                    }
-                                }
-
-                                let knowledge_update = CharacterSheetUpdate::UpdateAttribute {
-                                    attribute: "knowledge_skills".to_string(),
-                                    operation: UpdateOperation::Modify(
-                                        crate::character::Value::HashMapStringU8(
-                                            updated_knowledge_skills,
-                                        ),
-                                    ),
-                                };
-                                character.apply_update(knowledge_update)?;
-                            }
-
-                            if game_state
-                                .character_sheet
-                                .as_ref()
-                                .map(|cs| cs.name == character_name)
-                                .unwrap_or(false)
-                            {
-                                game_state.character_sheet = Some(character.clone());
-                            }
-
-                            format!("Skills updated for character '{}'", character_name)
-                        }
-                        "update_inventory" => {
-                            let args: serde_json::Value =
-                                serde_json::from_str(&tool_call.function.arguments)?;
-                            let character_name =
-                                args["character_name"].as_str().ok_or_else(|| {
-                                    AppError::GameStateParseError(
-                                        "Missing character_name".to_string(),
-                                    )
-                                })?;
-                            let operation = args["operation"].as_str().ok_or_else(|| {
-                                AppError::GameStateParseError("Missing operation".to_string())
-                            })?;
-                            let items = &args["items"];
-
-                            let character = game_state
-                                .characters
-                                .iter_mut()
-                                .find(|c| c.name == character_name)
-                                .ok_or_else(|| {
-                                    AppError::Game(GameError::CharacterNotFound(
-                                        character_name.to_string(),
-                                    ))
-                                })?;
-
-                            let mut new_items: HashMap<String, Item> = HashMap::new();
-
-                            match operation {
-                                "Remove" => {
-                                    // For removal, we only need the item names
-                                    let item_names: Vec<String> = if items.is_array() {
-                                        serde_json::from_value(items.clone())?
-                                    } else if items.is_object() && items.get("name").is_some() {
-                                        vec![items["name"].as_str().unwrap().to_string()]
-                                    } else if items.is_object() && items.get("name").is_none() {
-                                        items.as_object().unwrap().keys().cloned().collect()
-                                    } else {
-                                        return Err(AppError::GameStateParseError(
-                                            "Invalid items format for removal".to_string(),
-                                        ));
-                                    };
-                                    for name in item_names {
-                                        new_items.insert(
-                                            name.clone(),
-                                            Item {
-                                                name: name.clone(),
-                                                quantity: 1,
-                                                description: String::new(),
-                                            },
-                                        );
-                                    }
-                                }
-                                "Add" | "Modify" => {
-                                    // Handle both single item and multiple items
-                                    if items.is_object() {
-                                        if items.get("name").is_some() {
-                                            // Single item
-                                            let item: Item = serde_json::from_value(items.clone())?;
-                                            new_items.insert(item.name.clone(), item);
-                                        } else {
-                                            // Multiple items
-                                            for (key, value) in items.as_object().unwrap() {
-                                                let item = if value.is_object() {
-                                                    Item {
-                                                        name: key.clone(),
-                                                        quantity: value["quantity"]
-                                                            .as_u64()
-                                                            .unwrap_or(1)
-                                                            as u32,
-                                                        description: value["description"]
-                                                            .as_str()
-                                                            .unwrap_or("")
-                                                            .to_string(),
-                                                    }
-                                                } else {
-                                                    return Err(AppError::GameStateParseError(
-                                                        format!("Invalid item format for {}", key),
-                                                    ));
-                                                };
-                                                new_items.insert(key.clone(), item);
-                                            }
-                                        }
-                                    } else {
-                                        return Err(AppError::GameStateParseError(
-                                            "Invalid items format for add/modify".to_string(),
-                                        ));
-                                    }
-                                }
-                                _ => {
-                                    return Err(AppError::GameStateParseError(
-                                        "Invalid inventory operation".to_string(),
-                                    ))
-                                }
-                            };
-
-                            let update = CharacterSheetUpdate::UpdateAttribute {
-                                attribute: "inventory".to_string(),
-                                operation: match operation {
-                                    "Add" => UpdateOperation::Add(
-                                        crate::character::Value::HashMapStringItem(new_items),
-                                    ),
-                                    "Remove" => UpdateOperation::Remove(
-                                        crate::character::Value::HashMapStringItem(new_items),
-                                    ),
-                                    "Modify" => UpdateOperation::Modify(
-                                        crate::character::Value::HashMapStringItem(new_items),
-                                    ),
-                                    _ => unreachable!(),
-                                },
-                            };
-                            character.apply_update(update)?;
-
-                            if game_state
-                                .character_sheet
-                                .as_ref()
-                                .map(|cs| cs.name == character_name)
-                                .unwrap_or(false)
-                            {
-                                game_state.character_sheet = Some(character.clone());
-                            }
-
-                            format!(
-                                "Inventory updated for character '{}'. Operation: {}",
-                                character_name, operation
-                            )
-                        }
-
-                        "update_qualities" => {
-                            let args: serde_json::Value =
-                                serde_json::from_str(&tool_call.function.arguments)?;
-                            let character_name =
-                                args["character_name"].as_str().ok_or_else(|| {
-                                    AppError::GameStateParseError(
-                                        "Missing character_name".to_string(),
-                                    )
-                                })?;
-                            let operation = args["operation"].as_str().ok_or_else(|| {
-                                AppError::GameStateParseError("Missing operation".to_string())
-                            })?;
-                            let qualities = &args["qualities"];
-
-                            let character = game_state
-                                .characters
-                                .iter_mut()
-                                .find(|c| c.name == character_name)
-                                .ok_or_else(|| {
-                                    AppError::Game(GameError::CharacterNotFound(
-                                        character_name.to_string(),
-                                    ))
-                                })?;
-
-                            let new_qualities: Vec<Quality> =
-                                serde_json::from_value(qualities.clone())?;
-
-                            let update = CharacterSheetUpdate::UpdateAttribute {
-                                attribute: "qualities".to_string(),
-                                operation: match operation {
-                                    "Add" => UpdateOperation::Add(
-                                        crate::character::Value::VecQuality(new_qualities),
-                                    ),
-                                    "Remove" => UpdateOperation::Remove(
-                                        crate::character::Value::VecQuality(new_qualities),
-                                    ),
-                                    _ => {
-                                        return Err(AppError::GameStateParseError(
-                                            "Invalid qualities operation".to_string(),
-                                        ))
-                                    }
-                                },
-                            };
-                            character.apply_update(update)?;
-
-                            if game_state
-                                .character_sheet
-                                .as_ref()
-                                .map(|cs| cs.name == character_name)
-                                .unwrap_or(false)
-                            {
-                                game_state.character_sheet = Some(character.clone());
-                            }
-
-                            format!(
-                                "Qualities updated for character '{}'. Operation: {}",
-                                character_name, operation
-                            )
-                        }
-                        "update_matrix_attributes" => {
-                            let args: serde_json::Value =
-                                serde_json::from_str(&tool_call.function.arguments)?;
-                            let character_name =
-                                args["character_name"].as_str().ok_or_else(|| {
-                                    AppError::GameStateParseError(
-                                        "Missing character_name".to_string(),
-                                    )
-                                })?;
-                            let matrix_attributes = &args["matrix_attributes"];
-
-                            let character = game_state
-                                .characters
-                                .iter_mut()
-                                .find(|c| c.name == character_name)
-                                .ok_or_else(|| {
-                                    AppError::Game(GameError::CharacterNotFound(
-                                        character_name.to_string(),
-                                    ))
-                                })?;
-
-                            let new_matrix_attributes: MatrixAttributes =
-                                serde_json::from_value(matrix_attributes.clone())?;
-
-                            let update = CharacterSheetUpdate::UpdateAttribute {
-                                attribute: "matrix_attributes".to_string(),
-                                operation: UpdateOperation::Modify(
-                                    crate::character::Value::OptionMatrixAttributes(Some(
-                                        new_matrix_attributes,
-                                    )),
-                                ),
-                            };
-                            character.apply_update(update)?;
-
-                            if game_state
-                                .character_sheet
-                                .as_ref()
-                                .map(|cs| cs.name == character_name)
-                                .unwrap_or(false)
-                            {
-                                game_state.character_sheet = Some(character.clone());
-                            }
-
-                            format!(
-                                "Matrix attributes updated for character '{}'",
-                                character_name
-                            )
-                        }
-                        "update_contacts" => {
-                            let args: serde_json::Value =
-                                serde_json::from_str(&tool_call.function.arguments)?;
-                            let character_name =
-                                args["character_name"].as_str().ok_or_else(|| {
-                                    AppError::GameStateParseError(
-                                        "Missing character_name".to_string(),
-                                    )
-                                })?;
-                            let operation = args["operation"].as_str().ok_or_else(|| {
-                                AppError::GameStateParseError("Missing operation".to_string())
-                            })?;
-                            let contacts = &args["contacts"];
-
-                            let character = game_state
-                                .characters
-                                .iter_mut()
-                                .find(|c| c.name == character_name)
-                                .ok_or_else(|| {
-                                    AppError::Game(GameError::CharacterNotFound(
-                                        character_name.to_string(),
-                                    ))
-                                })?;
-
-                            let new_contacts: HashMap<String, Contact> =
-                                serde_json::from_value(contacts.clone())?;
-
-                            let update = CharacterSheetUpdate::UpdateAttribute {
-                                attribute: "contacts".to_string(),
-                                operation: match operation {
-                                    "Add" => UpdateOperation::Add(
-                                        crate::character::Value::HashMapStringContact(new_contacts),
-                                    ),
-                                    "Remove" => UpdateOperation::Remove(
-                                        crate::character::Value::HashMapStringContact(new_contacts),
-                                    ),
-                                    "Modify" => UpdateOperation::Modify(
-                                        crate::character::Value::HashMapStringContact(new_contacts),
-                                    ),
-                                    _ => {
-                                        return Err(AppError::GameStateParseError(
-                                            "Invalid contacts operation".to_string(),
-                                        ))
-                                    }
-                                },
-                            };
-                            character.apply_update(update)?;
-
-                            if game_state
-                                .character_sheet
-                                .as_ref()
-                                .map(|cs| cs.name == character_name)
-                                .unwrap_or(false)
-                            {
-                                game_state.character_sheet = Some(character.clone());
-                            }
-
-                            format!(
-                                "Contacts updated for character '{}'. Operation: {}",
-                                character_name, operation
-                            )
-                        }
-                        "update_augmentations" => {
-                            let args: serde_json::Value =
-                                serde_json::from_str(&tool_call.function.arguments)?;
-                            let character_name =
-                                args["character_name"].as_str().ok_or_else(|| {
-                                    AppError::GameStateParseError(
-                                        "Missing character_name".to_string(),
-                                    )
-                                })?;
-                            let operation = args["operation"].as_str().ok_or_else(|| {
-                                AppError::GameStateParseError("Missing operation".to_string())
-                            })?;
-                            let augmentation_type =
-                                args["augmentation_type"].as_str().ok_or_else(|| {
-                                    AppError::GameStateParseError(
-                                        "Missing augmentation_type".to_string(),
-                                    )
-                                })?;
-                            let augmentations = &args["augmentations"];
-
-                            let character = game_state
-                                .characters
-                                .iter_mut()
-                                .find(|c| c.name == character_name)
-                                .ok_or_else(|| {
-                                    AppError::Game(GameError::CharacterNotFound(
-                                        character_name.to_string(),
-                                    ))
-                                })?;
-
-                            let new_augmentations: Vec<String> =
-                                serde_json::from_value(augmentations.clone())?;
-
-                            let update = CharacterSheetUpdate::UpdateAttribute {
-                                attribute: augmentation_type.to_string(),
-                                operation: match operation {
-                                    "Add" => UpdateOperation::Add(
-                                        crate::character::Value::VecString(new_augmentations),
-                                    ),
-                                    "Remove" => UpdateOperation::Remove(
-                                        crate::character::Value::VecString(new_augmentations),
-                                    ),
-                                    _ => {
-                                        return Err(AppError::GameStateParseError(
-                                            "Invalid augmentations operation".to_string(),
-                                        ))
-                                    }
-                                },
-                            };
-                            character.apply_update(update)?;
-
-                            if game_state
-                                .character_sheet
-                                .as_ref()
-                                .map(|cs| cs.name == character_name)
-                                .unwrap_or(false)
-                            {
-                                game_state.character_sheet = Some(character.clone());
-                            }
-
-                            format!(
-                                "{} updated for character '{}'. Operation: {}",
-                                augmentation_type, character_name, operation
-                            )
-                        }
-                        _ => {
-                            return Err(AppError::GameStateParseError(format!(
-                                "Unknown function: {}",
-                                tool_call.function.name
-                            )))
-                        }
-                    };
-
-                    tool_outputs.push(ToolsOutputs {
-                        tool_call_id: Some(tool_call.id.clone()),
-                        output: Some(output),
-                    });
+            match required_action.r#type.as_str() {
+                "submit_tool_outputs" => {
+                    self.handle_tool_outputs(thread_id, run_id, required_action, game_state)
+                        .await
                 }
-
-                // Submit all tool outputs at once
-                self.submit_tool_outputs(thread_id, run_id, tool_outputs)
-                    .await?;
-
-                Ok(())
-            } else {
-                Err(AppError::GameStateParseError(format!(
+                _ => Err(AppError::GameStateParseError(format!(
                     "Unknown required action type: {}",
                     required_action.r#type
-                )))
+                ))),
             }
         } else {
             Err(AppError::GameStateParseError(
                 "No required action found".to_string(),
             ))
         }
+    }
+
+    async fn handle_tool_outputs(
+        &mut self,
+        thread_id: &str,
+        run_id: &str,
+        required_action: &RequiredAction,
+        game_state: &mut GameState,
+    ) -> Result<(), AppError> {
+        let mut tool_outputs = Vec::new();
+
+        for tool_call in &required_action.submit_tool_outputs.tool_calls {
+            self.add_debug_message(format!("Handling tool call: {:#?}", tool_call));
+
+            let output = match tool_call.function.name.as_str() {
+                "create_character_sheet" => {
+                    self.handle_create_character_sheet(tool_call, game_state)
+                        .await?
+                }
+                "perform_dice_roll" => self.handle_perform_dice_roll(tool_call, game_state)?,
+                "update_basic_attributes" => {
+                    self.handle_update_basic_attributes(tool_call, game_state)?
+                }
+                "update_skills" => self.handle_update_skills(tool_call, game_state)?,
+                "update_inventory" => self.handle_update_inventory(tool_call, game_state)?,
+                "update_qualities" => self.handle_update_qualities(tool_call, game_state)?,
+                "update_matrix_attributes" => {
+                    self.handle_update_matrix_attributes(tool_call, game_state)?
+                }
+                "update_contacts" => self.handle_update_contacts(tool_call, game_state)?,
+                "update_augmentations" => {
+                    self.handle_update_augmentations(tool_call, game_state)?
+                }
+                _ => {
+                    return Err(AppError::GameStateParseError(format!(
+                        "Unknown function: {}",
+                        tool_call.function.name
+                    )))
+                }
+            };
+
+            tool_outputs.push(ToolsOutputs {
+                tool_call_id: Some(tool_call.id.clone()),
+                output: Some(output),
+            });
+        }
+
+        self.submit_tool_outputs(thread_id, run_id, tool_outputs)
+            .await
+    }
+
+    async fn handle_create_character_sheet(
+        &mut self,
+        tool_call: &RunToolCallObject,
+        game_state: &mut GameState,
+    ) -> Result<String, AppError> {
+        let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)?;
+        let character_sheet = match self.create_character(&args).await {
+            Ok(sheet) => sheet,
+            Err(e) => {
+                self.add_debug_message(format!("Error creating character: {:#?}", e));
+                self.create_dummy_character()
+            }
+        };
+
+        if character_sheet.main {
+            game_state.character_sheet = Some(character_sheet.clone());
+        }
+        game_state.characters.push(character_sheet.clone());
+
+        if let Some(state) = &mut *self.conversation_state.lock().await {
+            state.character_sheet = Some(character_sheet.clone());
+        }
+        self.add_debug_message(format!("Character sheet: {:#?}", character_sheet.clone()));
+
+        Ok(serde_json::to_string(&character_sheet)?)
+    }
+
+    fn handle_perform_dice_roll(
+        &mut self,
+        tool_call: &RunToolCallObject,
+        game_state: &mut GameState,
+    ) -> Result<String, AppError> {
+        let args: DiceRollRequest = serde_json::from_str(&tool_call.function.arguments)?;
+        let response = match perform_dice_roll(args, game_state) {
+            Ok(response) => {
+                self.add_debug_message(format!("Dice roll: {:#?}", response));
+                response
+            }
+            Err(e) => {
+                self.add_debug_message(format!("Error performing dice roll: {:#?}", e));
+                DiceRollResponse {
+                    hits: 0,
+                    glitch: false,
+                    critical_glitch: false,
+                    critical_success: false,
+                    dice_results: vec![],
+                    success: false,
+                }
+            }
+        };
+
+        Ok(serde_json::to_string(&response)?)
+    }
+
+    fn handle_update_basic_attributes(
+        &mut self,
+        tool_call: &RunToolCallObject,
+        game_state: &mut GameState,
+    ) -> Result<String, AppError> {
+        let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)?;
+        let character_name = args["character_name"]
+            .as_str()
+            .ok_or_else(|| AppError::GameStateParseError("Missing character_name".to_string()))?;
+        let updates = &args["updates"];
+
+        let character = game_state
+            .characters
+            .iter_mut()
+            .find(|c| c.name == character_name)
+            .ok_or_else(|| {
+                AppError::Game(GameError::CharacterNotFound(character_name.to_string()))
+            })?;
+
+        for (attr, value) in updates.as_object().unwrap() {
+            let update = CharacterSheetUpdate::UpdateAttribute {
+                attribute: attr.to_string(),
+                operation: UpdateOperation::Modify(self.parse_value(attr, value)?),
+            };
+            character.apply_update(update)?;
+        }
+
+        if game_state
+            .character_sheet
+            .as_ref()
+            .map(|cs| cs.name == character_name)
+            .unwrap_or(false)
+        {
+            game_state.character_sheet = Some(character.clone());
+        }
+
+        Ok(format!(
+            "Updated basic attributes for character: {}",
+            character_name
+        ))
+    }
+
+    fn handle_update_skills(
+        &mut self,
+        tool_call: &RunToolCallObject,
+        game_state: &mut GameState,
+    ) -> Result<String, AppError> {
+        let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)?;
+        let character_name = args["character_name"]
+            .as_str()
+            .ok_or_else(|| AppError::GameStateParseError("Missing character_name".to_string()))?;
+        let updates = &args["updates"]["skills"];
+
+        let character = game_state
+            .characters
+            .iter_mut()
+            .find(|c| c.name == character_name)
+            .ok_or_else(|| {
+                AppError::Game(GameError::CharacterNotFound(character_name.to_string()))
+            })?;
+
+        let update_category =
+            |category: &str, skill_map: &mut HashMap<String, u8>| -> Result<(), AppError> {
+                if let Some(category_skills) = updates.get(category).and_then(|s| s.as_array()) {
+                    for skill in category_skills {
+                        let name = skill["name"].as_str().ok_or_else(|| {
+                            AppError::GameStateParseError(format!(
+                                "Missing skill name in {} category",
+                                category
+                            ))
+                        })?;
+                        let rating = skill["rating"].as_u64().ok_or_else(|| {
+                            AppError::GameStateParseError(format!(
+                                "Invalid skill rating in {} category",
+                                category
+                            ))
+                        })? as u8;
+                        skill_map.insert(name.to_string(), rating);
+                    }
+                }
+                Ok(())
+            };
+
+        // Update regular skills
+        let mut updated_skills = character.skills.clone();
+        update_category("combat", &mut updated_skills.combat)?;
+        update_category("physical", &mut updated_skills.physical)?;
+        update_category("social", &mut updated_skills.social)?;
+        update_category("technical", &mut updated_skills.technical)?;
+
+        let skills_update = CharacterSheetUpdate::UpdateAttribute {
+            attribute: "skills".to_string(),
+            operation: UpdateOperation::Modify(crate::character::Value::Skills(updated_skills)),
+        };
+        character.apply_update(skills_update)?;
+
+        // Update knowledge skills
+        if let Some(knowledge_skills) = updates.get("knowledge") {
+            let mut updated_knowledge_skills = character.knowledge_skills.clone();
+            if let Some(knowledge_array) = knowledge_skills.as_array() {
+                for skill in knowledge_array {
+                    let name = skill["name"].as_str().ok_or_else(|| {
+                        AppError::GameStateParseError("Missing knowledge skill name".to_string())
+                    })?;
+                    let rating = skill["rating"].as_u64().ok_or_else(|| {
+                        AppError::GameStateParseError("Invalid knowledge skill rating".to_string())
+                    })? as u8;
+                    updated_knowledge_skills.insert(name.to_string(), rating);
+                }
+            }
+
+            let knowledge_update = CharacterSheetUpdate::UpdateAttribute {
+                attribute: "knowledge_skills".to_string(),
+                operation: UpdateOperation::Modify(crate::character::Value::HashMapStringU8(
+                    updated_knowledge_skills,
+                )),
+            };
+            character.apply_update(knowledge_update)?;
+        }
+
+        if game_state
+            .character_sheet
+            .as_ref()
+            .map(|cs| cs.name == character_name)
+            .unwrap_or(false)
+        {
+            game_state.character_sheet = Some(character.clone());
+        }
+
+        Ok(format!("Updated skills for character: {}", character_name))
+    }
+
+    fn handle_update_inventory(
+        &mut self,
+        tool_call: &RunToolCallObject,
+        game_state: &mut GameState,
+    ) -> Result<String, AppError> {
+        // Implementation similar to original code, but extracted into this function
+        let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)?;
+        let character_name = args["character_name"]
+            .as_str()
+            .ok_or_else(|| AppError::GameStateParseError("Missing character_name".to_string()))?;
+        let operation = args["operation"]
+            .as_str()
+            .ok_or_else(|| AppError::GameStateParseError("Missing operation".to_string()))?;
+        let items = &args["items"];
+
+        let character = game_state
+            .characters
+            .iter_mut()
+            .find(|c| c.name == character_name)
+            .ok_or_else(|| {
+                AppError::Game(GameError::CharacterNotFound(character_name.to_string()))
+            })?;
+
+        let mut new_items: HashMap<String, Item> = HashMap::new();
+
+        match operation {
+            "Remove" => {
+                // For removal, we only need the item names
+                let item_names: Vec<String> = if items.is_array() {
+                    serde_json::from_value(items.clone())?
+                } else if items.is_object() && items.get("name").is_some() {
+                    vec![items["name"].as_str().unwrap().to_string()]
+                } else if items.is_object() && items.get("name").is_none() {
+                    items.as_object().unwrap().keys().cloned().collect()
+                } else {
+                    return Err(AppError::GameStateParseError(
+                        "Invalid items format for removal".to_string(),
+                    ));
+                };
+                for name in item_names {
+                    new_items.insert(
+                        name.clone(),
+                        Item {
+                            name: name.clone(),
+                            quantity: 1,
+                            description: String::new(),
+                        },
+                    );
+                }
+            }
+            "Add" | "Modify" => {
+                // Handle both single item and multiple items
+                if items.is_object() {
+                    if items.get("name").is_some() {
+                        // Single item
+                        let item: Item = serde_json::from_value(items.clone())?;
+                        new_items.insert(item.name.clone(), item);
+                    } else {
+                        // Multiple items
+                        for (key, value) in items.as_object().unwrap() {
+                            let item = if value.is_object() {
+                                Item {
+                                    name: key.clone(),
+                                    quantity: value["quantity"].as_u64().unwrap_or(1) as u32,
+                                    description: value["description"]
+                                        .as_str()
+                                        .unwrap_or("")
+                                        .to_string(),
+                                }
+                            } else {
+                                return Err(AppError::GameStateParseError(format!(
+                                    "Invalid item format for {}",
+                                    key
+                                )));
+                            };
+                            new_items.insert(key.clone(), item);
+                        }
+                    }
+                } else {
+                    return Err(AppError::GameStateParseError(
+                        "Invalid items format for add/modify".to_string(),
+                    ));
+                }
+            }
+            _ => {
+                return Err(AppError::GameStateParseError(
+                    "Invalid inventory operation".to_string(),
+                ))
+            }
+        };
+
+        let update = CharacterSheetUpdate::UpdateAttribute {
+            attribute: "inventory".to_string(),
+            operation: match operation {
+                "Add" => {
+                    UpdateOperation::Add(crate::character::Value::HashMapStringItem(new_items))
+                }
+                "Remove" => {
+                    UpdateOperation::Remove(crate::character::Value::HashMapStringItem(new_items))
+                }
+                "Modify" => {
+                    UpdateOperation::Modify(crate::character::Value::HashMapStringItem(new_items))
+                }
+                _ => unreachable!(),
+            },
+        };
+        character.apply_update(update)?;
+
+        if game_state
+            .character_sheet
+            .as_ref()
+            .map(|cs| cs.name == character_name)
+            .unwrap_or(false)
+        {
+            game_state.character_sheet = Some(character.clone());
+        }
+
+        Ok(format!(
+            "Updated inventory for character: {}",
+            character_name
+        ))
+    }
+
+    fn handle_update_qualities(
+        &mut self,
+        tool_call: &RunToolCallObject,
+        game_state: &mut GameState,
+    ) -> Result<String, AppError> {
+        let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)?;
+        let character_name = args["character_name"]
+            .as_str()
+            .ok_or_else(|| AppError::GameStateParseError("Missing character_name".to_string()))?;
+        let operation = args["operation"]
+            .as_str()
+            .ok_or_else(|| AppError::GameStateParseError("Missing operation".to_string()))?;
+        let qualities = &args["qualities"];
+
+        let character = game_state
+            .characters
+            .iter_mut()
+            .find(|c| c.name == character_name)
+            .ok_or_else(|| {
+                AppError::Game(GameError::CharacterNotFound(character_name.to_string()))
+            })?;
+
+        let new_qualities: Vec<Quality> = serde_json::from_value(qualities.clone())?;
+
+        let update = CharacterSheetUpdate::UpdateAttribute {
+            attribute: "qualities".to_string(),
+            operation: match operation {
+                "Add" => UpdateOperation::Add(crate::character::Value::VecQuality(new_qualities)),
+                "Remove" => {
+                    UpdateOperation::Remove(crate::character::Value::VecQuality(new_qualities))
+                }
+                _ => {
+                    return Err(AppError::GameStateParseError(
+                        "Invalid qualities operation".to_string(),
+                    ))
+                }
+            },
+        };
+        character.apply_update(update)?;
+
+        if game_state
+            .character_sheet
+            .as_ref()
+            .map(|cs| cs.name == character_name)
+            .unwrap_or(false)
+        {
+            game_state.character_sheet = Some(character.clone());
+        }
+        Ok(format!(
+            "Updated qualities for character: {}",
+            character_name
+        ))
+    }
+
+    fn handle_update_matrix_attributes(
+        &mut self,
+        tool_call: &RunToolCallObject,
+        game_state: &mut GameState,
+    ) -> Result<String, AppError> {
+        let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)?;
+        let character_name = args["character_name"]
+            .as_str()
+            .ok_or_else(|| AppError::GameStateParseError("Missing character_name".to_string()))?;
+        let matrix_attributes = &args["matrix_attributes"];
+
+        let character = game_state
+            .characters
+            .iter_mut()
+            .find(|c| c.name == character_name)
+            .ok_or_else(|| {
+                AppError::Game(GameError::CharacterNotFound(character_name.to_string()))
+            })?;
+
+        let new_matrix_attributes: MatrixAttributes =
+            serde_json::from_value(matrix_attributes.clone())?;
+
+        let update = CharacterSheetUpdate::UpdateAttribute {
+            attribute: "matrix_attributes".to_string(),
+            operation: UpdateOperation::Modify(crate::character::Value::OptionMatrixAttributes(
+                Some(new_matrix_attributes),
+            )),
+        };
+        character.apply_update(update)?;
+
+        if game_state
+            .character_sheet
+            .as_ref()
+            .map(|cs| cs.name == character_name)
+            .unwrap_or(false)
+        {
+            game_state.character_sheet = Some(character.clone());
+        }
+        Ok(format!(
+            "Updated matrix attributes for character: {}",
+            character_name
+        ))
+    }
+
+    fn handle_update_contacts(
+        &mut self,
+        tool_call: &RunToolCallObject,
+        game_state: &mut GameState,
+    ) -> Result<String, AppError> {
+        let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)?;
+        let character_name = args["character_name"]
+            .as_str()
+            .ok_or_else(|| AppError::GameStateParseError("Missing character_name".to_string()))?;
+        let operation = args["operation"]
+            .as_str()
+            .ok_or_else(|| AppError::GameStateParseError("Missing operation".to_string()))?;
+        let contacts = &args["contacts"];
+
+        let character = game_state
+            .characters
+            .iter_mut()
+            .find(|c| c.name == character_name)
+            .ok_or_else(|| {
+                AppError::Game(GameError::CharacterNotFound(character_name.to_string()))
+            })?;
+
+        let new_contacts: HashMap<String, Contact> = serde_json::from_value(contacts.clone())?;
+
+        let update = CharacterSheetUpdate::UpdateAttribute {
+            attribute: "contacts".to_string(),
+            operation: match operation {
+                "Add" => UpdateOperation::Add(crate::character::Value::HashMapStringContact(
+                    new_contacts,
+                )),
+                "Remove" => UpdateOperation::Remove(crate::character::Value::HashMapStringContact(
+                    new_contacts,
+                )),
+                "Modify" => UpdateOperation::Modify(crate::character::Value::HashMapStringContact(
+                    new_contacts,
+                )),
+                _ => {
+                    return Err(AppError::GameStateParseError(
+                        "Invalid contacts operation".to_string(),
+                    ))
+                }
+            },
+        };
+        character.apply_update(update)?;
+
+        if game_state
+            .character_sheet
+            .as_ref()
+            .map(|cs| cs.name == character_name)
+            .unwrap_or(false)
+        {
+            game_state.character_sheet = Some(character.clone());
+        }
+        Ok(format!(
+            "Updated contacts for character: {}",
+            character_name
+        ))
+    }
+
+    fn handle_update_augmentations(
+        &mut self,
+        tool_call: &RunToolCallObject,
+        game_state: &mut GameState,
+    ) -> Result<String, AppError> {
+        let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)?;
+        let character_name = args["character_name"]
+            .as_str()
+            .ok_or_else(|| AppError::GameStateParseError("Missing character_name".to_string()))?;
+        let operation = args["operation"]
+            .as_str()
+            .ok_or_else(|| AppError::GameStateParseError("Missing operation".to_string()))?;
+        let augmentation_type = args["augmentation_type"].as_str().ok_or_else(|| {
+            AppError::GameStateParseError("Missing augmentation_type".to_string())
+        })?;
+        let augmentations = &args["augmentations"];
+
+        let character = game_state
+            .characters
+            .iter_mut()
+            .find(|c| c.name == character_name)
+            .ok_or_else(|| {
+                AppError::Game(GameError::CharacterNotFound(character_name.to_string()))
+            })?;
+
+        let new_augmentations: Vec<String> = serde_json::from_value(augmentations.clone())?;
+
+        let update = CharacterSheetUpdate::UpdateAttribute {
+            attribute: augmentation_type.to_string(),
+            operation: match operation {
+                "Add" => {
+                    UpdateOperation::Add(crate::character::Value::VecString(new_augmentations))
+                }
+                "Remove" => {
+                    UpdateOperation::Remove(crate::character::Value::VecString(new_augmentations))
+                }
+                _ => {
+                    return Err(AppError::GameStateParseError(
+                        "Invalid augmentations operation".to_string(),
+                    ))
+                }
+            },
+        };
+        character.apply_update(update)?;
+
+        if game_state
+            .character_sheet
+            .as_ref()
+            .map(|cs| cs.name == character_name)
+            .unwrap_or(false)
+        {
+            game_state.character_sheet = Some(character.clone());
+        }
+
+        Ok(format!(
+            "{} updated for character '{}'. Operation: {}",
+            augmentation_type, character_name, operation
+        ))
     }
 
     // Helper method to parse values based on attribute type
