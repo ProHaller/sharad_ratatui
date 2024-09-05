@@ -1,6 +1,6 @@
 // app_state.rs
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 pub enum AppState {
     MainMenu,
     InGame,

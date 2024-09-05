@@ -29,10 +29,8 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 use tokio::sync::{mpsc, Mutex};
-use tokio::task;
 use tui_input::backend::crossterm::EventHandler;
 use tui_input::Input;
 use tui_input::InputRequest;
@@ -43,6 +41,14 @@ pub enum AppCommand {
     ProcessMessage(String),
     AIResponse(Result<GameMessage, AppError>),
     ApiKeyValidationResult(bool),
+    TranscriptionResult(String, TranscriptionTarget),
+    TranscriptionError(String),
+}
+
+pub enum TranscriptionTarget {
+    UserInput,
+    SaveNameInput,
+    ImagePrompt,
 }
 
 #[derive(PartialEq, Eq, Clone)]
@@ -397,67 +403,48 @@ impl App {
         // Wait a bit to ensure the recording has stopped
         std::thread::sleep(Duration::from_millis(100));
 
-        self.input_mode = InputMode::Editing;
+        self.input_mode = InputMode::Normal;
 
-        if let Some(ai_client) = &self.ai_client {
-            // Use block_in_place to wait for the async operation
-            let transcription_result = task::block_in_place(|| {
-                Handle::current()
-                    .block_on(async { audio::transcribe_audio(&ai_client.client).await })
-            });
-
-            match transcription_result {
-                Ok(transcription) => match self.state {
-                    AppState::InGame => {
-                        for ch in transcription.chars() {
-                            self.user_input
-                                .handle(tui_input::InputRequest::InsertChar(ch));
-                        }
-                        self.add_debug_message(format!(
-                            "Transcription successful: {}",
-                            transcription
-                        ));
-                    }
-                    AppState::InputSaveName => {
-                        for ch in transcription.chars() {
-                            self.save_name_input
-                                .handle(tui_input::InputRequest::InsertChar(ch));
-                        }
-                        self.add_debug_message(format!(
-                            "Transcription successful: {}",
-                            transcription
-                        ));
-                    }
-                    AppState::CreateImage => {
-                        for ch in transcription.chars() {
-                            self.image_prompt
-                                .handle(tui_input::InputRequest::InsertChar(ch));
-                        }
-                        self.add_debug_message(format!(
-                            "Transcription successful: {}",
-                            transcription
-                        ));
-                    }
-                    _ => {}
-                },
-                Err(e) => {
-                    // Add an error message to the game content
-                    self.add_message(Message::new(
-                        MessageType::System,
-                        format!("Failed to transcribe audio: {}", e),
-                    ));
-                    // Add a debug message
-                    self.add_debug_message(format!("Transcription error: {:?}", e));
-                }
-            }
-        } else {
-            // Add an error message if AI client is not initialized
+        if self.ai_client.is_none() {
             self.add_message(Message::new(
                 MessageType::System,
                 "AI client not initialized. Cannot transcribe audio.".to_string(),
             ));
             self.add_debug_message("Transcription failed: AI client not initialized".to_string());
+            return;
         }
+
+        let ai_client = self.ai_client.clone();
+        let state = self.state.clone();
+        let sender = self.command_sender.clone();
+
+        tokio::spawn(async move {
+            if let Some(ai_client) = ai_client {
+                match audio::transcribe_audio(&ai_client.client).await {
+                    Ok(transcription) => {
+                        let command = match state {
+                            AppState::InGame => AppCommand::TranscriptionResult(
+                                transcription,
+                                TranscriptionTarget::UserInput,
+                            ),
+                            AppState::InputSaveName => AppCommand::TranscriptionResult(
+                                transcription,
+                                TranscriptionTarget::SaveNameInput,
+                            ),
+                            AppState::CreateImage => AppCommand::TranscriptionResult(
+                                transcription,
+                                TranscriptionTarget::ImagePrompt,
+                            ),
+                            _ => return,
+                        };
+                        let _ = sender.send(command);
+                    }
+                    Err(e) => {
+                        let _ = sender.send(AppCommand::TranscriptionError(format!("{}", e)));
+                    }
+                }
+            }
+        });
     }
 
     pub async fn update_save_name(&self, new_name: String) {

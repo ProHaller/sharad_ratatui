@@ -166,6 +166,35 @@ async fn run_app(
                         let mut app = app.lock().await;
                         app.handle_api_key_validation_result(is_valid);
                     }
+                    AppCommand::TranscriptionResult(transcription, target) => {
+                        let mut app = app.lock().await;
+                        match target {
+                            app::TranscriptionTarget::UserInput => {
+                                for ch in transcription.chars() {
+                                    app.user_input.handle(tui_input::InputRequest::InsertChar(ch));
+                                }
+                            }
+                            app::TranscriptionTarget::SaveNameInput => {
+                                for ch in transcription.chars() {
+                                    app.save_name_input.handle(tui_input::InputRequest::InsertChar(ch));
+                                }
+                            }
+                            app::TranscriptionTarget::ImagePrompt => {
+                                for ch in transcription.chars() {
+                                    app.image_prompt.handle(tui_input::InputRequest::InsertChar(ch));
+                                }
+                            }
+                        }
+                        app.add_debug_message(format!("Transcription successful: {}", transcription));
+                    }
+                    AppCommand::TranscriptionError(error) => {
+                        let mut app = app.lock().await;
+                        app.add_message(Message::new(
+                            MessageType::System,
+                            format!("Failed to transcribe audio: {}", error),
+                        ));
+                        app.add_debug_message(format!("Transcription error: {}", error));
+                    }
                 }
             },
             Some(ai_message) = ai_receiver.recv() => {
