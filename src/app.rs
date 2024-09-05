@@ -235,7 +235,7 @@ impl App {
         self.add_debug_message(format!("Spinner: {:#?}", self.spinner_active));
 
         match result {
-            Ok(mut game_message) => {
+            Ok(game_message) => {
                 self.add_debug_message(format!(
                     "Received game message from AI: {:#?}",
                     game_message
@@ -244,8 +244,6 @@ impl App {
                 let game_message_json = serde_json::to_string(&game_message).unwrap();
                 self.add_debug_message(format!("Game message: {:#?}", game_message_json.clone()));
                 self.add_message(Message::new(MessageType::Game, game_message_json.clone()));
-
-                self.scroll_to_bottom();
 
                 if self.settings.audio_output_enabled {
                     self.add_debug_message(format!(
@@ -310,6 +308,7 @@ impl App {
                 // Update the UI
                 self.cached_game_content = None; // Force recalculation of cached content
                 self.cached_content_len = 0;
+                self.scroll_to_bottom();
 
                 if let Some(character_sheet) = game_message.character_sheet {
                     self.add_debug_message("Updating character sheet".to_string());
@@ -973,7 +972,6 @@ impl App {
             }
         }
     }
-
     fn submit_user_input(&mut self) {
         let input = self.user_input.value().trim().to_string();
         if !input.is_empty() {
@@ -1079,8 +1077,25 @@ impl App {
     }
 
     pub fn scroll_to_bottom(&mut self) {
+        // Recalculate total lines
+        self.total_lines = self.calculate_total_lines();
+
+        // Update the scroll position
         self.game_content_scroll = self.total_lines.saturating_sub(self.visible_lines);
-        self.update_scroll();
+
+        // Force UI update
+        self.cached_game_content = None;
+    }
+
+    fn calculate_total_lines(&self) -> usize {
+        self.game_content
+            .borrow()
+            .iter()
+            .map(|message| {
+                let wrapped_lines = textwrap::wrap(&message.content, self.visible_lines);
+                wrapped_lines.len()
+            })
+            .sum()
     }
 
     pub fn update_scroll(&mut self) {

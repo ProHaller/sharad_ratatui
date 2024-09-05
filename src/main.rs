@@ -150,6 +150,7 @@ async fn run_app(
                     AppCommand::AIResponse(result) => {
                         let mut app = app.lock().await;
                         app.handle_ai_response(result).await;
+                        app.scroll_to_bottom();
                     },
                     AppCommand::LoadGame(path) => {
                         if let Err(e) = app.lock().await.load_game(&path).await {
