@@ -12,7 +12,7 @@ use ratatui::{
 };
 
 pub fn draw_load_game(f: &mut Frame, app: &App) {
-    let size = f.size();
+    let size = f.area();
 
     if size.width < 100 || size.height < 50 {
         let warning = Paragraph::new("Terminal too small. Please resize.")
@@ -34,7 +34,7 @@ pub fn draw_load_game(f: &mut Frame, app: &App) {
             ]
             .as_ref(),
         )
-        .split(f.size());
+        .split(f.area());
 
     render_header(f, chunks[0]);
     render_art(f, chunks[1]);

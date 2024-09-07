@@ -286,12 +286,8 @@ impl App {
 
                             // Process the results in order
                             while let Some((result, index)) = audio_futures.next().await {
-                                let fluff_line = &mut game_message_clone.fluff.dialogue[index];
-                                match result {
-                                    Ok(path) => {
-                                        fluff_line.audio = Some(path);
-                                    }
-                                    Err(_) => {}
+                                if let Ok(path) = result {
+                                    game_message_clone.fluff.dialogue[index].audio = Some(path);
                                 }
                             }
 
@@ -523,12 +519,10 @@ impl App {
                     self.save_name_input.handle_event(&Event::Key(key));
                 }
             },
-            InputMode::Recording => match key.code {
-                KeyCode::Esc => {
-                    self.stop_recording();
-                }
-                _ => {}
-            },
+            InputMode::Recording if key.code == KeyCode::Esc => {
+                self.stop_recording();
+            }
+            _ => {}
         }
     }
 
@@ -940,12 +934,10 @@ impl App {
                     self.image_prompt.handle_event(&Event::Key(key));
                 }
             },
-            InputMode::Recording => match key.code {
-                KeyCode::Esc => {
-                    self.stop_recording();
-                }
-                _ => {}
-            },
+            InputMode::Recording if key.code == KeyCode::Esc => {
+                self.stop_recording();
+            }
+            _ => {}
         }
     }
 
@@ -974,23 +966,25 @@ impl App {
     }
     fn submit_user_input(&mut self) {
         let input = self.user_input.value().trim().to_string();
-        if !input.is_empty() {
-            self.start_spinner();
-            self.add_message(Message::new(MessageType::User, input.clone()));
+        self.start_spinner();
 
-            // Send a command to process the message
-            if let Err(e) = self.command_sender.send(AppCommand::ProcessMessage(input)) {
-                self.add_message(Message::new(
-                    MessageType::System,
-                    format!("Error sending message command: {:#?}", e),
-                ));
-            } else {
-                self.start_spinner();
-            }
-
-            // Clear the user input
-            self.user_input = Input::default();
+        if input.is_empty() {
+            return;
         }
+
+        self.add_message(Message::new(MessageType::User, input.clone()));
+
+        // Send a command to process the message
+        if let Err(e) = self.command_sender.send(AppCommand::ProcessMessage(input)) {
+            self.add_message(Message::new(
+                MessageType::System,
+                format!("Error sending message command: {:#?}", e),
+            ));
+        }
+
+        // Clear the user input
+        self.user_input = Input::default();
+        self.scroll_to_bottom();
     }
 
     pub fn apply_settings(&mut self) {

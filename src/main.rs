@@ -53,21 +53,21 @@ fn ensure_minimum_terminal_size() -> io::Result<()> {
 // Entry point for the Tokio runtime.
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Set up the terminal in raw mode to handle input/output at a low level.
+    // Set up the terminal in raw mode.
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?; // Enter an alternate screen for the terminal.
+    execute!(stdout, EnterAlternateScreen)?; // Enter an alternate screen.
 
-    // Check terminal dimensions and adjust if necessary.
+    // Ensure terminal dimensions are correct.
     ensure_minimum_terminal_size()?;
 
-    // Initialize the terminal backend and terminal instance.
+    // Initialize terminal backend.
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // Set a panic hook to clean up and provide error info on panic.
+    // Set panic hook for cleanup and better panic info.
     panic::set_hook(Box::new(|panic_info| {
-        cleanup(); // Clean up resources properly on panic.
+        cleanup();
         if let Some(location) = panic_info.location() {
             println!(
                 "Panic occurred in file '{}' at line {}",
@@ -80,16 +80,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }));
 
-    // Create an unbounded channel for AI messages.
+    // Set up unbounded channel for AI messages.
     let (ai_sender, ai_receiver) = mpsc::unbounded_channel::<AIMessage>();
 
-    // Initialize the application with AI message sender
-    let (app, command_receiver) = App::new(ai_sender.clone()).await;
+    // Initialize the application.
+    let (app, command_receiver) = App::new(ai_sender).await;
     let app = Arc::new(Mutex::new(app));
 
-    // Run the application in the terminal and handle any errors
+    // Run the application and handle errors.
     if let Err(err) = run_app(&mut terminal, app, command_receiver, ai_receiver).await {
-        println!("Error: {:#?}", err);
+        eprintln!("Error: {:#?}", err);
     }
 
     Ok(())
@@ -189,7 +189,7 @@ async fn run_app(
                         app.add_debug_message(format!("Transcription successful: {}", transcription));
                     }
                     AppCommand::TranscriptionError(error) => {
-                        let mut app = app.lock().await;
+                        let app = app.lock().await;
                         app.add_message(Message::new(
                             MessageType::System,
                             format!("Failed to transcribe audio: {}", error),

@@ -1,6 +1,6 @@
 use async_openai::{
     config::OpenAIConfig,
-    types::{CreateImageRequestArgs, ImageModel, ImageResponseFormat, ImageSize, ResponseFormat},
+    types::{CreateImageRequestArgs, ImageModel, ImageResponseFormat, ImageSize},
     Client,
 };
 use std::error::Error;

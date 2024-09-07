@@ -929,7 +929,6 @@ impl GameAI {
                     let message_type = match message.role {
                         MessageRole::User => MessageType::User,
                         MessageRole::Assistant => MessageType::Game,
-                        _ => MessageType::System,
                     };
                     all_messages.push(Message::new(message_type, text_content.text.value.clone()));
                 }
@@ -1237,7 +1236,7 @@ impl GameAI {
 
     // Method to create a dummy character as a fallback during error handling.
     fn create_dummy_character(&self) -> CharacterSheet {
-        self.add_debug_message(format!("Creating dummy character."));
+        self.add_debug_message("Creating dummy character.".to_string());
         let dummy_skills = Skills {
             combat: [
                 ("Unarmed Combat".to_string(), 1),

@@ -3,7 +3,7 @@ use crate::character::CharacterSheet;
 use crate::message::{GameMessage, MessageType, UserMessage};
 use crate::ui::utils::spinner_frame;
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Position, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::*,
@@ -18,7 +18,7 @@ thread_local! {
 }
 
 pub fn draw_in_game(f: &mut Frame, app: &mut App) {
-    let size = f.size();
+    let size = f.area();
     *app.debug_info.borrow_mut() = format!("Terminal size: {}x{}", size.width, size.height);
 
     if size.width < 101 || size.height < 50 {
@@ -182,17 +182,17 @@ fn draw_attributes_and_derived(f: &mut Frame, sheet: &CharacterSheet, area: Rect
 // Display specific attributes.
 fn draw_attributes(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     let attributes = vec![
-        ("BOD", sheet.body),
-        ("AGI", sheet.agility),
-        ("REA", sheet.reaction),
-        ("STR", sheet.strength),
-        ("WIL", sheet.willpower),
-        ("LOG", sheet.logic),
-        ("INT", sheet.intuition),
-        ("CHA", sheet.charisma),
-        ("EDG", sheet.edge),
-        ("MAG", sheet.magic.unwrap_or(0)),
-        ("RES", sheet.resonance.unwrap_or(0)),
+        ("BODY", sheet.body),
+        ("AGILITY", sheet.agility),
+        ("REACTION", sheet.reaction),
+        ("STRENGTH", sheet.strength),
+        ("WILLPOWER", sheet.willpower),
+        ("LOGIC", sheet.logic),
+        ("INTUITION", sheet.intuition),
+        ("CHARISMA", sheet.charisma),
+        ("EDGE", sheet.edge),
+        ("MAGIC", sheet.magic.unwrap_or(0)),
+        ("RESONANCE", sheet.resonance.unwrap_or(0)),
     ];
 
     let rows: Vec<Row> = attributes
@@ -220,20 +220,20 @@ fn draw_attributes(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
 fn draw_derived_attributes(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     let derived = [
         format!(
-            "Initiative: {}+{}d6",
+            "Initiative:  {}+{}d6",
             sheet.initiative.0, sheet.initiative.1
         ),
         format!(
-            "Limits: PHY:{} MEN:{} SOC:{}",
+            "Limits:  PHY:{} MEN:{} SOC:{}",
             sheet.physical_limit, sheet.mental_limit, sheet.social_limit
         ),
         format!(
-            "Monitors: PHY:{} SOC:{}",
+            "Monitors:  PHY:{} SOC:{}",
             sheet.physical_monitor, sheet.stun_monitor
         ),
-        format!("Essence: {:.2}", sheet.essence),
-        format!("Edge Points: {}", sheet.edge_points),
-        format!("Armor: {}", sheet.armor),
+        format!("Essence:  {:.2}", sheet.essence),
+        format!("Edge Points:  {}", sheet.edge_points),
+        format!("Armor:  {}", sheet.armor),
     ];
 
     let rows: Vec<Row> = derived
@@ -396,13 +396,31 @@ fn draw_augmentations(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     let cyberware_elements: Vec<Line> = sheet
         .cyberware
         .iter()
-        .map(|cw| Line::from(Span::styled(cw.clone(), Style::default().fg(Color::White))))
+        .map(|cw| {
+            Line::from(Span::styled(
+                cw.clone(),
+                Style::default().fg(if sheet.cyberware.is_empty() {
+                    Color::DarkGray
+                } else {
+                    Color::White
+                }),
+            ))
+        })
         .collect();
 
     let bioware_elements: Vec<Line> = sheet
         .bioware
         .iter()
-        .map(|bw| Line::from(Span::styled(bw.clone(), Style::default().fg(Color::White))))
+        .map(|bw| {
+            Line::from(Span::styled(
+                bw.clone(),
+                Style::default().fg(if sheet.bioware.is_empty() {
+                    Color::DarkGray
+                } else {
+                    Color::White
+                }),
+            ))
+        })
         .collect();
 
     let cyberware_paragraph = Paragraph::new(cyberware_elements)
@@ -699,10 +717,10 @@ pub fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
 
     // Set cursor
     if let InputMode::Editing = app.input_mode {
-        f.set_cursor(
+        f.set_cursor_position(Position::new(
             inner_area.x + cursor_x as u16,
             inner_area.y + cursor_y as u16,
-        );
+        ));
     }
 }
 

@@ -14,7 +14,7 @@ use ratatui::{
 };
 
 pub fn draw_settings(f: &mut Frame, app: &mut App) {
-    let size = f.size();
+    let size = f.area();
 
     if size.width < 101 || size.height < 50 {
         let warning = Paragraph::new("Terminal too small. Please resize.")
@@ -36,7 +36,7 @@ pub fn draw_settings(f: &mut Frame, app: &mut App) {
             ]
             .as_ref(),
         )
-        .split(f.size());
+        .split(f.area());
 
     render_header(f, chunks[0]);
     render_art(f, chunks[1]);

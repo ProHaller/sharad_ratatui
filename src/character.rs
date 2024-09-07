@@ -174,7 +174,7 @@ impl CharacterSheet {
     pub fn apply_race_modifiers(&mut self, race: Race) {
         match race {
             Race::Human => {
-                self.edge = self.edge.max(2).min(7);
+                self.edge = self.edge.clamp(2, 7);
             }
             Race::Elf => {
                 self.agility = (self.agility + 1).min(7);

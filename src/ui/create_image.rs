@@ -1,6 +1,6 @@
 use crate::app::{App, InputMode};
 use ratatui::{
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Position},
     prelude::Alignment,
     style::{Color, Style},
     widgets::*,
@@ -9,7 +9,7 @@ use ratatui::{
 
 // Function to draw the image creation interface in the application.
 pub fn draw_create_image(f: &mut Frame, app: &App) {
-    let size = f.size();
+    let size = f.area();
 
     if size.width < 100 || size.height < 50 {
         let warning = Paragraph::new("Terminal too small. Please resize.")
@@ -20,7 +20,7 @@ pub fn draw_create_image(f: &mut Frame, app: &App) {
     }
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .margin(f.size().height / 3)
+        .margin(f.area().height / 3)
         .constraints(
             [
                 Constraint::Length(3),
@@ -30,7 +30,7 @@ pub fn draw_create_image(f: &mut Frame, app: &App) {
             ]
             .as_ref(),
         )
-        .split(f.size());
+        .split(f.area());
 
     let title = Paragraph::new(" Enter an image prompt ")
         .style(Style::default().fg(Color::Cyan))
@@ -67,9 +67,9 @@ pub fn draw_create_image(f: &mut Frame, app: &App) {
 
     // Only show the cursor when in Editing mode
     if let InputMode::Editing = app.input_mode {
-        f.set_cursor(
+        f.set_cursor_position(Position::new(
             chunks[1].x + app.image_prompt.visual_cursor() as u16 + 1,
             chunks[1].y + 1,
-        );
+        ));
     }
 }
