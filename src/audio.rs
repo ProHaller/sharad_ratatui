@@ -61,7 +61,7 @@ pub fn play_audio(file_path: PathBuf) -> Result<(), AIError> {
     let source = Decoder::new(BufReader::new(file)).expect("Failed to decode audio");
 
     sink.append(source);
-    sink.sleep_until_end(); // This blocks the current thread until the audio finishes playing.
+    sink.sleep_until_end();
 
     Ok(())
 }

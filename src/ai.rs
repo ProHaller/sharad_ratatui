@@ -123,6 +123,7 @@ impl GameAI {
         self.wait_for_run_completion(&thread_id, &run.id, game_state)
             .await?;
         let response = self.get_latest_message(&thread_id).await?;
+        self.add_debug_message(format!("\nAI Response: {:#?}\n", response));
         self.update_game_state(game_state, &response).await
     }
 
@@ -514,7 +515,7 @@ impl GameAI {
         let operation = args["operation"]
             .as_str()
             .ok_or_else(|| AppError::GameStateParseError("Missing operation".to_string()))?;
-        let items = &args["items"];
+        let items = args.get("items").or_else(|| args.get("item"));
 
         let character = game_state
             .characters
@@ -529,59 +530,66 @@ impl GameAI {
         match operation {
             "Remove" => {
                 // For removal, we only need the item names
-                let item_names: Vec<String> = if items.is_array() {
-                    serde_json::from_value(items.clone())?
-                } else if items.is_object() && items.get("name").is_some() {
-                    vec![items["name"].as_str().unwrap().to_string()]
-                } else if items.is_object() && items.get("name").is_none() {
-                    items.as_object().unwrap().keys().cloned().collect()
-                } else {
-                    return Err(AppError::GameStateParseError(
-                        "Invalid items format for removal".to_string(),
-                    ));
-                };
-                for name in item_names {
-                    new_items.insert(
-                        name.clone(),
-                        Item {
-                            name: name.clone(),
-                            quantity: 1,
-                            description: String::new(),
-                        },
-                    );
+                if let Some(items) = items {
+                    let item_names: Vec<String> = if items.is_array() {
+                        serde_json::from_value(items.clone())?
+                    } else if items.is_object() && items.get("name").is_some() {
+                        vec![items["name"].as_str().unwrap().to_string()]
+                    } else if items.is_object() && items.get("name").is_none() {
+                        items.as_object().unwrap().keys().cloned().collect()
+                    } else {
+                        return Err(AppError::GameStateParseError(
+                            "Invalid items format for removal".to_string(),
+                        ));
+                    };
+                    for name in item_names {
+                        new_items.insert(
+                            name.clone(),
+                            Item {
+                                name: name.clone(),
+                                quantity: 1,
+                                description: String::new(),
+                            },
+                        );
+                    }
                 }
             }
             "Add" | "Modify" => {
-                // Handle both single item and multiple items
-                if items.is_object() {
-                    if items.get("name").is_some() {
-                        // Single item
-                        let item: Item = serde_json::from_value(items.clone())?;
-                        new_items.insert(item.name.clone(), item);
-                    } else {
-                        // Multiple items
-                        for (key, value) in items.as_object().unwrap() {
-                            let item = if value.is_object() {
-                                Item {
-                                    name: key.clone(),
-                                    quantity: value["quantity"].as_u64().unwrap_or(1) as u32,
-                                    description: value["description"]
-                                        .as_str()
-                                        .unwrap_or("")
-                                        .to_string(),
-                                }
-                            } else {
-                                return Err(AppError::GameStateParseError(format!(
-                                    "Invalid item format for {}",
-                                    key
-                                )));
-                            };
-                            new_items.insert(key.clone(), item);
+                if let Some(items) = items {
+                    if items.is_object() {
+                        if items.get("name").is_some() {
+                            // Single item
+                            let item: Item = serde_json::from_value(items.clone())?;
+                            new_items.insert(item.name.clone(), item);
+                        } else {
+                            // Multiple items
+                            for (key, value) in items.as_object().unwrap() {
+                                let item = if value.is_object() {
+                                    Item {
+                                        name: key.clone(),
+                                        quantity: value["quantity"].as_u64().unwrap_or(1) as u32,
+                                        description: value["description"]
+                                            .as_str()
+                                            .unwrap_or("")
+                                            .to_string(),
+                                    }
+                                } else {
+                                    return Err(AppError::GameStateParseError(format!(
+                                        "Invalid item format for {}",
+                                        key
+                                    )));
+                                };
+                                new_items.insert(key.clone(), item);
+                            }
                         }
+                    } else {
+                        return Err(AppError::GameStateParseError(
+                            "Invalid items format for add/modify".to_string(),
+                        ));
                     }
                 } else {
                     return Err(AppError::GameStateParseError(
-                        "Invalid items format for add/modify".to_string(),
+                        "Missing items or item for add/modify".to_string(),
                     ));
                 }
             }

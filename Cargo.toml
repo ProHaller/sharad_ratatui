@@ -1,6 +1,6 @@
 [package]
 name = "sharad_ratatui"
-version = "0.1.17"
+version = "0.1.21"
 edition = "2021"
 
 [dependencies]

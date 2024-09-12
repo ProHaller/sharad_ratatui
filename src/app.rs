@@ -587,7 +587,6 @@ impl App {
     fn handle_in_game_editing(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Enter => {
-                self.submit_user_input();
                 self.input_mode = InputMode::Normal;
             }
             KeyCode::Esc => {
@@ -1193,7 +1192,8 @@ impl App {
             self.initialize_ai_client().await?;
         }
 
-        let assistant_id = "asst_4kaphuqlAkwnsbBrf482Z6dR";
+        let assistant_id = "asst_oavbUQD3KMkNKgyYRj42tKsM"; //Original
+                                                            // let assistant_id = "asst_4kaphuqlAkwnsbBrf482Z6dR"; //copy
 
         if let Some(ai) = &self.ai_client {
             // Start a new conversation
