@@ -28,6 +28,7 @@ pub mod error;
 pub mod game_state;
 pub mod image;
 pub mod message;
+pub mod save;
 pub mod settings;
 pub mod settings_state;
 pub mod ui;
@@ -152,8 +153,8 @@ async fn run_app(
                         app.handle_ai_response(result).await;
                         app.scroll_to_bottom();
                     },
-                    AppCommand::LoadGame(path) => {
-                        if let Err(e) = app.lock().await.load_game(&path).await {
+                    AppCommand::LoadGame(save_name) => {
+                        if let Err(e) = app.lock().await.load_game(&save_name).await {
                             app.lock().await.add_message(Message::new( MessageType::System, format!("Failed to load game: {:#?}", e)));
                         }
                     },

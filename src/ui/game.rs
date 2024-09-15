@@ -72,7 +72,7 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
     if let Some(game_state) = &app.current_game {
         match game_state.try_lock() {
             Ok(locked_game_state) => {
-                if let Some(sheet) = &locked_game_state.character_sheet {
+                if let Some(sheet) = &locked_game_state.main_character_sheet {
                     // Update the last known character sheet
                     app.last_known_character_sheet = Some(sheet.clone());
                     draw_character_sheet(f, sheet, game_info_area);

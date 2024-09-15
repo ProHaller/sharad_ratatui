@@ -29,7 +29,7 @@ pub fn draw_load_game(f: &mut Frame, app: &App) {
                 Constraint::Max(20),
                 Constraint::Max(7),
                 Constraint::Max(3),
-                Constraint::Min(app.available_saves.len() as u16),
+                Constraint::Min(app.save_manager.available_saves.len() as u16),
                 Constraint::Max(3),
             ]
             .as_ref(),
@@ -45,7 +45,7 @@ pub fn draw_load_game(f: &mut Frame, app: &App) {
 }
 
 fn render_console(f: &mut Frame, app: &App, area: Rect) {
-    let console_text = if app.available_saves.is_empty() {
+    let console_text = if app.save_manager.available_saves.is_empty() {
         "No save files found in ./data/save/"
     } else {
         "Select a save file to load"
@@ -60,10 +60,11 @@ fn render_console(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_load_game_menu(f: &mut Frame, app: &App, area: Rect) {
-    let text: Vec<Line> = if app.available_saves.is_empty() {
+    let text: Vec<Line> = if app.save_manager.available_saves.is_empty() {
         vec![Line::from(Span::raw("No save files available"))]
     } else {
-        app.available_saves
+        app.save_manager
+            .available_saves
             .iter()
             .enumerate()
             .map(|(i, save)| {

@@ -8,6 +8,7 @@ use crate::error::AppError;
 use crate::game_state::GameState;
 use crate::image;
 use crate::message::{self, AIMessage, GameMessage, Message, MessageType};
+use crate::save::{SaveManager, SAVE_DIR};
 use crate::settings::Settings;
 use crate::settings_state::SettingsState;
 use crate::ui::game;
@@ -24,7 +25,6 @@ use std::cell::RefCell;
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::path::Path;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -65,6 +65,11 @@ pub struct App {
     pub input_mode: InputMode,
     pub openai_api_key_valid: bool,
 
+    // Saves and loads
+    pub save_manager: SaveManager,
+    pub save_name_input: Input,
+    pub current_save_name: Arc<RwLock<String>>,
+
     // Menu states
     pub main_menu_state: ListState,
     pub load_game_menu_state: ListState,
@@ -78,8 +83,6 @@ pub struct App {
     // User inputs and interaction handling
     pub user_input: Input,
     pub api_key_input: Input,
-    pub save_name_input: Input,
-    pub current_save_name: Arc<RwLock<String>>,
     pub image_prompt: Input,
     pub is_recording: Arc<AtomicBool>,
 
@@ -102,9 +105,6 @@ pub struct App {
 
     // Clipboard handling
     clipboard: ClipboardContext,
-
-    // Saves and available options
-    pub available_saves: Vec<String>,
 
     // Asynchronous message handling
     ai_sender: mpsc::UnboundedSender<AIMessage>,
@@ -135,8 +135,6 @@ impl App {
         let mut load_game_menu_state = ListState::default();
         load_game_menu_state.select(Some(0));
 
-        let available_saves = Self::scan_save_files();
-
         let openai_api_key_valid = if let Some(ref api_key) = settings.openai_api_key {
             Settings::validate_api_key(api_key).await
         } else {
@@ -157,9 +155,9 @@ impl App {
             image_prompt: Input::default(),
             input_mode: InputMode::Normal,
             settings_state,
+            save_manager: SaveManager::new(),
             load_game_menu_state,
             openai_api_key_valid,
-            available_saves,
             game_content: RefCell::new(Vec::new()),
             game_content_scroll: 0,
             cached_game_content: None,
@@ -619,7 +617,7 @@ impl App {
                 }
                 KeyCode::Esc => {
                     self.state = AppState::MainMenu;
-                    self.available_saves = Self::scan_save_files();
+                    self.save_manager.available_saves = SaveManager::scan_save_files();
                     self.add_message(Message::new(
                         MessageType::System,
                         "Game paused. Returned to main menu.".to_string(),
@@ -786,9 +784,10 @@ impl App {
         match key.code {
             KeyCode::Enter => {
                 if let Some(selected) = self.load_game_menu_state.selected() {
-                    if selected < self.available_saves.len() {
-                        let save_path = format!("./data/save/{}", self.available_saves[selected]);
-                        if let Err(e) = self.command_sender.send(AppCommand::LoadGame(save_path)) {
+                    if selected < self.save_manager.available_saves.len() {
+                        if let Err(e) = self.command_sender.send(AppCommand::LoadGame(
+                            self.save_manager.available_saves[selected].clone(),
+                        )) {
                             self.add_message(Message::new(
                                 MessageType::System,
                                 format!("Failed to send load game command: {:#?}", e),
@@ -816,7 +815,7 @@ impl App {
             }
             KeyCode::Backspace => {
                 if self.backspace_counter {
-                    if !self.available_saves.is_empty() {
+                    if !self.save_manager.available_saves.is_empty() {
                         self.delete_save();
                     }
                     self.backspace_counter = false;
@@ -827,9 +826,12 @@ impl App {
 
             KeyCode::Char(c) => {
                 if let Some(digit) = c.to_digit(10) {
-                    let selected = (digit as usize - 1) % self.available_saves.len();
+                    let selected = (digit as usize - 1) % self.save_manager.available_saves.len();
                     self.load_game_menu_state.select(Some(selected));
-                    let save_path = format!("./data/save/{}", self.available_saves[selected]);
+                    let save_path = format!(
+                        "{}/{}",
+                        SAVE_DIR, self.save_manager.available_saves[selected]
+                    );
                     if let Err(e) = self.command_sender.send(AppCommand::LoadGame(save_path)) {
                         self.add_message(Message::new(
                             MessageType::System,
@@ -859,7 +861,7 @@ impl App {
                     Some(1) => {
                         // Load Game
                         self.state = AppState::LoadMenu;
-                        self.available_saves = Self::scan_save_files();
+                        self.save_manager.available_saves = SaveManager::scan_save_files();
                         self.load_game_menu_state.select(Some(0));
                     }
                     Some(2) => {
@@ -1221,9 +1223,8 @@ impl App {
             let new_game_state = Arc::new(Mutex::new(GameState {
                 assistant_id: assistant_id.to_string(),
                 thread_id,
-                character_sheet: None,
+                main_character_sheet: None,
                 characters: Vec::new(),
-                message_history: Vec::new(),
                 save_name: save_name.clone(),
             }));
 
@@ -1327,60 +1328,27 @@ impl App {
         Ok(())
     }
 
-    pub fn scan_save_files() -> Vec<String> {
-        let save_dir = Path::new("./data/save");
-        if !save_dir.exists() {
-            return Vec::new();
-        }
-
-        fs::read_dir(save_dir)
-            .unwrap()
-            .filter_map(|entry| {
-                let entry = entry.ok()?;
-                let path = entry.path();
-                if path.is_file() && path.extension()? == "json" {
-                    path.file_name()?.to_str().map(String::from)
-                } else {
-                    None
-                }
-            })
-            .collect()
-    }
-
-    fn delete_save(&mut self) {
+    fn delete_save(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(selected) = self.load_game_menu_state.selected() {
-            let save_path = format!("./data/save/{}", self.available_saves[selected]);
-            match fs::remove_file(save_path) {
-                Ok(_) => {
-                    self.add_message(Message::new(
-                        MessageType::System,
-                        format!(
-                            "Successfully deleted save file: {}",
-                            self.available_saves[selected]
-                        ),
-                    ));
-                    self.available_saves.remove(selected);
+            let save_name = self.save_manager.available_saves[selected].clone();
+            self.save_manager.clone().delete_save(&save_name)?;
+            self.save_manager.available_saves.remove(selected);
 
-                    // Update the selected state to ensure it remains within bounds
-                    let new_selected = if selected >= self.available_saves.len() {
-                        self.available_saves.len().saturating_sub(1)
-                    } else {
-                        selected
-                    };
-                    self.load_game_menu_state.select(Some(new_selected));
-                }
-                Err(e) => {
-                    self.add_message(Message::new(
-                        MessageType::System,
-                        format!("Failed to delete save file: {:#?}", e),
-                    ));
-                }
-            }
+            // Update the selected state to ensure it remains within bounds
+            let new_selected = if selected >= self.save_manager.available_saves.len() {
+                self.save_manager.available_saves.len().saturating_sub(1)
+            } else {
+                selected
+            };
+            self.load_game_menu_state.select(Some(new_selected));
+            Ok(())
+        } else {
+            Err("No save selected".into())
         }
     }
 
     fn navigate_load_game_menu(&mut self, direction: isize) {
-        let len = self.available_saves.len();
+        let len = self.save_manager.available_saves.len();
         if len == 0 {
             return;
         }
@@ -1393,17 +1361,12 @@ impl App {
         self.load_game_menu_state.select(Some(next));
     }
 
-    pub async fn load_game(&mut self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let mut game_state = GameState::load_from_file(path)?;
-        self.add_debug_message(format!("Game state loaded: {:#?}", game_state));
+    pub async fn load_game(&mut self, save_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let save_manager = self.save_manager.clone().load_from_file(save_name)?;
 
+        let mut game_state = save_manager.current_save.ok_or("No current game")?;
         // Extract the save name from the path
-        let save_name = std::path::Path::new(path)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("unknown")
-            .to_string();
-        game_state.save_name = save_name;
+        game_state.save_name = save_name.to_string();
 
         self.update_save_name(game_state.save_name.clone()).await;
         if self.ai_client.is_none() {
@@ -1413,7 +1376,7 @@ impl App {
         let conversation_state = GameConversationState {
             assistant_id: game_state.assistant_id.clone(),
             thread_id: game_state.thread_id.clone(),
-            character_sheet: game_state.character_sheet.clone(),
+            character_sheet: game_state.main_character_sheet.clone(),
         };
 
         // Clone the Arc to get a new reference to the AI client
@@ -1440,16 +1403,7 @@ impl App {
         self.state = AppState::InGame;
 
         // Calculate total lines after loading the game content
-        self.total_lines = self
-            .game_content
-            .borrow()
-            .iter()
-            .map(|message| {
-                let wrapped_lines = textwrap::wrap(&message.content, self.visible_lines);
-                wrapped_lines.len()
-            })
-            .sum();
-
+        self.total_lines = self.calculate_total_lines();
         // Scroll to the bottom after updating the scroll
         self.scroll_to_bottom();
 

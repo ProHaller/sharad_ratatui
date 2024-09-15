@@ -210,7 +210,7 @@ impl GameAI {
             new_sheet
         ));
         // Update the main character sheet
-        game_state.character_sheet = Some(new_sheet.clone());
+        game_state.main_character_sheet = Some(new_sheet.clone());
 
         // Update or add the character in the characters vector
         if let Some(existing_character) = game_state
@@ -331,7 +331,7 @@ impl GameAI {
         };
 
         if character_sheet.main {
-            game_state.character_sheet = Some(character_sheet.clone());
+            game_state.main_character_sheet = Some(character_sheet.clone());
         }
         game_state.characters.push(character_sheet.clone());
 
@@ -398,12 +398,12 @@ impl GameAI {
         }
 
         if game_state
-            .character_sheet
+            .main_character_sheet
             .as_ref()
             .map(|cs| cs.name == character_name)
             .unwrap_or(false)
         {
-            game_state.character_sheet = Some(character.clone());
+            game_state.main_character_sheet = Some(character.clone());
         }
 
         Ok(format!(
@@ -491,12 +491,12 @@ impl GameAI {
         }
 
         if game_state
-            .character_sheet
+            .main_character_sheet
             .as_ref()
             .map(|cs| cs.name == character_name)
             .unwrap_or(false)
         {
-            game_state.character_sheet = Some(character.clone());
+            game_state.main_character_sheet = Some(character.clone());
         }
 
         Ok(format!("Updated skills for character: {}", character_name))
@@ -618,12 +618,12 @@ impl GameAI {
         character.apply_update(update)?;
 
         if game_state
-            .character_sheet
+            .main_character_sheet
             .as_ref()
             .map(|cs| cs.name == character_name)
             .unwrap_or(false)
         {
-            game_state.character_sheet = Some(character.clone());
+            game_state.main_character_sheet = Some(character.clone());
         }
 
         Ok(format!(
@@ -673,12 +673,12 @@ impl GameAI {
         character.apply_update(update)?;
 
         if game_state
-            .character_sheet
+            .main_character_sheet
             .as_ref()
             .map(|cs| cs.name == character_name)
             .unwrap_or(false)
         {
-            game_state.character_sheet = Some(character.clone());
+            game_state.main_character_sheet = Some(character.clone());
         }
         Ok(format!(
             "Updated qualities for character: {}",
@@ -717,12 +717,12 @@ impl GameAI {
         character.apply_update(update)?;
 
         if game_state
-            .character_sheet
+            .main_character_sheet
             .as_ref()
             .map(|cs| cs.name == character_name)
             .unwrap_or(false)
         {
-            game_state.character_sheet = Some(character.clone());
+            game_state.main_character_sheet = Some(character.clone());
         }
         Ok(format!(
             "Updated matrix attributes for character: {}",
@@ -776,12 +776,12 @@ impl GameAI {
         character.apply_update(update)?;
 
         if game_state
-            .character_sheet
+            .main_character_sheet
             .as_ref()
             .map(|cs| cs.name == character_name)
             .unwrap_or(false)
         {
-            game_state.character_sheet = Some(character.clone());
+            game_state.main_character_sheet = Some(character.clone());
         }
         Ok(format!(
             "Updated contacts for character: {}",
@@ -835,12 +835,12 @@ impl GameAI {
         character.apply_update(update)?;
 
         if game_state
-            .character_sheet
+            .main_character_sheet
             .as_ref()
             .map(|cs| cs.name == character_name)
             .unwrap_or(false)
         {
-            game_state.character_sheet = Some(character.clone());
+            game_state.main_character_sheet = Some(character.clone());
         }
 
         Ok(format!(

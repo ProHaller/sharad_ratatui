@@ -10,6 +10,7 @@ pub mod error;
 pub mod game_state;
 pub mod image;
 pub mod message;
+pub mod save;
 pub mod settings;
 pub mod settings_state;
 pub mod ui;
