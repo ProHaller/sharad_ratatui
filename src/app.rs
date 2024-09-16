@@ -829,11 +829,8 @@ impl App {
                 if let Some(digit) = c.to_digit(10) {
                     let selected = (digit as usize - 1) % self.save_manager.available_saves.len();
                     self.load_game_menu_state.select(Some(selected));
-                    let save_path = format!(
-                        "{}/{}",
-                        SAVE_DIR, self.save_manager.available_saves[selected]
-                    );
-                    if let Err(e) = self.command_sender.send(AppCommand::LoadGame(save_path)) {
+                    let save_name = self.save_manager.available_saves[selected].clone();
+                    if let Err(e) = self.command_sender.send(AppCommand::LoadGame(save_name)) {
                         self.add_message(Message::new(
                             MessageType::System,
                             format!("Failed to send load game command: {:#?}", e),
@@ -1363,9 +1360,10 @@ impl App {
     }
 
     pub async fn load_game(&mut self, save_name: &str) -> Result<(), Box<dyn std::error::Error>> {
-        self.save_manager.clone().load_from_file(save_name)?;
-        println!("Loaded game: {}", save_name);
+        self.save_manager = self.save_manager.clone().load_from_file(save_name)?;
 
+        println!("Game loaded successfully");
+        println!("{:#?}", self.save_manager.clone());
         let mut game_state = self
             .save_manager
             .current_save
@@ -1378,6 +1376,7 @@ impl App {
         if self.ai_client.is_none() {
             self.initialize_ai_client().await?;
         }
+        println!("Loading game content");
 
         let conversation_state = GameConversationState {
             assistant_id: game_state.assistant_id.clone(),
@@ -1390,6 +1389,7 @@ impl App {
 
         // Use the cloned Arc to call load_conversation
         ai_client.load_conversation(conversation_state).await;
+        println!("Game content loaded");
 
         // Fetch all messages from the thread
         let all_messages = ai_client.fetch_all_messages(&game_state.thread_id).await?;
@@ -1407,6 +1407,7 @@ impl App {
         self.current_game = Some(Arc::new(Mutex::new(game_state)));
 
         self.state = AppState::InGame;
+        println!("Game state updated");
 
         // Calculate total lines after loading the game content
         self.total_lines = self.calculate_total_lines();
