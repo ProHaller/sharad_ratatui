@@ -129,7 +129,8 @@ impl App {
         let mut main_menu_state = ListState::default();
         main_menu_state.select(Some(0));
 
-        let settings = Settings::load_from_file("./data/settings.json").unwrap_or_default();
+        let settings =
+            Settings::load_settings_from_file("./data/settings.json").unwrap_or_default();
         let settings_state = SettingsState::from_settings(&settings);
 
         let mut load_game_menu_state = ListState::default();
@@ -1362,9 +1363,14 @@ impl App {
     }
 
     pub async fn load_game(&mut self, save_name: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let save_manager = self.save_manager.clone().load_from_file(save_name)?;
+        self.save_manager.clone().load_from_file(save_name)?;
+        println!("Loaded game: {}", save_name);
 
-        let mut game_state = save_manager.current_save.ok_or("No current game")?;
+        let mut game_state = self
+            .save_manager
+            .current_save
+            .clone()
+            .ok_or("No current game")?;
         // Extract the save name from the path
         game_state.save_name = save_name.to_string();
 

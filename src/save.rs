@@ -51,8 +51,8 @@ impl SaveManager {
     pub fn load_from_file(mut self, save_name: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let path = format!("{}/{}.json", SAVE_DIR, save_name);
         let file = File::open(path)?;
+        println!("Loading save: {:#?}", save_name);
         self.current_save = serde_json::from_reader(file)?;
-
         if let Ok(mut file) = OpenOptions::new()
             .create(true)
             .append(true)

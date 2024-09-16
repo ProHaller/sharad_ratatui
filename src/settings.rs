@@ -36,7 +36,7 @@ impl Settings {
 
     // Load settings from a default file path.
     pub fn load() -> io::Result<Self> {
-        Self::load_from_file("./data/settings.json")
+        Self::load_settings_from_file("./data/settings.json")
     }
 
     // Save current settings to a default file path.
@@ -46,7 +46,7 @@ impl Settings {
     }
 
     // Load settings from a specified file path.
-    pub fn load_from_file(path: &str) -> io::Result<Self> {
+    pub fn load_settings_from_file(path: &str) -> io::Result<Self> {
         let data = fs::read_to_string(path)?; // Read settings from file.
         let settings = serde_json::from_str(&data)?; // Deserialize JSON data into settings.
         Ok(settings)
