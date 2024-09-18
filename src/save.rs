@@ -71,11 +71,15 @@ impl SaveManager {
         Ok(self)
     }
 
-    pub fn save(self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn save(self) -> Result<(), std::io::Error> {
         create_dir_all(SAVE_DIR)?;
-        let current_save = self.current_save.ok_or("There is no game to save")?;
+        let current_save = self.current_save.ok_or(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "There is no game to save",
+        ))?;
         let save_path = format!("{}/{}.json", SAVE_DIR, current_save.save_name);
-        let serialized = serde_json::to_string_pretty(&current_save)?;
+        let serialized = serde_json::to_string_pretty(&current_save)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
         write(save_path, serialized)?;
         Ok(())
     }

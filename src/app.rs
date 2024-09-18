@@ -8,7 +8,7 @@ use crate::error::AppError;
 use crate::game_state::GameState;
 use crate::image;
 use crate::message::{self, AIMessage, GameMessage, Message, MessageType};
-use crate::save::{SaveManager, SAVE_DIR};
+use crate::save::SaveManager;
 use crate::settings::Settings;
 use crate::settings_state::SettingsState;
 use crate::ui::game;
@@ -22,7 +22,6 @@ use ratatui::widgets::ListState;
 use ratatui::{layout::Alignment, text::Line};
 use std::borrow::BorrowMut;
 use std::cell::RefCell;
-use std::fs;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::rc::Rc;
@@ -817,7 +816,7 @@ impl App {
             KeyCode::Backspace => {
                 if self.backspace_counter {
                     if !self.save_manager.available_saves.is_empty() {
-                        self.delete_save();
+                        let _ = self.delete_selected_save();
                     }
                     self.backspace_counter = false;
                 } else {
@@ -1229,7 +1228,7 @@ impl App {
             self.current_game = Some(new_game_state);
 
             // Save the game
-            self.save_game(&save_name).await?;
+            self.save_current_game().await?;
 
             self.state = AppState::InGame;
             self.add_message(message::Message::new(
@@ -1268,25 +1267,8 @@ impl App {
         }
     }
 
+    //TODO: Make this use the save manager
     pub async fn save_current_game(&self) -> Result<(), AppError> {
-        self.add_debug_message("Saving current game".to_string());
-        if let Some(game_state) = &self.current_game {
-            let game_state = game_state.lock().await;
-            self.add_debug_message(format!("Saving Current game 2: {:#?}", game_state));
-            let save_name = &game_state.save_name;
-            self.add_debug_message(format!("Saving Current game. Save name: {}", save_name));
-            self.save_game(save_name).await?;
-            self.add_debug_message(format!("Game saved with name: {}", save_name));
-            Ok(())
-        } else {
-            self.add_debug_message("No current game to save".to_string());
-            Err(AppError::NoCurrentGame)
-        }
-    }
-
-    pub async fn save_game(&self, save_name: &str) -> Result<(), AppError> {
-        self.add_debug_message("Saving game, function save game".to_string());
-
         let game_state = match &self.current_game {
             Some(arc_mutex) => arc_mutex,
             None => return Err(AppError::NoCurrentGame),
@@ -1296,37 +1278,21 @@ impl App {
         let game_state_clone = Arc::clone(game_state);
 
         // Clone the save_name to own the data
-        let save_name = save_name.to_string();
+        let mut save_manager_clone = self.save_manager.clone();
 
         // Spawn a new task to handle the saving process
         tokio::spawn(async move {
-            let save_dir = "./data/save";
-            if !std::path::Path::new(save_dir).exists() {
-                if let Err(e) = tokio::fs::create_dir_all(save_dir).await {
-                    return Err(AppError::IO(e));
-                }
-            }
-
-            let save_path = format!("{}/{}.json", save_dir, save_name);
-
             // Now we can safely lock the mutex without blocking the main thread
             let game_state = game_state_clone.lock().await;
+            save_manager_clone.current_save = Some(game_state.clone());
 
-            if let Err(e) = game_state.save_to_file(&save_path) {
-                return Err(AppError::IO(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    e,
-                )));
-            }
-
-            Ok(())
+            let _ = save_manager_clone.save();
         });
 
-        self.add_debug_message("Save process initiated".to_string());
         Ok(())
     }
 
-    fn delete_save(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    fn delete_selected_save(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(selected) = self.load_game_menu_state.selected() {
             let save_name = self.save_manager.available_saves[selected].clone();
             self.save_manager.clone().delete_save(&save_name)?;
@@ -1362,8 +1328,6 @@ impl App {
     pub async fn load_game(&mut self, save_name: &str) -> Result<(), Box<dyn std::error::Error>> {
         self.save_manager = self.save_manager.clone().load_from_file(save_name)?;
 
-        println!("Game loaded successfully");
-        println!("{:#?}", self.save_manager.clone());
         let mut game_state = self
             .save_manager
             .current_save
@@ -1376,7 +1340,6 @@ impl App {
         if self.ai_client.is_none() {
             self.initialize_ai_client().await?;
         }
-        println!("Loading game content");
 
         let conversation_state = GameConversationState {
             assistant_id: game_state.assistant_id.clone(),
@@ -1389,7 +1352,6 @@ impl App {
 
         // Use the cloned Arc to call load_conversation
         ai_client.load_conversation(conversation_state).await;
-        println!("Game content loaded");
 
         // Fetch all messages from the thread
         let all_messages = ai_client.fetch_all_messages(&game_state.thread_id).await?;
@@ -1407,7 +1369,6 @@ impl App {
         self.current_game = Some(Arc::new(Mutex::new(game_state)));
 
         self.state = AppState::InGame;
-        println!("Game state updated");
 
         // Calculate total lines after loading the game content
         self.total_lines = self.calculate_total_lines();

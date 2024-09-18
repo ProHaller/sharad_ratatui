@@ -1,9 +1,6 @@
 // Import necessary modules from the local crate and external crates.
 use crate::character::{CharacterSheet, CharacterSheetUpdate};
-use chrono::Local;
 use serde::{Deserialize, Serialize};
-use std::fs::{create_dir_all, write, File, OpenOptions};
-use std::io::Write;
 
 // Define a struct to manage the state of a game session, with serialization and deserialization.
 #[derive(Serialize, Deserialize, Clone)]
@@ -30,36 +27,6 @@ impl std::fmt::Debug for GameState {
 // Additional implementation for GameState to handle file operations.
 impl GameState {
     // Function to load a game state from a specified JSON file.
-    pub fn load_from_file(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let file = File::open(path)?;
-        let game_state: GameState = serde_json::from_reader(file)?;
-
-        if let Ok(mut file) = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("sharad_debug.log")
-        {
-            let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
-            let _ = writeln!(file, "[{}] load_from_file:\n {:#?}", timestamp, game_state);
-        }
-        Ok(game_state)
-    }
-
-    // Function to save the current game state to a specified file in JSON format.
-    pub fn save_to_file(&self, path: &str) -> Result<(), std::io::Error> {
-        let file = File::create(path)?; // Create or overwrite the file at the specified path.
-        serde_json::to_writer_pretty(file, self)?; // Serialize the GameState into JSON and write to the file.
-        Ok(()) // Return success if the file is written without errors.
-    }
-
-    pub fn save(&self) -> Result<(), std::io::Error> {
-        let save_dir = "./data/save";
-        create_dir_all(save_dir)?;
-        let save_path = format!("{}/{}.json", save_dir, self.save_name);
-        let serialized = serde_json::to_string_pretty(self)?;
-        write(save_path, serialized)?;
-        Ok(())
-    }
 
     pub fn update_character_sheet(&mut self, update: CharacterSheetUpdate) -> Result<(), String> {
         if let Some(ref mut sheet) = self.main_character_sheet {
