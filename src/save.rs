@@ -85,7 +85,7 @@ impl SaveManager {
     }
 
     pub fn delete_save(mut self, save_name: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let path = format!("{}/{}", SAVE_DIR, save_name);
+        let path = format!("{}/{}.json", SAVE_DIR, save_name);
         match remove_file(path) {
             Ok(()) => {
                 self.available_saves = Self::scan_save_files();

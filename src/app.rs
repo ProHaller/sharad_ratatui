@@ -1,6 +1,7 @@
 use crate::ai::{GameAI, GameConversationState};
 use crate::ai_response::{create_user_message, UserMessage};
 use crate::app_state::AppState;
+use crate::assistant::{create_assistant, delete_assistant};
 use crate::audio::{self, play_audio};
 use crate::character::CharacterSheet;
 use crate::cleanup::cleanup;
@@ -14,6 +15,7 @@ use crate::settings_state::SettingsState;
 use crate::ui::game;
 use crate::ui::utils::Spinner;
 
+use async_openai::Client;
 use chrono::Local;
 use copypasta::{ClipboardContext, ClipboardProvider};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
@@ -1191,8 +1193,17 @@ impl App {
             self.initialize_ai_client().await?;
         }
 
-        let assistant_id = "asst_oavbUQD3KMkNKgyYRj42tKsM"; //Original
-                                                            // let assistant_id = "asst_4kaphuqlAkwnsbBrf482Z6dR"; //copy
+        let client = self.ai_client.clone().unwrap().client;
+        let assistant = match create_assistant(&client, &save_name).await {
+            Ok(assistant) => assistant,
+            Err(err) => {
+                println!("{}", err);
+                return Err(err);
+            }
+        };
+        let assistant_id = &assistant.id;
+        // let assistant_id = "asst_oavbUQD3KMkNKgyYRj42tKsM"; //Original
+        // let assistant_id = "asst_4kaphuqlAkwnsbBrf482Z6dR"; //copy
 
         if let Some(ai) = &self.ai_client {
             // Start a new conversation
@@ -1295,7 +1306,12 @@ impl App {
     fn delete_selected_save(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(selected) = self.load_game_menu_state.selected() {
             let save_name = self.save_manager.available_saves[selected].clone();
-            self.save_manager.clone().delete_save(&save_name)?;
+            let ai_client = self.ai_client.clone().ok_or("AI client not found")?;
+            let save_2 = save_name.clone();
+            tokio::spawn(async move {
+                delete_assistant(&ai_client.client, &save_name).await;
+            });
+            self.save_manager.clone().delete_save(&save_2)?;
             self.save_manager.available_saves.remove(selected);
 
             // Update the selected state to ensure it remains within bounds

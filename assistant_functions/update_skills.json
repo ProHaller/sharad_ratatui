@@ -1,6 +1,7 @@
 {
   "name": "update_skills",
   "description": "Update skills of a Shadowrun character",
+  "strict": false,
   "parameters": {
     "type": "object",
     "required": [

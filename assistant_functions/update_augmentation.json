@@ -1,6 +1,7 @@
 {
   "name": "update_augmentations",
   "description": "Update cyberware and bioware of a Shadowrun character",
+  "strict": false,
   "parameters": {
     "type": "object",
     "required": [

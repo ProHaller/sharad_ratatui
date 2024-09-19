@@ -1,92 +1,74 @@
 {
   "name": "create_character_sheet",
   "description": "Create a character sheet for a Shadowrun main character, including personal details, attributes, skills, inventory, and contacts.",
+  "strict": true,
   "parameters": {
+    "type": "object",
+    "additionalProperties": false,
     "properties": {
       "attributes": {
         "description": "Physical and mental attributes of the character.",
+        "type": "object",
+        "additionalProperties": false,
         "properties": {
           "agility": {
-            "description": "Character's quickness and dexterity.",
-            "maximum": 6,
-            "minimum": 1,
+            "description": "Character's quickness and dexterity. Valid range: 1-6.",
             "type": "integer"
           },
           "body": {
-            "description": "Character's physical robustness.",
-            "maximum": 6,
-            "minimum": 1,
+            "description": "Character's physical robustness. Valid range: 1-6.",
             "type": "integer"
           },
           "charisma": {
-            "description": "Character's social influence and charm.",
-            "maximum": 6,
-            "minimum": 1,
+            "description": "Character's social influence and charm. Valid range: 1-6.",
             "type": "integer"
           },
           "edge": {
-            "description": "Character's luck and fortuitousness.",
-            "maximum": 6,
-            "minimum": 1,
+            "description": "Character's luck and fortuitousness. Valid range: 1-6.",
             "type": "integer"
           },
           "intuition": {
-            "description": "Character's awareness and gut feelings.",
-            "maximum": 6,
-            "minimum": 1,
+            "description": "Character's awareness and gut feelings. Valid range: 1-6.",
             "type": "integer"
           },
           "logic": {
-            "description": "Character's reasoning and memory capabilities.",
-            "maximum": 6,
-            "minimum": 1,
+            "description": "Character's reasoning and memory capabilities. Valid range: 1-6.",
             "type": "integer"
           },
           "magic": {
-            "description": "Character's magical potential. Zero if non-magical.",
-            "maximum": 6,
-            "minimum": 0,
+            "description": "Character's magical potential. Zero if non-magical. Valid range: 0-6.",
             "type": "integer"
           },
           "reaction": {
-            "description": "Character's response speed to stimuli.",
-            "maximum": 6,
-            "minimum": 1,
+            "description": "Character's response speed to stimuli. Valid range: 1-6.",
             "type": "integer"
           },
           "resonance": {
-            "description": "Character's natural affinity with the digital world. Zero if non-technomancer.",
-            "maximum": 6,
-            "minimum": 0,
+            "description": "Character's natural affinity with the digital world. Zero if non-technomancer. Valid range: 0-6.",
             "type": "integer"
           },
           "strength": {
-            "description": "Character's physical power.",
-            "maximum": 6,
-            "minimum": 1,
+            "description": "Character's physical power. Valid range: 1-6.",
             "type": "integer"
           },
           "willpower": {
-            "description": "Character's mental resilience and discipline.",
-            "maximum": 6,
-            "minimum": 1,
+            "description": "Character's mental resilience and discipline. Valid range: 1-6.",
             "type": "integer"
           }
         },
         "required": [
-          "body",
           "agility",
-          "reaction",
-          "strength",
-          "willpower",
-          "logic",
-          "intuition",
+          "body",
           "charisma",
           "edge",
+          "intuition",
+          "logic",
           "magic",
-          "resonance"
-        ],
-        "type": "object"
+          "reaction",
+          "resonance",
+          "strength",
+          "willpower"
+        ]
       },
       "backstory": {
         "description": "Narrative of the character's personal history and experiences.",
@@ -101,13 +83,15 @@
         "type": "string"
       },
       "main": {
-        "description": "Whether the character is the main character or not. Only the player's character is main.",
-        "default": "false",
+        "description": "Whether the character is the main character or not. Should be true for the player's character, false for non-player characters.",
         "type": "boolean"
       },
       "qualities": {
         "description": "Array of character's traits, both positive and negative.",
+        "type": "array",
         "items": {
+          "type": "object",
+          "additionalProperties": false,
           "properties": {
             "name": {
               "description": "Name of the quality or trait.",
@@ -121,139 +105,134 @@
           "required": [
             "name",
             "positive"
-          ],
-          "type": "object"
-        },
-        "type": "array"
+          ]
+        }
       },
       "race": {
         "description": "The character's race, such as Human, Elf, Dwarf, Ork, or Troll.",
+        "type": "string",
         "enum": [
           "Human",
           "Elf",
           "Dwarf",
           "Ork",
           "Troll"
-        ],
-        "type": "string"
+        ]
       },
       "skills": {
         "description": "Collection of skills categorized into combat, physical, social, technical skills and knowledge skills.",
+        "type": "object",
+        "additionalProperties": false,
         "properties": {
           "combat": {
             "description": "Combat-related skills of the character.",
+            "type": "array",
             "items": {
+              "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "name": {
                   "description": "Name of the combat skill.",
                   "type": "string"
                 },
                 "rating": {
-                  "description": "Proficiency level of the combat skill.",
-                  "maximum": 6,
-                  "minimum": 0,
+                  "description": "Proficiency level of the combat skill. Valid range: 0-6.",
                   "type": "integer"
                 }
               },
               "required": [
                 "name",
                 "rating"
-              ],
-              "type": "object"
-            },
-            "type": "array"
+              ]
+            }
           },
           "physical": {
             "description": "Physical skills of the character.",
+            "type": "array",
             "items": {
+              "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "name": {
                   "description": "Name of the physical skill.",
                   "type": "string"
                 },
                 "rating": {
-                  "description": "Proficiency level of the physical skill.",
-                  "maximum": 6,
-                  "minimum": 0,
+                  "description": "Proficiency level of the physical skill. Valid range: 0-6.",
                   "type": "integer"
                 }
               },
               "required": [
                 "name",
                 "rating"
-              ],
-              "type": "object"
-            },
-            "type": "array"
+              ]
+            }
           },
           "social": {
             "description": "Social skills of the character.",
+            "type": "array",
             "items": {
+              "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "name": {
                   "description": "Name of the social skill.",
                   "type": "string"
                 },
                 "rating": {
-                  "description": "Proficiency level of the social skill.",
-                  "maximum": 6,
-                  "minimum": 0,
+                  "description": "Proficiency level of the social skill. Valid range: 0-6.",
                   "type": "integer"
                 }
               },
               "required": [
                 "name",
                 "rating"
-              ],
-              "type": "object"
-            },
-            "type": "array"
+              ]
+            }
           },
           "technical": {
             "description": "Technical skills of the character, such as hacking or engineering.",
+            "type": "array",
             "items": {
+              "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "name": {
                   "description": "Name of the technical skill.",
                   "type": "string"
                 },
                 "rating": {
-                  "description": "Proficiency level of the technical skill.",
-                  "maximum": 6,
-                  "minimum": 0,
+                  "description": "Proficiency level of the technical skill. Valid range: 0-6.",
                   "type": "integer"
                 }
               },
               "required": [
                 "name",
                 "rating"
-              ],
-              "type": "object"
-            },
-            "type": "array"
+              ]
+            }
           },
           "knowledge": {
             "description": "Knowledge skills of the character, such as academic fields, street knowledge, professional expertise, and even hobbies.",
+            "type": "array",
             "items": {
+              "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "name": {
                   "description": "Name of the knowledge skill.",
                   "type": "string"
                 },
                 "rating": {
-                  "description": "Proficiency level of the knowledge skill.",
-                  "maximum": 6,
-                  "minimum": 0,
+                  "description": "Proficiency level of the knowledge skill. Valid range: 0-6.",
                   "type": "integer"
                 }
               },
               "required": [
                 "name",
                 "rating"
-              ],
-              "type": "object"
-            },
-            "type": "array"
+              ]
+            }
           }
         },
         "required": [
@@ -262,46 +241,18 @@
           "social",
           "technical",
           "knowledge"
-        ],
-        "type": "object"
+        ]
       },
       "nuyen": {
-        "description": "Amount of nuyen (money) the character starts with, ranging from minimum to maximum based on priority.",
-        "minimum": 6000,
-        "maximum": 450000,
+        "description": "Amount of nuyen (money) the character starts with. Valid range: 6000-450000.",
         "type": "integer"
-      },
-      "inventory": {
-        "description": "Items that the character possesses, including weapons, gear, and other personal items.",
-        "type": "object",
-        "additionalProperties": {
-          "type": "object",
-          "properties": {
-            "name": {
-              "type": "string",
-              "description": "Name of the item."
-            },
-            "quantity": {
-              "type": "integer",
-              "description": "Quantity of the item."
-            },
-            "description": {
-              "type": "string",
-              "description": "Description of the item."
-            }
-          },
-          "required": [
-            "name",
-            "quantity",
-            "description"
-          ]
-        }
       },
       "contacts": {
         "description": "A list of contacts the character has, representing relationships and connections.",
         "type": "array",
         "items": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
             "name": {
               "type": "string",
@@ -313,15 +264,11 @@
             },
             "loyalty": {
               "type": "integer",
-              "description": "Loyalty level of the contact, representing the strength of the relationship.",
-              "minimum": 1,
-              "maximum": 6
+              "description": "Loyalty level of the contact, representing the strength of the relationship. Valid range: 1-6."
             },
             "connection": {
               "type": "integer",
-              "description": "Connection level of the contact, indicating the influence or resource level of the contact.",
-              "minimum": 1,
-              "maximum": 6
+              "description": "Connection level of the contact, indicating the influence or resource level of the contact. Valid range: 1-6."
             }
           },
           "required": [
@@ -334,18 +281,16 @@
       }
     },
     "required": [
-      "name",
-      "race",
-      "gender",
-      "backstory",
-      "main",
       "attributes",
-      "skills",
-      "qualities",
+      "backstory",
+      "contacts",
+      "gender",
+      "main",
+      "name",
       "nuyen",
-      "inventory",
-      "contacts"
-    ],
-    "type": "object"
+      "qualities",
+      "race",
+      "skills"
+    ]
   }
 }

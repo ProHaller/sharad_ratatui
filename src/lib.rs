@@ -2,6 +2,7 @@ pub mod ai;
 pub mod ai_response;
 pub mod app;
 pub mod app_state;
+pub mod assistant;
 pub mod audio;
 pub mod character;
 pub mod cleanup;

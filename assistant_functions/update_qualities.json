@@ -1,6 +1,7 @@
 {
   "name": "update_qualities",
   "description": "Update qualities of a Shadowrun character",
+  "strict": false,
   "parameters": {
     "type": "object",
     "required": [

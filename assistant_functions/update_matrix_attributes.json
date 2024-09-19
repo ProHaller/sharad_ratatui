@@ -1,6 +1,7 @@
 {
   "name": "update_matrix_attributes",
   "description": "Update matrix attributes of a Shadowrun character",
+  "strict": false,
   "parameters": {
     "type": "object",
     "required": [

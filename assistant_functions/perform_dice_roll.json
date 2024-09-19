@@ -1,6 +1,7 @@
 {
   "name": "perform_dice_roll",
   "description": "Perform a dice roll for a Shadowrun character",
+  "strict": false,
   "parameters": {
     "properties": {
       "attribute": {
