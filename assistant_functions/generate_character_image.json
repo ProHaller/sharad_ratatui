@@ -1,0 +1,99 @@
+{
+  "name": "generate_character_image",
+  "description": "Generate a character image based on the provided details",
+  "strict": true,
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "name": {
+        "type": "string",
+        "description": "The name of the character"
+      },
+      "appearance": {
+        "type": "object",
+        "description": "Details about the character's physical appearance in English",
+        "additionalProperties": false,
+        "properties": {
+          "gender": {
+            "type": "string",
+            "description": "The character's gender in English"
+          },
+          "age": {
+            "type": "string",
+            "description": "The character's approximate age in English"
+          },
+          "height": {
+            "type": "string",
+            "description": "The character's height in English"
+          },
+          "build": {
+            "type": "string",
+            "description": "The character's body type in English"
+          },
+          "hair": {
+            "type": "string",
+            "description": "The character's hair color and style in English"
+          },
+          "eyes": {
+            "type": "string",
+            "description": "The character's eye color in English"
+          },
+          "skin": {
+            "type": "string",
+            "description": "The character's skin tone in English"
+          }
+        },
+        "required": [
+          "gender",
+          "age",
+          "height",
+          "build",
+          "hair",
+          "eyes",
+          "skin"
+        ]
+      },
+      "distinctive_signs": {
+        "type": "array",
+        "description": "List of distinctive signs or features in English",
+        "items": {
+          "type": "string"
+        }
+      },
+      "accessories": {
+        "type": "array",
+        "description": "List of accessories worn by the character in English",
+        "items": {
+          "type": "string"
+        }
+      },
+      "location": {
+        "type": "string",
+        "description": "The specific location where the character is situated in English"
+      },
+      "ambiance": {
+        "type": "string",
+        "description": "The mood or atmosphere of the scene in English"
+      },
+      "environment": {
+        "type": "string",
+        "description": "The surrounding environment or setting in English"
+      },
+      "image_generation_prompt": {
+        "type": "string",
+        "description": "A detailed prompt for generating the character image on Dall-E following content Policy rules, in English"
+      }
+    },
+    "required": [
+      "name",
+      "appearance",
+      "distinctive_signs",
+      "accessories",
+      "location",
+      "ambiance",
+      "environment",
+      "image_generation_prompt"
+    ]
+  }
+}

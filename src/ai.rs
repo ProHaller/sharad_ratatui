@@ -5,6 +5,7 @@ use crate::character::{
 use crate::dice::{perform_dice_roll, DiceRollRequest, DiceRollResponse};
 use crate::error::{AIError, AppError, GameError};
 use crate::game_state::GameState;
+use crate::image::generate_and_save_image;
 use crate::message;
 use crate::message::{Message, MessageType};
 use async_openai::types::{RequiredAction, RunToolCallObject};
@@ -285,6 +286,7 @@ impl GameAI {
                         .await?
                 }
                 "perform_dice_roll" => self.handle_perform_dice_roll(tool_call, game_state)?,
+                "generate_character_image" => self.handle_generate_character_image(tool_call)?,
                 "update_basic_attributes" => {
                     self.handle_update_basic_attributes(tool_call, game_state)?
                 }
@@ -368,6 +370,18 @@ impl GameAI {
         };
 
         Ok(serde_json::to_string(&response)?)
+    }
+
+    fn handle_generate_character_image(
+        &mut self,
+        tool_call: &RunToolCallObject,
+    ) -> Result<String, AppError> {
+        let args: Value = serde_json::from_str(&tool_call.function.arguments)?;
+        tokio::spawn(async move {
+            let _ = generate_and_save_image(&args["image_generation_prompt"].to_string()).await;
+        });
+
+        Ok(format!("Generating image..."))
     }
 
     fn handle_update_basic_attributes(

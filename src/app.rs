@@ -1,7 +1,7 @@
 use crate::ai::{GameAI, GameConversationState};
 use crate::ai_response::{create_user_message, UserMessage};
 use crate::app_state::AppState;
-use crate::assistant::{create_assistant, delete_assistant};
+use crate::assistant::{create_assistant, delete_assistant, get_assistant_id};
 use crate::audio::{self, play_audio};
 use crate::character::CharacterSheet;
 use crate::cleanup::cleanup;
@@ -15,7 +15,6 @@ use crate::settings_state::SettingsState;
 use crate::ui::game;
 use crate::ui::utils::Spinner;
 
-use async_openai::Client;
 use chrono::Local;
 use copypasta::{ClipboardContext, ClipboardProvider};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
@@ -252,6 +251,10 @@ impl App {
                     ));
                     if let Some(ai_client) = self.ai_client.clone() {
                         let mut game_message_clone = game_message.clone();
+                        let save_name = match self.save_manager.current_save.clone() {
+                            Some(game_state) => game_state.save_name,
+                            None => "unknown".to_string(),
+                        };
                         tokio::spawn(async move {
                             game_message_clone
                                 .fluff
@@ -274,12 +277,17 @@ impl App {
 
                                 let ai_client = ai_client.clone();
                                 let text = fluff_line.text.clone();
+                                let save_name = save_name.clone();
 
                                 // Generate the audio in parallel, keeping track of the index
                                 audio_futures.push_back(async move {
-                                    let result =
-                                        audio::generate_audio(&ai_client.client, &text, voice)
-                                            .await;
+                                    let result = audio::generate_audio(
+                                        &ai_client.client,
+                                        &save_name,
+                                        &text,
+                                        voice,
+                                    )
+                                    .await;
                                     (result, index)
                                 });
                             }
@@ -906,7 +914,7 @@ impl App {
                         .unwrap_or("".to_string());
 
                     tokio::spawn(async move {
-                        let _ = image::generate_and_save_image(&api_key, &prompt).await;
+                        let _ = image::generate_and_save_image(&prompt).await;
                     });
                     self.add_message(Message::new(
                         MessageType::System,
@@ -1278,8 +1286,7 @@ impl App {
         }
     }
 
-    //TODO: Make this use the save manager
-    pub async fn save_current_game(&self) -> Result<(), AppError> {
+    pub async fn save_current_game(&mut self) -> Result<(), AppError> {
         let game_state = match &self.current_game {
             Some(arc_mutex) => arc_mutex,
             None => return Err(AppError::NoCurrentGame),
@@ -1300,6 +1307,10 @@ impl App {
             let _ = save_manager_clone.save();
         });
 
+        // Update self.save_manager.current_save with the current game state
+        let game_state = game_state.lock().await;
+        self.save_manager.current_save = Some(game_state.clone());
+
         Ok(())
     }
 
@@ -1308,8 +1319,9 @@ impl App {
             let save_name = self.save_manager.available_saves[selected].clone();
             let ai_client = self.ai_client.clone().ok_or("AI client not found")?;
             let save_2 = save_name.clone();
+            let assistant_id = get_assistant_id(&save_name);
             tokio::spawn(async move {
-                delete_assistant(&ai_client.client, &save_name).await;
+                delete_assistant(&ai_client.client, &assistant_id).await;
             });
             self.save_manager.clone().delete_save(&save_2)?;
             self.save_manager.available_saves.remove(selected);

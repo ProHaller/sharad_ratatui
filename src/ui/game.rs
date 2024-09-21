@@ -522,10 +522,10 @@ fn create_table<'a>(info: &'a [String], title: &'a str) -> Table<'a> {
 
 pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
     let save_name = app
-        .current_save_name
-        .try_read()
-        .map(|guard| guard.clone())
-        .unwrap_or_else(|_| String::from("Loading..."));
+        .save_manager
+        .current_save
+        .clone()
+        .map_or_else(|| String::from("Loading..."), |save| save.save_name);
 
     let fluff_block = Block::default()
         .title(if save_name.is_empty() {

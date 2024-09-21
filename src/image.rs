@@ -1,3 +1,4 @@
+use crate::settings::Settings;
 use async_openai::{
     config::OpenAIConfig,
     types::{CreateImageRequestArgs, ImageModel, ImageResponseFormat, ImageSize},
@@ -6,7 +7,13 @@ use async_openai::{
 use std::error::Error;
 use tokio::time::{timeout, Duration};
 
-pub async fn generate_and_save_image(api_key: &str, prompt: &str) -> Result<(), Box<dyn Error>> {
+pub async fn generate_and_save_image(prompt: &str) -> Result<(), Box<dyn Error>> {
+    let settings = Settings::load()?;
+    let api_key = match settings.openai_api_key {
+        Some(key) => key,
+        None => return Err("No API key provided.".into()),
+    };
+
     let openai_config = OpenAIConfig::new().with_api_key(api_key);
     let client = Client::with_config(openai_config);
     let request = CreateImageRequestArgs::default()

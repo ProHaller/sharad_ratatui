@@ -85,13 +85,31 @@ impl SaveManager {
     }
 
     pub fn delete_save(mut self, save_name: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let path = format!("{}/{}.json", SAVE_DIR, save_name);
-        match remove_file(path) {
+        let save_path = format!("{}/{}.json", SAVE_DIR, save_name);
+        let audio_folder_path = format!("./data/logs/{}", save_name);
+
+        match remove_file(save_path) {
             Ok(()) => {
+                delete_folder_contents(&audio_folder_path)?;
                 self.available_saves = Self::scan_save_files();
                 Ok(())
             }
             Err(e) => Err(Box::new(e)),
         }
     }
+}
+
+fn delete_folder_contents(folder_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    for entry in std::fs::read_dir(folder_path)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            delete_folder_contents(path.to_str().unwrap())?;
+            std::fs::remove_dir(path)?;
+        } else {
+            std::fs::remove_file(path)?;
+        }
+    }
+    std::fs::remove_dir(folder_path)?;
+    Ok(())
 }

@@ -105,7 +105,8 @@ pub async fn create_assistant(
     Ok(assistant)
 }
 
-pub async fn delete_assistant(client: &Client<OpenAIConfig>, save_name: &str) {
+// TODO: Handle error properly
+pub fn get_assistant_id(save_name: &str) -> String {
     let file_path = format!("{}/{}.json", SAVE_DIR, save_name);
     let mut file = File::open(file_path).expect("Couldn't open the file");
 
@@ -119,7 +120,12 @@ pub async fn delete_assistant(client: &Client<OpenAIConfig>, save_name: &str) {
 
     // Extract the "assistant_id" field
     if let Some(assistant_id) = json["assistant_id"].as_str() {
-        println!("{assistant_id}");
-        let _ = client.assistants().delete(assistant_id).await;
+        assistant_id.into()
+    } else {
+        panic!("No assistant id found");
     }
+}
+
+pub async fn delete_assistant(client: &Client<OpenAIConfig>, assistant_id: &str) {
+    let _ = client.assistants().delete(assistant_id).await;
 }

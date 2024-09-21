@@ -22,6 +22,7 @@ use uuid::Uuid;
 
 pub async fn generate_audio(
     client: &async_openai::Client<OpenAIConfig>,
+    save_name: &str,
     text: &str,
     voice: Voice,
 ) -> Result<PathBuf, AIError> {
@@ -41,9 +42,15 @@ pub async fn generate_audio(
         .map_err(AIError::OpenAI)?;
 
     let uuid = Uuid::new_v4();
-    let file_name = format!("{}_{}.mp3", Local::now().format("%Y%m%d_%H%M%S"), uuid);
-    let file_path = Path::new("./data/logs").join(file_name);
-    fs::create_dir_all("./data/logs").map_err(AIError::Io)?;
+    let file_name = format!(
+        "{}_{}_{}.mp3",
+        save_name,
+        Local::now().format("%Y%m%d_%H%M%S"),
+        uuid
+    );
+    let folder_path = Path::new("./data/logs").join(save_name);
+    let file_path = folder_path.join(file_name);
+    fs::create_dir_all(&folder_path).map_err(AIError::Io)?;
     response
         .save(file_path.to_str().unwrap())
         .await
