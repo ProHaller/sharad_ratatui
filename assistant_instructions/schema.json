@@ -54,7 +54,7 @@
                 },
                 "text": {
                   "type": "string",
-                  "description": "For narration: Narrator's text, including dialogue tags, action breaks, and general narration but never direct speech. For speech: Direct dialogue of a character but only direct speech."
+                  "description": "For narration: Narrator's text, including dialogue tags, action breaks, and general narration but never direct speaker speech. For speech: Direct dialogue of a character but only direct speech."
                 }
               },
               "required": [

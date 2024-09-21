@@ -381,7 +381,7 @@ impl GameAI {
             let _ = generate_and_save_image(&args["image_generation_prompt"].to_string()).await;
         });
 
-        Ok(format!("Generating image..."))
+        Ok("Generating image...".to_string())
     }
 
     fn handle_update_basic_attributes(

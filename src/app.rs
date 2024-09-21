@@ -907,11 +907,6 @@ impl App {
                 KeyCode::Esc => self.state = AppState::MainMenu,
                 KeyCode::Enter => {
                     let prompt = self.image_prompt.value().to_owned();
-                    let api_key = self
-                        .settings
-                        .openai_api_key
-                        .clone()
-                        .unwrap_or("".to_string());
 
                     tokio::spawn(async move {
                         let _ = image::generate_and_save_image(&prompt).await;
