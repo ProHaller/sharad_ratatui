@@ -1,4 +1,5 @@
 use async_openai::types::{ResponseFormat, ResponseFormatJsonSchema};
+use include_dir::{include_dir, Dir, DirEntry};
 use serde_json::Value;
 use std::error::Error;
 use std::fs::{self, File};
@@ -9,55 +10,68 @@ use async_openai::{
     config::OpenAIConfig,
     types::{
         AssistantObject, AssistantTools, AssistantsApiResponseFormatOption,
-        CreateAssistantRequestArgs, FunctionObject, ListAssistantsResponse,
+        CreateAssistantRequestArgs, FunctionObject,
     },
     Client,
 };
 
-const INSTRUCTIONS: &str = include_str!("../assistant_instructions/instructions.json");
-const SCHEMA: &str = include_str!("../assistant_instructions/schema.json");
-const FUNCTIONS: &str = "/Users/Haller/Dev/Rust/projects/sharad_ratatui/assistant_functions";
+static ASSETS_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets");
 
 fn load_function_objects() -> Result<Vec<FunctionObject>, Box<dyn Error>> {
-    let folder_path = FUNCTIONS;
+    let folder_dir = ASSETS_DIR
+        .get_dir("assistant_functions")
+        .expect("Failed to get assistant_functions directory");
+
     let mut function_objects = Vec::new();
 
     // Read the folder
-    for entry in fs::read_dir(folder_path)? {
-        let entry = entry?;
-        let path = entry.path();
+    for entry in folder_dir.entries() {
+        match entry {
+            DirEntry::File(file) => {
+                let path = file.path();
 
-        // Ensure the entry is a JSON file
-        if path.is_file() && path.extension().and_then(|ext| ext.to_str()) == Some("json") {
-            // Read the file contents
-            let mut file = File::open(&path)?;
-            let mut content = String::new();
-            file.read_to_string(&mut content)?;
+                // Ensure the entry is a JSON file
+                if path.extension().and_then(|ext| ext.to_str()) == Some("json") {
+                    // Read the file contents
+                    let content = file
+                        .contents_utf8()
+                        .ok_or("File content is not valid UTF-8")?;
 
-            // Parse the content as a JSON value
-            let function_data: Value = serde_json::from_str(&content)?;
+                    // Parse the content as a JSON value
+                    let function_data: Value = serde_json::from_str(content)?;
 
-            // Extract relevant fields from the JSON object
-            let name = function_data["name"].as_str().unwrap();
-            let description = function_data["description"].as_str().unwrap();
-            let parameters = function_data["parameters"].clone(); // This extracts the parameters part
-            let strict = function_data["strict"].as_bool().unwrap_or(true); // Defaults to true if not found
+                    // Extract relevant fields from the JSON object
+                    let name = function_data["name"].as_str().unwrap_or_default();
+                    let description = function_data["description"].as_str().unwrap_or_default();
+                    let parameters = function_data["parameters"].clone(); // This extracts the parameters part
+                    let strict = function_data["strict"].as_bool().unwrap_or(true); // Defaults to true if not found
 
-            // Create a FunctionObject and push it to the vector
-            let function_object = FunctionObject {
-                name: name.to_string(),
-                description: Some(description.to_string()),
-                parameters: Some(parameters), // Use the extracted parameters
-                strict: Some(strict),
-            };
-            function_objects.push(function_object);
+                    // Create a FunctionObject and push it to the vector
+                    let function_object = FunctionObject {
+                        name: name.to_string(),
+                        description: Some(description.to_string()),
+                        parameters: Some(parameters), // Use the extracted parameters
+                        strict: Some(strict),
+                    };
+                    function_objects.push(function_object);
+                }
+            }
+            DirEntry::Dir(_) => {
+                // Optionally handle subdirectories if needed
+            }
         }
     }
     Ok(function_objects)
 }
 
 fn define_schema() -> Result<ResponseFormat, Box<dyn Error>> {
-    let json_schema: Value = serde_json::from_str(SCHEMA)?;
+    let schema_file = ASSETS_DIR
+        .get_file("assistant_instructions/schema.json")
+        .expect("Failed to get assistant schema file")
+        .contents_utf8()
+        .expect("Failed to read assistant schema file");
+
+    let json_schema: Value = serde_json::from_str(schema_file)?;
     let name = json_schema["name"].as_str().unwrap();
     let schema = json_schema["schema"].clone(); // This extracts the parameters part
     let strict = json_schema["strict"].as_bool().unwrap_or(true); // Defaults to true if not found
@@ -79,6 +93,11 @@ pub async fn create_assistant(
 ) -> Result<AssistantObject, Box<dyn Error>> {
     // Load all FunctionObjects from the specified folder
     let function_objects = load_function_objects()?;
+    let instructions = ASSETS_DIR
+        .get_file("assistant_instructions/instructions.json")
+        .expect("Failed to get assistant instructions file")
+        .contents_utf8()
+        .expect("Failed to read assistant instructions file");
 
     // Convert FunctionObjects to AssistantTools using the Into trait
     let assistant_tools = function_objects
@@ -94,7 +113,7 @@ pub async fn create_assistant(
     let create_assistant_request = CreateAssistantRequestArgs::default()
         .name(name)
         .temperature(0.7)
-        .instructions(INSTRUCTIONS)
+        .instructions(instructions)
         .model("gpt-4o-mini")
         .response_format(AssistantsApiResponseFormatOption::Format(response_format))
         .tools(assistant_tools) // Pass the vector of AssistantTools
