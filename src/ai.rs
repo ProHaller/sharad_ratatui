@@ -93,7 +93,7 @@ impl GameAI {
 
         let initial_message = CreateMessageRequestArgs::default()
             .role(MessageRole::User)
-            .content("Start the game. Answer in valid json")
+            .content("Start the game by assisting the player to create a character. Answer in valid json")
             .build()?;
 
         self.client

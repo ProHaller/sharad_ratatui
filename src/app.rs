@@ -1318,8 +1318,8 @@ impl App {
             tokio::spawn(async move {
                 delete_assistant(&ai_client.client, &assistant_id).await;
             });
-            self.save_manager.clone().delete_save(&save_2)?;
             self.save_manager.available_saves.remove(selected);
+            self.save_manager.clone().delete_save(&save_2)?;
 
             // Update the selected state to ensure it remains within bounds
             let new_selected = if selected >= self.save_manager.available_saves.len() {
