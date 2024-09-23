@@ -124,8 +124,6 @@ pub async fn create_assistant(
     Ok(assistant)
 }
 
-// TODO: Handle error properly
-
 pub fn get_assistant_id(save_name: &str) -> Result<String, Box<dyn Error>> {
     let file_path = format!("{}/{}.json", SAVE_DIR, save_name);
     let mut file = File::open(file_path)?;

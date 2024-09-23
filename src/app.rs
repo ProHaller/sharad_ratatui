@@ -12,8 +12,8 @@ use crate::message::{self, AIMessage, GameMessage, Message, MessageType};
 use crate::save::SaveManager;
 use crate::settings::Settings;
 use crate::settings_state::SettingsState;
-use crate::ui::game;
 use crate::ui::utils::Spinner;
+use crate::ui::{game, game::HighlightedSection};
 
 use chrono::Local;
 use copypasta::{ClipboardContext, ClipboardProvider};
@@ -62,6 +62,7 @@ pub struct App {
     // Application state and control flow
     pub should_quit: bool,
     pub state: AppState,
+    pub highlighted_section: HighlightedSection,
     pub input_mode: InputMode,
     pub openai_api_key_valid: bool,
 
@@ -145,6 +146,7 @@ impl App {
         let app = Self {
             should_quit: false,
             state: AppState::MainMenu,
+            highlighted_section: HighlightedSection::None,
             main_menu_state,
             ai_client: None,
             current_game: None,
@@ -625,6 +627,9 @@ impl App {
                 KeyCode::Char('r') => {
                     self.start_recording();
                 }
+                KeyCode::Esc if (self.highlighted_section != HighlightedSection::None) => {
+                    self.highlighted_section = HighlightedSection::None;
+                }
                 KeyCode::Esc => {
                     self.state = AppState::MainMenu;
                     self.save_manager.available_saves = SaveManager::scan_save_files();
@@ -643,13 +648,16 @@ impl App {
                         self.scroll_up();
                     }
                 }
-                KeyCode::Up => self.scroll_up(),
                 KeyCode::PageDown => {
                     for _ in 0..self.visible_lines {
                         self.scroll_down();
                     }
                 }
+                KeyCode::Up => self.scroll_up(),
                 KeyCode::Down => self.scroll_down(),
+
+                KeyCode::Tab => self.cycle_highlighted_section(),
+
                 KeyCode::Home => {
                     self.game_content_scroll = 0;
                 }
@@ -967,6 +975,37 @@ impl App {
             }
         }
     }
+
+    fn cycle_highlighted_section(&mut self) {
+        // This is a basic implementation. You might want to adjust this based on your layout.
+        self.highlighted_section = match self.highlighted_section {
+            HighlightedSection::None => HighlightedSection::Backstory,
+            HighlightedSection::Backstory => {
+                if let Some((name, _)) = self
+                    .last_known_character_sheet
+                    .as_ref()
+                    .and_then(|sheet| sheet.inventory.iter().next())
+                {
+                    HighlightedSection::InventoryItem(name.clone())
+                } else {
+                    HighlightedSection::None
+                }
+            }
+            HighlightedSection::InventoryItem(_) => {
+                if let Some((name, _)) = self
+                    .last_known_character_sheet
+                    .as_ref()
+                    .and_then(|sheet| sheet.contacts.iter().next())
+                {
+                    HighlightedSection::Contact(name.clone())
+                } else {
+                    HighlightedSection::None
+                }
+            }
+            HighlightedSection::Contact(_) => HighlightedSection::None,
+        };
+    }
+
     fn submit_user_input(&mut self) {
         let input = self.user_input.value().trim().to_string();
         self.start_spinner();

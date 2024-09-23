@@ -7,6 +7,7 @@ use async_openai::{
 use std::error::Error;
 use tokio::time::{timeout, Duration};
 
+// TODO: Open the image on creation
 pub async fn generate_and_save_image(prompt: &str) -> Result<(), Box<dyn Error>> {
     let settings = Settings::load()?;
     let api_key = match settings.openai_api_key {

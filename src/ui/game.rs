@@ -2,6 +2,7 @@ use crate::app::{App, InputMode};
 use crate::character::CharacterSheet;
 use crate::message::{GameMessage, MessageType, UserMessage};
 use crate::ui::utils::spinner_frame;
+use ratatui::style::Styled;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Position, Rect},
     style::{Color, Modifier, Style},
@@ -15,6 +16,14 @@ use unicode_width::UnicodeWidthStr;
 
 thread_local! {
     static CACHED_LAYOUTS: RefCell<Option<(Rect, Vec<Rect>, Vec<Rect>)>> = RefCell::new(None);
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HighlightedSection {
+    None,
+    Backstory,
+    InventoryItem(String), // String is the item name
+    Contact(String),       // String is the contact name
 }
 
 pub fn draw_in_game(f: &mut Frame, app: &mut App) {
@@ -73,9 +82,13 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
         match game_state.try_lock() {
             Ok(locked_game_state) => {
                 if let Some(sheet) = &locked_game_state.main_character_sheet {
-                    // Update the last known character sheet
                     app.last_known_character_sheet = Some(sheet.clone());
-                    draw_character_sheet(f, sheet, game_info_area);
+
+                    // Split the game_info_area into two parts: character sheet and details
+                    let character_sheet_area = game_info_area;
+
+                    draw_character_sheet(f, sheet, character_sheet_area, &app.highlighted_section);
+                    draw_detailed_info(f, sheet, left_chunk[0], &app.highlighted_section);
                 } else {
                     app.last_known_character_sheet = None;
                     let no_character = Paragraph::new("No character sheet available.")
@@ -85,9 +98,22 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
                 }
             }
             Err(_) => {
-                // If we can't get the lock, use the last known character sheet
                 if let Some(last_sheet) = &app.last_known_character_sheet {
-                    draw_character_sheet(f, last_sheet, game_info_area);
+                    let character_sheet_area = game_info_area;
+                    let details_area = Rect::new(
+                        character_sheet_area.x,
+                        character_sheet_area.bottom(),
+                        character_sheet_area.width,
+                        size.height - character_sheet_area.bottom(),
+                    );
+
+                    draw_character_sheet(
+                        f,
+                        last_sheet,
+                        character_sheet_area,
+                        &app.highlighted_section,
+                    );
+                    draw_detailed_info(f, last_sheet, details_area, &app.highlighted_section);
                 } else {
                     let no_character = Paragraph::new("No character sheet available.")
                         .style(Style::default().fg(Color::Yellow))
@@ -104,6 +130,7 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
         f.render_widget(no_game, game_info_area);
     }
 
+    // Debug mode rendering
     if app.settings.debug_mode {
         let debug_area = Rect::new(size.x, size.bottom() - 1, size.width, 1);
         let debug_text =
@@ -113,7 +140,12 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
 }
 
 // Function to draw the character sheet.
-fn draw_character_sheet(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
+fn draw_character_sheet(
+    f: &mut Frame,
+    sheet: &CharacterSheet,
+    area: Rect,
+    highlighted: &HighlightedSection,
+) {
     // Layout for different sections of the character sheet.
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -125,13 +157,90 @@ fn draw_character_sheet(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
         .split(area);
 
     // Drawing individual sections of the character sheet.
-    draw_basic_info(f, sheet, chunks[0]);
-    draw_attributes_and_derived(f, sheet, chunks[1]);
-    draw_skills_qualities_and_other(f, sheet, chunks[2]);
+    draw_basic_info(f, sheet, chunks[0], highlighted);
+    draw_attributes_and_derived(f, sheet, chunks[1], highlighted);
+    draw_skills_qualities_and_other(f, sheet, chunks[2], highlighted);
+}
+
+pub fn draw_detailed_info(
+    f: &mut Frame,
+    sheet: &CharacterSheet,
+    area: Rect,
+    highlighted: &HighlightedSection,
+) {
+    // Early return if HighlightedSection::None
+    if matches!(highlighted, HighlightedSection::None) {
+        return;
+    }
+
+    let detail_text = match highlighted {
+        HighlightedSection::None => unreachable!(), // We've already returned in this case
+        HighlightedSection::Backstory => sheet.backstory.clone(),
+        HighlightedSection::InventoryItem(_) => sheet
+            .inventory
+            .values()
+            .map(|item| format!("{}: {}", item.name, item.description))
+            .collect::<Vec<_>>()
+            .join("\n\n"),
+        HighlightedSection::Contact(_) => sheet
+            .contacts
+            .values()
+            .map(|contact| {
+                format!(
+                    "{}: Loyalty {}, Connection {}\n{}",
+                    contact.name, contact.loyalty, contact.connection, contact.description
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n"),
+    };
+    // Wrap the text to fit within the area width
+    let wrapped_text = textwrap::wrap(&detail_text, area.width as usize - 4); // -4 for margins
+    let content_height = wrapped_text.len() as u16 + 2; // +2 for top and bottom margins
+
+    // Calculate the size and position of the floating frame
+    let width = area.width.saturating_sub(4).max(20); // Minimum width of 20
+    let height = content_height.min(area.height.saturating_sub(4));
+    let x = area.x + (area.width - width) / 2;
+    let y = area.y + (area.height - height) / 2;
+
+    let details_area = Rect::new(x, y, width, height);
+
+    // Create a block for the floating frame
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::White))
+        .title(match highlighted {
+            HighlightedSection::Backstory => " Backstory ",
+            HighlightedSection::InventoryItem(_) => " Inventory Details ",
+            HighlightedSection::Contact(_) => " Contact Details ",
+            _ => " Details ",
+        })
+        .style(Style::default()); // Make the block opaque
+
+    // Render the block
+    f.render_widget(Clear, details_area); // Clear the area behind the block
+    f.render_widget(block.clone(), details_area);
+
+    // Get the inner area of the block for the content
+    let inner_area = block.inner(details_area);
+
+    let detail_paragraph = Paragraph::new(wrapped_text.join("\n"))
+        .style(Style::default().fg(Color::White))
+        .alignment(Alignment::Left)
+        .wrap(Wrap { trim: true });
+
+    // Render the content inside the block
+    f.render_widget(detail_paragraph, inner_area);
 }
 
 // Display basic information like name, race, and gender.
-fn draw_basic_info(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
+fn draw_basic_info(
+    f: &mut Frame,
+    sheet: &CharacterSheet,
+    area: Rect,
+    highlighted: &HighlightedSection,
+) {
     let info = vec![
         Span::styled(
             "Name: ",
@@ -161,26 +270,44 @@ fn draw_basic_info(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
+                .border_style(Style::default().fg(
+                    if matches!(highlighted, HighlightedSection::Backstory) {
+                        Color::Yellow
+                    } else {
+                        Color::White
+                    },
+                ))
                 .title(" Basic Information "),
         )
         .alignment(Alignment::Center)
         .wrap(Wrap { trim: true });
     f.render_widget(basic_info, area);
 }
-
 // Display attributes and derived attributes.
-fn draw_attributes_and_derived(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
+
+fn draw_attributes_and_derived(
+    f: &mut Frame,
+    sheet: &CharacterSheet,
+    area: Rect,
+    highlighted: &HighlightedSection,
+) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(area);
 
-    draw_attributes(f, sheet, chunks[0]);
-    draw_derived_attributes(f, sheet, chunks[1]);
+    draw_attributes(f, sheet, chunks[0], highlighted);
+    draw_derived_attributes(f, sheet, chunks[1], highlighted);
 }
 
 // Display specific attributes.
-fn draw_attributes(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
+
+fn draw_attributes(
+    f: &mut Frame,
+    sheet: &CharacterSheet,
+    area: Rect,
+    highlighted: &HighlightedSection,
+) {
     let attributes = vec![
         ("BODY", sheet.body),
         ("AGILITY", sheet.agility),
@@ -217,7 +344,13 @@ fn draw_attributes(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
 }
 
 // Display derived attributes like initiative and limits.
-fn draw_derived_attributes(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
+
+fn draw_derived_attributes(
+    f: &mut Frame,
+    sheet: &CharacterSheet,
+    area: Rect,
+    highlighted: &HighlightedSection,
+) {
     let derived = [
         format!(
             "Initiative:  {}+{}d6",
@@ -260,8 +393,12 @@ fn draw_derived_attributes(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     f.render_widget(table, area);
 }
 
-// Display skills, qualities, and other relevant information.
-fn draw_skills_qualities_and_other(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
+fn draw_skills_qualities_and_other(
+    f: &mut Frame,
+    sheet: &CharacterSheet,
+    area: Rect,
+    highlighted: &HighlightedSection,
+) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -271,13 +408,19 @@ fn draw_skills_qualities_and_other(f: &mut Frame, sheet: &CharacterSheet, area: 
         ])
         .split(area);
 
-    draw_skills(f, sheet, chunks[0]);
-    draw_qualities(f, sheet, chunks[1]);
-    draw_other_info(f, sheet, chunks[2]);
+    draw_skills(f, sheet, chunks[0], highlighted);
+    draw_qualities(f, sheet, chunks[1], highlighted);
+    draw_other_info(f, sheet, chunks[2], highlighted);
 }
 
 // Specific function to handle the display of skills.
-fn draw_skills(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
+
+fn draw_skills(
+    f: &mut Frame,
+    sheet: &CharacterSheet,
+    area: Rect,
+    highlighted: &HighlightedSection,
+) {
     let categories = [
         ("Combat", &sheet.skills.combat),
         ("Physical", &sheet.skills.physical),
@@ -319,7 +462,13 @@ fn draw_skills(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
 }
 
 // Function to handle the display of qualities.
-fn draw_qualities(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
+
+fn draw_qualities(
+    f: &mut Frame,
+    sheet: &CharacterSheet,
+    area: Rect,
+    highlighted: &HighlightedSection,
+) {
     let qualities: Vec<Span> = sheet
         .qualities
         .iter()
@@ -346,7 +495,12 @@ fn draw_qualities(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
 
 // Function to display miscellaneous information.
 
-fn draw_other_info(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
+fn draw_other_info(
+    f: &mut Frame,
+    sheet: &CharacterSheet,
+    area: Rect,
+    highlighted: &HighlightedSection,
+) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
@@ -371,13 +525,18 @@ fn draw_other_info(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
         ])
         .split(chunks[1]);
 
-    draw_resources(f, sheet, left_chunks[0]);
-    draw_augmentations(f, sheet, right_chunks[0]);
-    draw_contacts(f, sheet, right_chunks[1]);
-    draw_inventory(f, sheet, left_chunks[1]);
+    draw_resources(f, sheet, left_chunks[0], highlighted);
+    draw_augmentations(f, sheet, right_chunks[0], highlighted);
+    draw_contacts(f, sheet, right_chunks[1], highlighted);
+    draw_inventory(f, sheet, left_chunks[1], highlighted);
 }
 
-fn draw_resources(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
+fn draw_resources(
+    f: &mut Frame,
+    sheet: &CharacterSheet,
+    area: Rect,
+    highlighted: &HighlightedSection,
+) {
     let info = vec![
         format!("Lifestyle: {}", sheet.lifestyle),
         format!("Nuyen: {}", sheet.nuyen),
@@ -387,7 +546,12 @@ fn draw_resources(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     f.render_widget(resources_table, area);
 }
 
-fn draw_augmentations(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
+fn draw_augmentations(
+    f: &mut Frame,
+    sheet: &CharacterSheet,
+    area: Rect,
+    highlighted: &HighlightedSection,
+) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
@@ -435,7 +599,12 @@ fn draw_augmentations(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
     f.render_widget(bioware_paragraph, chunks[1]);
 }
 
-fn draw_contacts(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
+fn draw_contacts(
+    f: &mut Frame,
+    sheet: &CharacterSheet,
+    area: Rect,
+    highlighted: &HighlightedSection,
+) {
     let header_cells = ["Name", "Loyalty", "Connection"]
         .iter()
         .map(|h| Cell::from(*h).style(Style::default().fg(Color::Yellow)));
@@ -448,12 +617,9 @@ fn draw_contacts(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
         .contacts
         .iter()
         .map(|(name, contact)| {
+            let style = Style::default().fg(Color::White);
             let cells = vec![
-                Cell::from(if name.split_whitespace().next().unwrap().len() > 3 {
-                    name.split_whitespace().next().unwrap()
-                } else {
-                    name
-                }),
+                Cell::from(name.clone()).style(style),
                 Cell::from(contact.loyalty.to_string()),
                 Cell::from(contact.connection.to_string()),
             ];
@@ -466,28 +632,55 @@ fn draw_contacts(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
         Constraint::Percentage(30),
         Constraint::Percentage(40),
     ];
-    let table = Table::new(rows, widths)
-        .header(header)
-        .block(Block::default().borders(Borders::ALL).title(" Contacts "));
+    let table = Table::new(rows, widths).header(header).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(
+                if matches!(highlighted, HighlightedSection::Contact(_)) {
+                    Color::Yellow
+                } else {
+                    Color::White
+                },
+            ))
+            .title(" Contacts "),
+    );
 
     f.render_widget(table, area);
 }
 
-fn draw_inventory(f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
+fn draw_inventory(
+    f: &mut Frame,
+    sheet: &CharacterSheet,
+    area: Rect,
+    highlighted: &HighlightedSection,
+) {
     let inventory_items: Vec<Row> = sheet
         .inventory
         .values()
         .map(|item| {
+            let style = Style::default().fg(Color::White);
             Row::new(vec![Cell::from(format!(
                 "{} (x{})",
-                item.name, item.quantity,
-            ))])
+                item.name, item.quantity
+            ))
+            .style(style)])
         })
         .collect();
 
     let widths = vec![Constraint::Percentage(100)];
     let inventory_table = Table::new(inventory_items, widths)
-        .block(Block::default().borders(Borders::ALL).title(" Inventory "))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Inventory ")
+                .border_style(Style::default().fg(
+                    if matches!(highlighted, HighlightedSection::InventoryItem(_)) {
+                        Color::Yellow
+                    } else {
+                        Color::White
+                    },
+                )),
+        )
         .widths([Constraint::Percentage(100)])
         .column_spacing(1);
 
@@ -637,7 +830,9 @@ pub fn parse_game_content(app: &App, max_width: usize) -> Vec<(Line<'static>, Al
 pub fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .title(match app.input_mode {
-            InputMode::Normal => " Press 'e' to edit or 'r' to record ",
+            InputMode::Normal => {
+                " Press 'e' to edit, 'r' to record, and ' Tab ' to see character sheet details "
+            }
             InputMode::Editing => " Editing ",
             InputMode::Recording => " Recording… Press 'Esc' to stop ",
         })
