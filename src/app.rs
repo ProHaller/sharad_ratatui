@@ -1314,7 +1314,7 @@ impl App {
             let save_name = self.save_manager.available_saves[selected].clone();
             let ai_client = self.ai_client.clone().ok_or("AI client not found")?;
             let save_2 = save_name.clone();
-            let assistant_id = get_assistant_id(&save_name);
+            let assistant_id = get_assistant_id(&save_name)?;
             tokio::spawn(async move {
                 delete_assistant(&ai_client.client, &assistant_id).await;
             });

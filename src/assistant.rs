@@ -2,7 +2,7 @@ use async_openai::types::{ResponseFormat, ResponseFormatJsonSchema};
 use include_dir::{include_dir, Dir, DirEntry};
 use serde_json::Value;
 use std::error::Error;
-use std::fs::{self, File};
+use std::fs::File;
 use std::io::Read;
 
 use crate::save::SAVE_DIR;
@@ -125,23 +125,26 @@ pub async fn create_assistant(
 }
 
 // TODO: Handle error properly
-pub fn get_assistant_id(save_name: &str) -> String {
+
+pub fn get_assistant_id(save_name: &str) -> Result<String, Box<dyn Error>> {
     let file_path = format!("{}/{}.json", SAVE_DIR, save_name);
-    let mut file = File::open(file_path).expect("Couldn't open the file");
+    let mut file = File::open(file_path)?;
 
     // Read the file content into a string
     let mut content = String::new();
-    file.read_to_string(&mut content)
-        .expect("Couldn't read the file");
+    file.read_to_string(&mut content)?;
 
     // Parse the JSON string into a serde_json::Value
-    let json: Value = serde_json::from_str(&content).expect("Couldn't parse Json");
+    let json: Value = serde_json::from_str(&content)?;
 
     // Extract the "assistant_id" field
     if let Some(assistant_id) = json["assistant_id"].as_str() {
-        assistant_id.into()
+        Ok(assistant_id.to_string())
     } else {
-        panic!("No assistant id found");
+        Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Couldn't find assistant_id in the file",
+        )))
     }
 }
 
