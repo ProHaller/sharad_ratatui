@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 
+// TODO: Add descriptions everywhere
+
 // Define an enumeration for character races.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Race {
