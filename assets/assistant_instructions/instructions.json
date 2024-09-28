@@ -136,7 +136,7 @@
                 "text": "string"
               }
             },
-            "narrator_rule": "Everything except direct speech by a speaker should be tagged with 'Narrator'"
+            "narrator_rule": "Should never be empty. Everything except direct speech by a speaker should be tagged with 'Narrator'"
           }
         }
       }
