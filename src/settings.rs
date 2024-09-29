@@ -1,8 +1,11 @@
+use async_openai::error::OpenAIError;
 // Import necessary libraries and modules for API interaction, file I/O, and serialization.
 use async_openai::{config::OpenAIConfig, Client};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{self, Write};
+
+use crate::error::send_global_error;
 
 // Define a structure to hold application settings with serialization and deserialization capabilities.
 #[derive(Serialize, Deserialize, Clone)]
@@ -66,6 +69,17 @@ impl Settings {
     // Asynchronously validate an API key with OpenAI's services.
     pub async fn validate_api_key(api_key: &str) -> bool {
         let client = Client::with_config(OpenAIConfig::new().with_api_key(api_key)); // Configure the OpenAI client with the API key.
-        client.models().list().await.is_ok() // Attempt to list models to validate the API key.
+        match client.models().list().await {
+            Ok(_) => true,
+            Err(OpenAIError::Reqwest(e)) => {
+                send_global_error(crate::error::ShadowrunError::Network(format!(
+                    "Please verify your internet connection. Error: {}",
+                    e
+                )))
+                .await;
+                false
+            }
+            _ => false,
+        }
     }
 }

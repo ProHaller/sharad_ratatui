@@ -3,7 +3,7 @@ use crate::character::{
     Quality, Race, Skills, UpdateOperation,
 };
 use crate::dice::{perform_dice_roll, DiceRollRequest, DiceRollResponse};
-use crate::error::{AIError, AppError, GameError};
+use crate::error::{AIError, AppError, GameError, ShadowrunError};
 use crate::game_state::GameState;
 use crate::image::generate_and_save_image;
 use crate::message;
@@ -116,16 +116,32 @@ impl GameAI {
         &mut self,
         formatted_message: &str,
         game_state: &mut GameState,
-    ) -> Result<message::GameMessage, AppError> {
-        let (thread_id, assistant_id) = self.get_conversation_ids().await?;
+    ) -> Result<message::GameMessage, ShadowrunError> {
+        let (thread_id, assistant_id) = self
+            .get_conversation_ids()
+            .await
+            .map_err(ShadowrunError::from)?;
+
         self.add_message_to_thread(&thread_id, formatted_message)
-            .await?;
-        let run = self.create_run(&thread_id, &assistant_id).await?;
+            .await
+            .map_err(ShadowrunError::from)?;
+
+        let run = self
+            .create_run(&thread_id, &assistant_id)
+            .await
+            .map_err(ShadowrunError::from)?;
+
         self.wait_for_run_completion(&thread_id, &run.id, game_state)
-            .await?;
+            .await
+            .map_err(ShadowrunError::from)?;
+
         let response = self.get_latest_message(&thread_id).await?;
+
         self.add_debug_message(format!("\nAI Response: {:#?}\n", response));
-        self.update_game_state(game_state, &response).await
+
+        self.update_game_state(game_state, &response)
+            .await
+            .map_err(ShadowrunError::from)
     }
 
     async fn wait_for_run_completion(
@@ -133,14 +149,14 @@ impl GameAI {
         thread_id: &str,
         run_id: &str,
         game_state: &mut GameState,
-    ) -> Result<(), AppError> {
+    ) -> Result<(), ShadowrunError> {
         let timeout_duration = Duration::from_secs(60);
         let start_time = Instant::now();
 
         loop {
             if start_time.elapsed() > timeout_duration {
                 self.cancel_run(thread_id, run_id).await?;
-                return Err(AppError::Timeout);
+                return Err(AppError::Timeout.into());
             }
 
             let run = self
@@ -164,7 +180,7 @@ impl GameAI {
                 RunStatus::Failed | RunStatus::Cancelled | RunStatus::Expired => {
                     self.add_debug_message("Run failed, cancelled, or expired".to_string());
                     let _ = self.cancel_run(thread_id, run_id).await;
-                    return Err(AppError::GameStateParseError(format!(
+                    return Err(ShadowrunError::Game(format!(
                         "Run failed with status: {:#?}",
                         run.status
                     )));
@@ -184,7 +200,7 @@ impl GameAI {
     ) -> Result<message::GameMessage, AppError> {
         self.add_debug_message(format!("Response: {:#?}", response));
         let game_message: message::GameMessage = serde_json::from_str(response).map_err(|e| {
-            AppError::GameStateParseError(format!(
+            ShadowrunError::Game(format!(
                 "Failed to parse GameMessage: {:#?}\n Message: {:#?}",
                 e, response
             ))
@@ -205,7 +221,7 @@ impl GameAI {
         &self,
         game_state: &mut GameState,
         new_sheet: CharacterSheet,
-    ) -> Result<(), AppError> {
+    ) -> Result<(), ShadowrunError> {
         self.add_debug_message(format!(
             "Update Character sheet: Character sheet: {:#?}",
             new_sheet
@@ -233,7 +249,8 @@ impl GameAI {
             .runs(thread_id)
             .cancel(run_id)
             .await
-            .map_err(AppError::OpenAI)?;
+            .map_err(|e| ShadowrunError::OpenAI(e.to_string()))
+            .map_err(AppError::Shadowrun)?;
         self.add_debug_message(format!("Run {} cancelled", run_id));
         Ok(())
     }
@@ -244,7 +261,7 @@ impl GameAI {
         run_id: &str,
         run: &RunObject,
         game_state: &mut GameState,
-    ) -> Result<(), AppError> {
+    ) -> Result<(), ShadowrunError> {
         self.add_debug_message(format!(
             "Handling required action: {:#?}",
             run.required_action
@@ -256,15 +273,13 @@ impl GameAI {
                     self.handle_tool_outputs(thread_id, run_id, required_action, game_state)
                         .await
                 }
-                _ => Err(AppError::GameStateParseError(format!(
+                _ => Err(ShadowrunError::Game(format!(
                     "Unknown required action type: {}",
                     required_action.r#type
                 ))),
             }
         } else {
-            Err(AppError::GameStateParseError(
-                "No required action found".to_string(),
-            ))
+            Err(ShadowrunError::Game("No required action found".to_string()))
         }
     }
 
@@ -274,7 +289,7 @@ impl GameAI {
         run_id: &str,
         required_action: &RequiredAction,
         game_state: &mut GameState,
-    ) -> Result<(), AppError> {
+    ) -> Result<(), ShadowrunError> {
         let mut tool_outputs = Vec::new();
 
         for tool_call in &required_action.submit_tool_outputs.tool_calls {
@@ -301,7 +316,7 @@ impl GameAI {
                     self.handle_update_augmentations(tool_call, game_state)?
                 }
                 _ => {
-                    return Err(AppError::GameStateParseError(format!(
+                    return Err(ShadowrunError::Game(format!(
                         "Unknown function: {}",
                         tool_call.function.name
                     )))
@@ -322,7 +337,7 @@ impl GameAI {
         &mut self,
         tool_call: &RunToolCallObject,
         game_state: &mut GameState,
-    ) -> Result<String, AppError> {
+    ) -> Result<String, ShadowrunError> {
         let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)?;
         let character_sheet = match self.create_character(&args).await {
             Ok(sheet) => sheet,
@@ -349,7 +364,7 @@ impl GameAI {
         &mut self,
         tool_call: &RunToolCallObject,
         game_state: &mut GameState,
-    ) -> Result<String, AppError> {
+    ) -> Result<String, ShadowrunError> {
         let args: DiceRollRequest = serde_json::from_str(&tool_call.function.arguments)?;
         let response = match perform_dice_roll(args, game_state) {
             Ok(response) => {
@@ -375,7 +390,7 @@ impl GameAI {
     fn handle_generate_character_image(
         &mut self,
         tool_call: &RunToolCallObject,
-    ) -> Result<String, AppError> {
+    ) -> Result<String, ShadowrunError> {
         let args: Value = serde_json::from_str(&tool_call.function.arguments)?;
         tokio::spawn(async move {
             let _ = generate_and_save_image(&args["image_generation_prompt"].to_string()).await;
@@ -388,20 +403,18 @@ impl GameAI {
         &mut self,
         tool_call: &RunToolCallObject,
         game_state: &mut GameState,
-    ) -> Result<String, AppError> {
+    ) -> Result<String, ShadowrunError> {
         let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)?;
         let character_name = args["character_name"]
             .as_str()
-            .ok_or_else(|| AppError::GameStateParseError("Missing character_name".to_string()))?;
+            .ok_or_else(|| ShadowrunError::Game("Missing character_name".to_string()))?;
         let updates = &args["updates"];
 
         let character = game_state
             .characters
             .iter_mut()
             .find(|c| c.name == character_name)
-            .ok_or_else(|| {
-                AppError::Game(GameError::CharacterNotFound(character_name.to_string()))
-            })?;
+            .ok_or_else(|| GameError::CharacterNotFound(character_name.to_string()))?;
 
         for (attr, value) in updates.as_object().unwrap() {
             let update = CharacterSheetUpdate::UpdateAttribute {
@@ -430,42 +443,38 @@ impl GameAI {
         &mut self,
         tool_call: &RunToolCallObject,
         game_state: &mut GameState,
-    ) -> Result<String, AppError> {
+    ) -> Result<String, ShadowrunError> {
         let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)?;
         let character_name = args["character_name"]
             .as_str()
-            .ok_or_else(|| AppError::GameStateParseError("Missing character_name".to_string()))?;
+            .ok_or_else(|| ShadowrunError::Game("Missing character_name".to_string()))?;
         let updates = &args["updates"]["skills"];
 
         let character = game_state
             .characters
             .iter_mut()
             .find(|c| c.name == character_name)
-            .ok_or_else(|| {
-                AppError::Game(GameError::CharacterNotFound(character_name.to_string()))
-            })?;
+            .ok_or_else(|| GameError::CharacterNotFound(character_name.to_string()))?;
 
-        let update_category =
-            |category: &str, skill_map: &mut HashMap<String, u8>| -> Result<(), AppError> {
-                if let Some(category_skills) = updates.get(category).and_then(|s| s.as_array()) {
-                    for skill in category_skills {
-                        let name = skill["name"].as_str().ok_or_else(|| {
-                            AppError::GameStateParseError(format!(
-                                "Missing skill name in {} category",
-                                category
-                            ))
-                        })?;
-                        let rating = skill["rating"].as_u64().ok_or_else(|| {
-                            AppError::GameStateParseError(format!(
-                                "Invalid skill rating in {} category",
-                                category
-                            ))
-                        })? as u8;
-                        skill_map.insert(name.to_string(), rating);
-                    }
+        let update_category = |category: &str,
+                               skill_map: &mut HashMap<String, u8>|
+         -> Result<(), AppError> {
+            if let Some(category_skills) = updates.get(category).and_then(|s| s.as_array()) {
+                for skill in category_skills {
+                    let name = skill["name"].as_str().ok_or_else(|| {
+                        ShadowrunError::Game(format!("Missing skill name in {} category", category))
+                    })?;
+                    let rating = skill["rating"].as_u64().ok_or_else(|| {
+                        ShadowrunError::Game(format!(
+                            "Invalid skill rating in {} category",
+                            category
+                        ))
+                    })? as u8;
+                    skill_map.insert(name.to_string(), rating);
                 }
-                Ok(())
-            };
+            }
+            Ok(())
+        };
 
         // Update regular skills
         let mut updated_skills = character.skills.clone();
@@ -486,10 +495,10 @@ impl GameAI {
             if let Some(knowledge_array) = knowledge_skills.as_array() {
                 for skill in knowledge_array {
                     let name = skill["name"].as_str().ok_or_else(|| {
-                        AppError::GameStateParseError("Missing knowledge skill name".to_string())
+                        ShadowrunError::Game("Missing knowledge skill name".to_string())
                     })?;
                     let rating = skill["rating"].as_u64().ok_or_else(|| {
-                        AppError::GameStateParseError("Invalid knowledge skill rating".to_string())
+                        ShadowrunError::Game("Invalid knowledge skill rating".to_string())
                     })? as u8;
                     updated_knowledge_skills.insert(name.to_string(), rating);
                 }
@@ -520,24 +529,22 @@ impl GameAI {
         &mut self,
         tool_call: &RunToolCallObject,
         game_state: &mut GameState,
-    ) -> Result<String, AppError> {
+    ) -> Result<String, ShadowrunError> {
         // Implementation similar to original code, but extracted into this function
         let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)?;
         let character_name = args["character_name"]
             .as_str()
-            .ok_or_else(|| AppError::GameStateParseError("Missing character_name".to_string()))?;
+            .ok_or_else(|| ShadowrunError::Game("Missing character_name".to_string()))?;
         let operation = args["operation"]
             .as_str()
-            .ok_or_else(|| AppError::GameStateParseError("Missing operation".to_string()))?;
+            .ok_or_else(|| ShadowrunError::Game("Missing operation".to_string()))?;
         let items = args.get("items").or_else(|| args.get("item"));
 
         let character = game_state
             .characters
             .iter_mut()
             .find(|c| c.name == character_name)
-            .ok_or_else(|| {
-                AppError::Game(GameError::CharacterNotFound(character_name.to_string()))
-            })?;
+            .ok_or_else(|| GameError::CharacterNotFound(character_name.to_string()))?;
 
         let mut new_items: HashMap<String, Item> = HashMap::new();
 
@@ -552,7 +559,7 @@ impl GameAI {
                     } else if items.is_object() && items.get("name").is_none() {
                         items.as_object().unwrap().keys().cloned().collect()
                     } else {
-                        return Err(AppError::GameStateParseError(
+                        return Err(ShadowrunError::Game(
                             "Invalid items format for removal".to_string(),
                         ));
                     };
@@ -588,7 +595,7 @@ impl GameAI {
                                             .to_string(),
                                     }
                                 } else {
-                                    return Err(AppError::GameStateParseError(format!(
+                                    return Err(ShadowrunError::Game(format!(
                                         "Invalid item format for {}",
                                         key
                                     )));
@@ -597,18 +604,18 @@ impl GameAI {
                             }
                         }
                     } else {
-                        return Err(AppError::GameStateParseError(
+                        return Err(ShadowrunError::Game(
                             "Invalid items format for add/modify".to_string(),
                         ));
                     }
                 } else {
-                    return Err(AppError::GameStateParseError(
+                    return Err(ShadowrunError::Game(
                         "Missing items or item for add/modify".to_string(),
                     ));
                 }
             }
             _ => {
-                return Err(AppError::GameStateParseError(
+                return Err(ShadowrunError::Game(
                     "Invalid inventory operation".to_string(),
                 ))
             }
@@ -650,23 +657,21 @@ impl GameAI {
         &mut self,
         tool_call: &RunToolCallObject,
         game_state: &mut GameState,
-    ) -> Result<String, AppError> {
+    ) -> Result<String, ShadowrunError> {
         let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)?;
         let character_name = args["character_name"]
             .as_str()
-            .ok_or_else(|| AppError::GameStateParseError("Missing character_name".to_string()))?;
+            .ok_or_else(|| ShadowrunError::Game("Missing character_name".to_string()))?;
         let operation = args["operation"]
             .as_str()
-            .ok_or_else(|| AppError::GameStateParseError("Missing operation".to_string()))?;
+            .ok_or_else(|| ShadowrunError::Game("Missing operation".to_string()))?;
         let qualities = &args["qualities"];
 
         let character = game_state
             .characters
             .iter_mut()
             .find(|c| c.name == character_name)
-            .ok_or_else(|| {
-                AppError::Game(GameError::CharacterNotFound(character_name.to_string()))
-            })?;
+            .ok_or_else(|| GameError::CharacterNotFound(character_name.to_string()))?;
 
         let new_qualities: Vec<Quality> = serde_json::from_value(qualities.clone())?;
 
@@ -678,7 +683,7 @@ impl GameAI {
                     UpdateOperation::Remove(crate::character::Value::VecQuality(new_qualities))
                 }
                 _ => {
-                    return Err(AppError::GameStateParseError(
+                    return Err(ShadowrunError::Game(
                         "Invalid qualities operation".to_string(),
                     ))
                 }
@@ -704,20 +709,18 @@ impl GameAI {
         &mut self,
         tool_call: &RunToolCallObject,
         game_state: &mut GameState,
-    ) -> Result<String, AppError> {
+    ) -> Result<String, ShadowrunError> {
         let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)?;
         let character_name = args["character_name"]
             .as_str()
-            .ok_or_else(|| AppError::GameStateParseError("Missing character_name".to_string()))?;
+            .ok_or_else(|| ShadowrunError::Game("Missing character_name".to_string()))?;
         let matrix_attributes = &args["matrix_attributes"];
 
         let character = game_state
             .characters
             .iter_mut()
             .find(|c| c.name == character_name)
-            .ok_or_else(|| {
-                AppError::Game(GameError::CharacterNotFound(character_name.to_string()))
-            })?;
+            .ok_or_else(|| GameError::CharacterNotFound(character_name.to_string()))?;
 
         let new_matrix_attributes: MatrixAttributes =
             serde_json::from_value(matrix_attributes.clone())?;
@@ -748,25 +751,30 @@ impl GameAI {
         &mut self,
         tool_call: &RunToolCallObject,
         game_state: &mut GameState,
-    ) -> Result<String, AppError> {
+    ) -> Result<String, ShadowrunError> {
         let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)?;
         let character_name = args["character_name"]
             .as_str()
-            .ok_or_else(|| AppError::GameStateParseError("Missing character_name".to_string()))?;
+            .ok_or_else(|| ShadowrunError::Game("Missing character_name".to_string()))?;
         let operation = args["operation"]
             .as_str()
-            .ok_or_else(|| AppError::GameStateParseError("Missing operation".to_string()))?;
+            .ok_or_else(|| ShadowrunError::Game("Missing operation".to_string()))?;
         let contacts = &args["contacts"];
 
         let character = game_state
             .characters
             .iter_mut()
             .find(|c| c.name == character_name)
-            .ok_or_else(|| {
-                AppError::Game(GameError::CharacterNotFound(character_name.to_string()))
-            })?;
+            .ok_or_else(|| GameError::CharacterNotFound(character_name.to_string()))?;
 
-        let new_contacts: HashMap<String, Contact> = serde_json::from_value(contacts.clone())?;
+        // Deserialize into Vec<Contact>
+        let new_contacts_vec: Vec<Contact> = serde_json::from_value(contacts.clone())?;
+
+        // Convert Vec<Contact> into HashMap<String, Contact>
+        let new_contacts: HashMap<String, Contact> = new_contacts_vec
+            .into_iter()
+            .map(|contact| (contact.name.clone(), contact))
+            .collect();
 
         let update = CharacterSheetUpdate::UpdateAttribute {
             attribute: "contacts".to_string(),
@@ -781,7 +789,7 @@ impl GameAI {
                     new_contacts,
                 )),
                 _ => {
-                    return Err(AppError::GameStateParseError(
+                    return Err(ShadowrunError::Game(
                         "Invalid contacts operation".to_string(),
                     ))
                 }
@@ -807,26 +815,24 @@ impl GameAI {
         &mut self,
         tool_call: &RunToolCallObject,
         game_state: &mut GameState,
-    ) -> Result<String, AppError> {
+    ) -> Result<String, ShadowrunError> {
         let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)?;
         let character_name = args["character_name"]
             .as_str()
-            .ok_or_else(|| AppError::GameStateParseError("Missing character_name".to_string()))?;
+            .ok_or_else(|| ShadowrunError::Game("Missing character_name".to_string()))?;
         let operation = args["operation"]
             .as_str()
-            .ok_or_else(|| AppError::GameStateParseError("Missing operation".to_string()))?;
-        let augmentation_type = args["augmentation_type"].as_str().ok_or_else(|| {
-            AppError::GameStateParseError("Missing augmentation_type".to_string())
-        })?;
+            .ok_or_else(|| ShadowrunError::Game("Missing operation".to_string()))?;
+        let augmentation_type = args["augmentation_type"]
+            .as_str()
+            .ok_or_else(|| ShadowrunError::Game("Missing augmentation_type".to_string()))?;
         let augmentations = &args["augmentations"];
 
         let character = game_state
             .characters
             .iter_mut()
             .find(|c| c.name == character_name)
-            .ok_or_else(|| {
-                AppError::Game(GameError::CharacterNotFound(character_name.to_string()))
-            })?;
+            .ok_or_else(|| GameError::CharacterNotFound(character_name.to_string()))?;
 
         let new_augmentations: Vec<String> = serde_json::from_value(augmentations.clone())?;
 
@@ -840,7 +846,7 @@ impl GameAI {
                     UpdateOperation::Remove(crate::character::Value::VecString(new_augmentations))
                 }
                 _ => {
-                    return Err(AppError::GameStateParseError(
+                    return Err(ShadowrunError::Game(
                         "Invalid augmentations operation".to_string(),
                     ))
                 }
@@ -868,62 +874,72 @@ impl GameAI {
         &self,
         attribute: &str,
         value: &Value,
-    ) -> Result<crate::character::Value, AppError> {
+    ) -> Result<crate::character::Value, ShadowrunError> {
         self.add_debug_message(format!("Parsing value for attribute: {:#?}", attribute));
         match attribute {
             "name" | "gender" | "backstory" | "lifestyle" => Ok(crate::character::Value::String(
                 value
                     .as_str()
-                    .ok_or_else(|| {
-                        AppError::GameStateParseError("Invalid string value".to_string())
-                    })?
+                    .ok_or_else(|| ShadowrunError::Game("Invalid string value".to_string()))?
                     .to_string(),
             )),
             "race" => Ok(crate::character::Value::Race(
-                match value.as_str().unwrap() {
+                match value
+                    .as_str()
+                    .ok_or_else(|| ShadowrunError::Game("Invalid race value".to_string()))?
+                {
                     "Human" => Race::Human,
                     "Elf" => Race::Elf,
                     "Dwarf" => Race::Dwarf,
                     "Ork" => Race::Ork,
                     "Troll" => Race::Troll,
-                    _ => return Err(AppError::GameStateParseError("Invalid race".to_string())),
+                    _ => return Err(ShadowrunError::Game("Invalid race".to_string())),
                 },
             )),
             "body" | "agility" | "reaction" | "strength" | "willpower" | "logic" | "intuition"
             | "charisma" | "edge" => Ok(crate::character::Value::U8(
                 value
                     .as_u64()
-                    .ok_or_else(|| AppError::GameStateParseError("Invalid u8 value".to_string()))?
+                    .ok_or_else(|| ShadowrunError::Game("Invalid u8 value".to_string()))?
                     as u8,
             )),
             "magic" | "resonance" => Ok(crate::character::Value::OptionU8(
                 value.as_u64().map(|v| v as u8),
             )),
-            "nuyen" => Ok(crate::character::Value::U32(value.as_u64().ok_or_else(|| {
-                AppError::GameStateParseError("Invalid u32 value for nuyen".to_string())
-            })? as u32)),
-            "skills" => Ok(crate::character::Value::Skills(serde_json::from_value(
-                value.clone(),
-            )?)),
+            "nuyen" => {
+                Ok(crate::character::Value::U32(value.as_u64().ok_or_else(|| {
+                    ShadowrunError::Game("Invalid u32 value for nuyen".to_string())
+                })? as u32))
+            }
+            "skills" => Ok(crate::character::Value::Skills(
+                serde_json::from_value(value.clone())
+                    .map_err(|e| ShadowrunError::Serialization(e.to_string()))?,
+            )),
             "knowledge_skills" => Ok(crate::character::Value::HashMapStringU8(
-                serde_json::from_value(value.clone())?,
+                serde_json::from_value(value.clone())
+                    .map_err(|e| ShadowrunError::Serialization(e.to_string()))?,
             )),
             "contacts" => Ok(crate::character::Value::HashMapStringContact(
-                serde_json::from_value(value.clone())?,
+                serde_json::from_value(value.clone())
+                    .map_err(|e| ShadowrunError::Serialization(e.to_string()))?,
             )),
-            "qualities" => Ok(crate::character::Value::VecQuality(serde_json::from_value(
-                value.clone(),
-            )?)),
+            "qualities" => Ok(crate::character::Value::VecQuality(
+                serde_json::from_value(value.clone())
+                    .map_err(|e| ShadowrunError::Serialization(e.to_string()))?,
+            )),
             "cyberware" | "bioware" => Ok(crate::character::Value::VecString(
-                serde_json::from_value(value.clone())?,
+                serde_json::from_value(value.clone())
+                    .map_err(|e| ShadowrunError::Serialization(e.to_string()))?,
             )),
             "inventory" => Ok(crate::character::Value::HashMapStringItem(
-                serde_json::from_value(value.clone())?,
+                serde_json::from_value(value.clone())
+                    .map_err(|e| ShadowrunError::Serialization(e.to_string()))?,
             )),
             "matrix_attributes" => Ok(crate::character::Value::OptionMatrixAttributes(
-                serde_json::from_value(value.clone())?,
+                serde_json::from_value(value.clone())
+                    .map_err(|e| ShadowrunError::Serialization(e.to_string()))?,
             )),
-            _ => Err(AppError::GameStateParseError(format!(
+            _ => Err(ShadowrunError::Game(format!(
                 "Unsupported attribute: {}",
                 attribute
             ))),
@@ -998,7 +1014,11 @@ impl GameAI {
             .ok_or(AppError::ConversationNotInitialized)
     }
 
-    async fn add_message_to_thread(&self, thread_id: &str, message: &str) -> Result<(), AppError> {
+    async fn add_message_to_thread(
+        &self,
+        thread_id: &str,
+        message: &str,
+    ) -> Result<(), ShadowrunError> {
         self.add_debug_message(format!(
             "Adding message to thread: {:#?} - {:#?}",
             thread_id, message
@@ -1015,7 +1035,11 @@ impl GameAI {
         Ok(())
     }
 
-    async fn create_run(&self, thread_id: &str, assistant_id: &str) -> Result<RunObject, AppError> {
+    async fn create_run(
+        &self,
+        thread_id: &str,
+        assistant_id: &str,
+    ) -> Result<RunObject, ShadowrunError> {
         self.add_debug_message(format!("Creating run for thread: {:#?}", thread_id));
         let run_request = CreateRunRequestArgs::default()
             .assistant_id(assistant_id)
@@ -1034,7 +1058,7 @@ impl GameAI {
         thread_id: &str,
         run_id: &str,
         tool_outputs: Vec<ToolsOutputs>,
-    ) -> Result<(), AppError> {
+    ) -> Result<(), ShadowrunError> {
         self.add_debug_message(format!("Submitting tool outputs: {:#?}", tool_outputs));
         let submit_request = SubmitToolOutputsRunRequest {
             tool_outputs,

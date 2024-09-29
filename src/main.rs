@@ -1,6 +1,7 @@
 // Import necessary modules from the local crate and external crates.
 use crate::app::{App, AppCommand};
 use crate::cleanup::cleanup;
+use crate::error::ShadowrunError;
 use crate::message::{AIMessage, Message, MessageType};
 
 use crossterm::{
@@ -87,10 +88,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize the application.
     let (app, command_receiver) = App::new(ai_sender).await;
+    let error_receiver = error::initialize_global_error_handler().await;
     let app = Arc::new(Mutex::new(app));
 
     // Run the application and handle errors.
-    if let Err(err) = run_app(&mut terminal, app, command_receiver, ai_receiver).await {
+    if let Err(err) = run_app(
+        &mut terminal,
+        app,
+        command_receiver,
+        ai_receiver,
+        error_receiver,
+    )
+    .await
+    {
         eprintln!("Error: {:#?}", err);
     }
 
@@ -103,6 +113,7 @@ async fn run_app(
     app: Arc<Mutex<App>>,
     mut command_receiver: mpsc::UnboundedReceiver<AppCommand>,
     mut ai_receiver: mpsc::UnboundedReceiver<AIMessage>,
+    mut error_receiver: mpsc::UnboundedReceiver<ShadowrunError>,
 ) -> io::Result<()> {
     let mut last_tick = Instant::now();
     let tick_rate = Duration::from_millis(16);
@@ -117,6 +128,7 @@ async fn run_app(
             _ = sleep(timeout) => {
                 let mut app = app.lock().await;
                 app.on_tick();
+                app.clean_old_errors(Duration::from_secs(5));
             }
             event_result = tokio::task::spawn_blocking(|| crossterm::event::poll(Duration::from_millis(1))) => {
                 match event_result {
@@ -215,6 +227,9 @@ async fn run_app(
                         app.handle_ai_response(response).await;
                     }
                 }
+            }
+            Some(error) = error_receiver.recv() => {
+                app.lock().await.add_error(error);
             }
         }
 

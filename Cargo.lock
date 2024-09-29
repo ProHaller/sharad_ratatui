@@ -2206,6 +2206,8 @@ dependencies = [
  "include_dir",
  "lame",
  "libc",
+ "log",
+ "once_cell",
  "rand",
  "ratatui",
  "rayon",

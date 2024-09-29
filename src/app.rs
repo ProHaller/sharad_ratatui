@@ -5,7 +5,7 @@ use crate::assistant::{create_assistant, delete_assistant, get_assistant_id};
 use crate::audio::{self, play_audio};
 use crate::character::CharacterSheet;
 use crate::cleanup::cleanup;
-use crate::error::AppError;
+use crate::error::{send_global_error, AppError, ErrorMessage, ShadowrunError};
 use crate::game_state::GameState;
 use crate::image;
 use crate::message::{self, AIMessage, GameMessage, Message, MessageType};
@@ -65,6 +65,7 @@ pub struct App {
     pub highlighted_section: HighlightedSection,
     pub input_mode: InputMode,
     pub openai_api_key_valid: bool,
+    pub error_messages: Vec<ErrorMessage>,
 
     // Saves and loads
     pub save_manager: SaveManager,
@@ -161,6 +162,7 @@ impl App {
             save_manager: SaveManager::new(),
             load_game_menu_state,
             openai_api_key_valid,
+            error_messages: Vec::new(),
             game_content: RefCell::new(Vec::new()),
             game_content_scroll: 0,
             cached_game_content: None,
@@ -223,7 +225,10 @@ impl App {
         tokio::spawn(async move {
             if let (Some(mut ai), Some(game_state)) = (ai_client, current_game) {
                 let mut game_state = game_state.lock().await;
-                let result = ai.send_message(&formatted_message, &mut game_state).await;
+                let result = ai
+                    .send_message(&formatted_message, &mut game_state)
+                    .await
+                    .map_err(AppError::Shadowrun);
                 let _ = sender.send(AppCommand::AIResponse(result));
             } else {
                 let _ = sender.send(AppCommand::AIResponse(Err(AppError::NoCurrentGame)));
@@ -704,11 +709,15 @@ impl App {
             self.settings.openai_api_key = None;
             self.add_message(Message::new(
                 MessageType::System,
-                "Invalid API key entered. Please try again.".to_string(),
+                "We could not validate your API Key. Please verify your key and internet connection and try again.".to_string(),
             ));
             self.openai_api_key_valid = false;
         } else {
             self.openai_api_key_valid = true;
+            self.add_message(Message::new(
+                MessageType::System,
+                "API Key Validated, Thank you.".to_string(),
+            ));
         }
         if let Err(e) = self.settings.save_to_file("./data/settings.json") {
             self.add_debug_message(format!("Failed to save settings: {:#?}", e));
@@ -1157,6 +1166,15 @@ impl App {
         }
     }
 
+    pub fn add_error(&mut self, error: ShadowrunError) {
+        self.error_messages.push(ErrorMessage::new(error));
+    }
+
+    pub fn clean_old_errors(&mut self, max_age: Duration) {
+        self.error_messages
+            .retain(|msg| msg.timestamp.elapsed() < max_age);
+    }
+
     pub fn update_debug_info(&mut self) {
         if !self.settings.debug_mode {
             return;
@@ -1178,14 +1196,17 @@ impl App {
 
     pub async fn send_message(&mut self, message: String) -> Result<(), AppError> {
         let user_message = create_user_message(&self.settings.language, &message);
-        let formatted_message = serde_json::to_string(&user_message)?;
+        let formatted_message = serde_json::to_string(&user_message)
+            .map_err(|e| AppError::Shadowrun(ShadowrunError::Serialization(e.to_string())))?;
 
         self.start_spinner();
 
-        let result = {
+        let result: Result<GameMessage, AppError> = {
             if let (Some(ai), Some(game_state)) = (&mut self.ai_client, &self.current_game) {
                 let mut game_state = game_state.lock().await;
-                ai.send_message(&formatted_message, &mut game_state).await
+                ai.send_message(&formatted_message, &mut game_state)
+                    .await
+                    .map_err(|e| AppError::Shadowrun(ShadowrunError::from(e)))
             } else if self.ai_client.is_none() {
                 Err(AppError::AIClientNotInitialized)
             } else {
@@ -1195,7 +1216,6 @@ impl App {
 
         self.stop_spinner();
 
-        // Send the result through the AI message channel
         match &result {
             Ok(game_message) => {
                 if let Err(e) = self
@@ -1206,18 +1226,23 @@ impl App {
                 }
                 self.add_message(Message::new(
                     MessageType::Game,
-                    serde_json::to_string(game_message)?,
+                    serde_json::to_string(game_message).map_err(|e| {
+                        AppError::Shadowrun(ShadowrunError::Serialization(e.to_string()))
+                    })?,
                 ));
                 if let Some(character_sheet) = &game_message.character_sheet {
                     self.update_character_sheet(character_sheet.clone()).await;
                 }
+                Ok(())
             }
             Err(e) => {
                 eprintln!("Failed to send AI error response {:?}", e);
+                if let Err(send_err) = self.ai_sender.send(AIMessage::Response(Err(e.clone()))) {
+                    eprintln!("Failed to send AI error through channel: {}", send_err);
+                }
+                Err(e.clone())
             }
         }
-
-        result.map(|_| ())
     }
 
     pub fn on_tick(&mut self) {
@@ -1417,6 +1442,8 @@ impl App {
 
         // Fetch all messages from the thread
         let all_messages = ai_client.fetch_all_messages(&game_state.thread_id).await?;
+        self.add_error(ShadowrunError::Game("Test".to_string()));
+        self.add_error(ShadowrunError::Game("et un autre test".to_string()));
 
         // Load message history
         *self.game_content.borrow_mut() = all_messages;
