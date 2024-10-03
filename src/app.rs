@@ -1442,8 +1442,6 @@ impl App {
 
         // Fetch all messages from the thread
         let all_messages = ai_client.fetch_all_messages(&game_state.thread_id).await?;
-        self.add_error(ShadowrunError::Game("Test".to_string()));
-        self.add_error(ShadowrunError::Game("et un autre test".to_string()));
 
         // Load message history
         *self.game_content.borrow_mut() = all_messages;
