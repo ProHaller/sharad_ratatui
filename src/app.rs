@@ -636,6 +636,10 @@ impl App {
                     self.highlighted_section = HighlightedSection::None;
                 }
                 KeyCode::Esc => {
+                    self.game_content.borrow_mut().clear();
+                    self.current_game = None;
+                    self.last_known_character_sheet = None;
+                    self.user_input.reset();
                     self.state = AppState::MainMenu;
                     self.save_manager.available_saves = SaveManager::scan_save_files();
                     self.add_message(Message::new(

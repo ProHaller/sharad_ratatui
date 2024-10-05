@@ -179,7 +179,7 @@ pub fn draw_detailed_info(
         HighlightedSection::InventoryItem(_) => sheet
             .inventory
             .values()
-            .map(|item| format!("{}: {}", item.name, item.description))
+            .map(|item| format!("{}: {} (x{})", item.name, item.description, item.quantity))
             .collect::<Vec<_>>()
             .join("\n\n"),
         HighlightedSection::Contact(_) => sheet
