@@ -10,7 +10,7 @@
       },
       "fluff": {
         "type": "object",
-        "description": "This section describes the world and all actions within to the player. The content is structured into two arrays: speakers and dialogue. IMPORTANT: The Narrator (index 0) must only be used for narration and direct interraction with the player, never for speaker speech. The player character must have their own named speaker entry and only use it for direct or reported speech. All other speaking characters should be listed",
+        "description": "This section describes the world and all actions within to the player. The content is structured into two arrays: speakers and dialogue. IMPORTANT: The Narrator (index 0) must only be used for narration and direct interraction with the player, never for speaker speech. The player character must have their own named speaker entry and only use it for direct or reported speech. All other speaking characters should be listed. Must at have a line from the Narrator if no dialogue is provided.",
         "properties": {
           "speakers": {
             "type": "array",

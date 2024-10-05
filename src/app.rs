@@ -857,7 +857,8 @@ impl App {
 
             KeyCode::Char(c) => {
                 if let Some(digit) = c.to_digit(10) {
-                    let selected = (digit as usize - 1) % self.save_manager.available_saves.len();
+                    let selected = ((digit as usize).saturating_sub(1))
+                        % self.save_manager.available_saves.len();
                     self.load_game_menu_state.select(Some(selected));
                     let save_name = self.save_manager.available_saves[selected].clone();
                     if let Err(e) = self.command_sender.send(AppCommand::LoadGame(save_name)) {
