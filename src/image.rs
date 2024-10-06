@@ -5,9 +5,9 @@ use async_openai::{
     Client,
 };
 use std::error::Error;
+use std::process::Command;
 use tokio::time::{timeout, Duration};
 
-// TODO: Open the image on creation
 pub async fn generate_and_save_image(prompt: &str) -> Result<(), Box<dyn Error>> {
     let settings = Settings::load()?;
     let api_key = match settings.openai_api_key {
@@ -35,7 +35,22 @@ pub async fn generate_and_save_image(prompt: &str) -> Result<(), Box<dyn Error>>
     }
 
     let paths = response.save("./data").await?;
-    if let Some(_path) = paths.first() {
+    if let Some(path) = paths.first() {
+        // Convert the path to a string
+        let path_str = path.to_str().ok_or("Invalid path")?;
+
+        // Open the image using the default image viewer based on the OS
+        #[cfg(target_os = "macos")]
+        Command::new("open").arg(path_str).spawn()?;
+
+        #[cfg(target_os = "windows")]
+        Command::new("cmd")
+            .args(&["/C", "start", "", path_str])
+            .spawn()?;
+
+        #[cfg(target_os = "linux")]
+        Command::new("xdg-open").arg(path_str).spawn()?;
+
         Ok(())
     } else {
         Err("No image file path received.".into())
