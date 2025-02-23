@@ -15,6 +15,7 @@ use async_openai::{
     Client,
 };
 
+// TODO: Make sure the model is formating properly the dialogue responses in French and english.
 static ASSETS_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets");
 
 fn load_function_objects() -> Result<Vec<FunctionObject>, Box<dyn Error>> {
@@ -89,6 +90,7 @@ fn define_schema() -> Result<ResponseFormat, Box<dyn Error>> {
 // Function to create the assistant with multiple function objects
 pub async fn create_assistant(
     client: &Client<OpenAIConfig>,
+    model: &str,
     name: &str,
 ) -> Result<AssistantObject, Box<dyn Error>> {
     // Load all FunctionObjects from the specified folder
@@ -114,7 +116,7 @@ pub async fn create_assistant(
         .name(name)
         .temperature(0.7)
         .instructions(instructions)
-        .model("gpt-4o-mini")
+        .model(model)
         .response_format(AssistantsApiResponseFormatOption::Format(response_format))
         .tools(assistant_tools) // Pass the vector of AssistantTools
         .build()?;

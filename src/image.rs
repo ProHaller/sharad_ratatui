@@ -8,6 +8,8 @@ use std::error::Error;
 use std::process::Command;
 use tokio::time::{timeout, Duration};
 
+// TODO: Provide an image viewer within the terminal for compatible terminals.
+
 pub async fn generate_and_save_image(prompt: &str) -> Result<(), Box<dyn Error>> {
     let settings = Settings::load()?;
     let api_key = match settings.openai_api_key {

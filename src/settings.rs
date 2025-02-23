@@ -12,10 +12,13 @@ use crate::error::send_global_error;
 pub struct Settings {
     pub language: String, // Preferred language setting for the application.
     pub openai_api_key: Option<String>, // Optional API key for OpenAI services.
+    pub model: String,
     pub audio_output_enabled: bool, // Flag to enable or disable audio output.
-    pub audio_input_enabled: bool, // Flag to enable or disable audio input.
-    pub debug_mode: bool, // Flag to enable or disable debug mode.
+    pub audio_input_enabled: bool,  // Flag to enable or disable audio input.
+    pub debug_mode: bool,           // Flag to enable or disable debug mode.
 }
+
+// TODO:  Add a model parameter to change the AI model
 
 // Implement the Default trait for Settings to provide a method to create default settings.
 impl Default for Settings {
@@ -23,9 +26,10 @@ impl Default for Settings {
         Settings {
             language: "English".to_string(), // Default language setting.
             openai_api_key: None,            // No API key by default.
-            audio_output_enabled: true,      // Audio output enabled by default.
-            audio_input_enabled: true,       // Audio input enabled by default.
-            debug_mode: false,               // Debug mode disabled by default.
+            model: "gpt-4o-mini".to_string(),
+            audio_output_enabled: true, // Audio output enabled by default.
+            audio_input_enabled: true,  // Audio input enabled by default.
+            debug_mode: false,          // Debug mode disabled by default.
         }
     }
 }

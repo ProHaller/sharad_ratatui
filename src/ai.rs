@@ -13,7 +13,7 @@ use async_openai::{
     config::OpenAIConfig,
     types::{
         CreateMessageRequestArgs, CreateRunRequestArgs, CreateThreadRequestArgs, MessageContent,
-        MessageRole, RunObject, RunStatus, SubmitToolOutputsRunRequest, ToolsOutputs,
+        MessageRole, Model, RunObject, RunStatus, SubmitToolOutputsRunRequest, ToolsOutputs,
     },
     Client,
 };
@@ -24,15 +24,16 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::{Duration, Instant};
 
-// Define a struct to hold conversation state specific to the game.
+// TODO: Create a character_sheet_updater routine that verifies the character sheet is updated
+// based on in-game events.
+// TODO: Create an error channel that will display all error/debug information throughout the app
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameConversationState {
-    pub assistant_id: String, // Unique identifier for the assistant.
-    pub thread_id: String,    // Unique identifier for the conversation thread.
-    pub character_sheet: Option<CharacterSheet>, // Optional character sheet for the active session.
+    pub assistant_id: String,
+    pub thread_id: String,
+    pub character_sheet: Option<CharacterSheet>,
 }
-
-// Structure representing the game's AI component.
 
 pub struct GameAI {
     pub client: Client<OpenAIConfig>,
@@ -50,9 +51,7 @@ impl Clone for GameAI {
     }
 }
 
-// Implementation of the GameAI structure.
 impl GameAI {
-    // Constructor to initialize a new GameAI instance.
     pub async fn new(
         api_key: String,
         debug_callback: impl Fn(String) + Send + Sync + 'static,
@@ -67,12 +66,10 @@ impl GameAI {
         })
     }
 
-    // Method to add debug messages through the provided callback.
     fn add_debug_message(&self, message: String) {
         (self.debug_callback)(message);
     }
 
-    // Asynchronous method to start a new conversation thread.
     pub async fn start_new_conversation(
         &self,
         assistant_id: &str,
@@ -226,10 +223,8 @@ impl GameAI {
             "Update Character sheet: Character sheet: {:#?}",
             new_sheet
         ));
-        // Update the main character sheet
         game_state.main_character_sheet = Some(new_sheet.clone());
 
-        // Update or add the character in the characters vector
         if let Some(existing_character) = game_state
             .characters
             .iter_mut()
@@ -241,6 +236,22 @@ impl GameAI {
         }
 
         Ok(())
+    }
+
+    pub async fn get_models(&self) -> Result<Vec<Model>, AppError> {
+        // Get models list
+        let list_model_response = self
+            .client
+            .models()
+            .list()
+            .await
+            .map_err(|e| ShadowrunError::OpenAI(e.to_string()))
+            .map_err(AppError::Shadowrun)?;
+
+        // Extract Data
+        let available_models = list_model_response.data;
+        self.add_debug_message(format!("Models available: {:#?}", available_models));
+        Ok(available_models)
     }
 
     pub async fn cancel_run(&self, thread_id: &str, run_id: &str) -> Result<(), AppError> {
@@ -530,7 +541,6 @@ impl GameAI {
         tool_call: &RunToolCallObject,
         game_state: &mut GameState,
     ) -> Result<String, ShadowrunError> {
-        // Implementation similar to original code, but extracted into this function
         let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)?;
         let character_name = args["character_name"]
             .as_str()

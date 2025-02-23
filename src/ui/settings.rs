@@ -30,8 +30,8 @@ pub fn draw_settings(f: &mut Frame, app: &mut App) {
                 Constraint::Max(3),
                 Constraint::Max(20),
                 Constraint::Max(7),
-                Constraint::Min(2),
-                Constraint::Min(6),
+                Constraint::Fill(1),
+                Constraint::Fill(2),
                 Constraint::Max(3),
             ]
             .as_ref(),
@@ -50,6 +50,7 @@ pub fn render_settings(f: &mut Frame, app: &App, area: Rect) {
     let settings = [
         ("Language", vec!["English", "Français", "日本語"]),
         ("OpenAI API Key", vec![]),
+        ("OpenAI Model", vec!["gpt-4o-mini", "gpt-4o", "gpt-o1"]),
         ("Voice Output", vec!["On", "Off"]),
         ("Voice Input", vec!["On", "Off"]),
         ("Debug Mode", vec!["Off", "On"]),
@@ -74,7 +75,7 @@ pub fn render_settings(f: &mut Frame, app: &App, area: Rect) {
                     format!("{}. ", number + 1),
                     Style::default().fg(Color::Gray),
                 ),
-                Span::styled(format!("{:<15}", setting), highlight_line_style),
+                Span::styled(format!("{:<20}", setting), highlight_line_style),
             ];
 
             if number == 1 {

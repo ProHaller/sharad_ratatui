@@ -58,6 +58,8 @@ pub enum InputMode {
     Recording,
 }
 
+// TODO: Verify that there is a valid connection internet, else request the user to retake action
+// after conneecting.
 pub struct App {
     // Application state and control flow
     pub should_quit: bool,
@@ -307,6 +309,7 @@ impl App {
                             }
 
                             // Play audio sequentially
+                            // TODO: Make sure two messages audio are not played at the same time.
                             for file in game_message_clone.fluff.dialogue.iter() {
                                 if let Some(audio_path) = &file.audio {
                                     let _status = play_audio(audio_path.clone());
@@ -732,16 +735,21 @@ impl App {
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
                 self.settings_state.selected_setting =
-                    (self.settings_state.selected_setting + 4) % 5; // Wrap around 5 settings
+                    (self.settings_state.selected_setting + 5) % 6; // Wrap around 6 settings
             }
             KeyCode::Down | KeyCode::Char('j') => {
                 self.settings_state.selected_setting =
-                    (self.settings_state.selected_setting + 1) % 5; // Wrap around 5 settings
+                    (self.settings_state.selected_setting + 1) % 6; // TODO: Make this dynamic depending on the the number of settings.
             }
             KeyCode::Left | KeyCode::Char('h') => {
                 let current_setting = self.settings_state.selected_setting;
                 if current_setting == 0 {
                     // Language setting
+                    let current_option = self.settings_state.selected_options[current_setting];
+                    self.settings_state.selected_options[current_setting] =
+                        (current_option + 2) % 3;
+                } else if current_setting == 2 {
+                    // Model setting
                     let current_option = self.settings_state.selected_options[current_setting];
                     self.settings_state.selected_options[current_setting] =
                         (current_option + 2) % 3;
@@ -762,6 +770,11 @@ impl App {
                 } else if current_setting == 1 {
                     // API Key setting
                     self.state = AppState::InputApiKey;
+                } else if current_setting == 2 {
+                    // Model setting
+                    let current_option = self.settings_state.selected_options[current_setting];
+                    self.settings_state.selected_options[current_setting] =
+                        (current_option + 1) % 3;
                 } else if current_setting != 1 {
                     // Not API Key setting
                     self.settings_state.selected_options[current_setting] =
@@ -784,7 +797,7 @@ impl App {
             }
             KeyCode::Char(c) => {
                 if let Some(digit) = c.to_digit(10) {
-                    if digit <= 5 {
+                    if digit <= 6 {
                         self.settings_state.selected_setting = (digit - 1) as usize;
                         let current_setting = self.settings_state.selected_setting;
                         if current_setting == 1 {
@@ -795,7 +808,7 @@ impl App {
                                 self.settings_state.selected_options[current_setting];
                             let new_option = match current_setting {
                                 0 => (current_option + 1) % 3, // Language (3 options)
-                                2..=5 => 1 - current_option,   // Toggle settings (2 options)
+                                2..=6 => 1 - current_option,   // Toggle settings (2 options)
                                 _ => current_option,
                             };
                             self.settings_state.selected_options[current_setting] = new_option;
@@ -1041,6 +1054,7 @@ impl App {
         self.scroll_to_bottom();
     }
 
+    // TODO: Make unified and dynamic setting for all settings. cf the Ratatui examples
     pub fn apply_settings(&mut self) {
         // Apply changes from settings_state to settings
         self.settings.language = match self.settings_state.selected_options[0] {
@@ -1049,9 +1063,15 @@ impl App {
             2 => "日本語".to_string(),
             _ => self.settings.language.clone(),
         };
-        self.settings.audio_output_enabled = self.settings_state.selected_options[2] == 0;
-        self.settings.audio_input_enabled = self.settings_state.selected_options[3] == 0;
-        self.settings.debug_mode = self.settings_state.selected_options[4] == 1;
+        self.settings.model = match self.settings_state.selected_options[0] {
+            0 => "gpt-4o-mini".to_string(),
+            1 => "gpt-4o".to_string(),
+            2 => "gpt-o1".to_string(),
+            _ => self.settings.language.clone(),
+        };
+        self.settings.audio_output_enabled = self.settings_state.selected_options[3] == 0;
+        self.settings.audio_input_enabled = self.settings_state.selected_options[4] == 0;
+        self.settings.debug_mode = self.settings_state.selected_options[5] == 1;
 
         // Save settings to file
         if let Err(e) = self.settings.save_to_file("./data/settings.json") {
@@ -1264,7 +1284,7 @@ impl App {
         }
 
         let client = self.ai_client.clone().unwrap().client;
-        let assistant = match create_assistant(&client, &save_name).await {
+        let assistant = match create_assistant(&client, &self.settings.model, &save_name).await {
             Ok(assistant) => assistant,
             Err(err) => {
                 println!("{}", err);
