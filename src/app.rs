@@ -662,8 +662,8 @@ impl App {
                         self.scroll_down();
                     }
                 }
-                KeyCode::Up => self.scroll_up(),
-                KeyCode::Down => self.scroll_down(),
+                KeyCode::Up | KeyCode::Char('k') => self.scroll_up(),
+                KeyCode::Down | KeyCode::Char('j') => self.scroll_down(),
 
                 KeyCode::Tab => self.cycle_highlighted_section(),
 
@@ -730,15 +730,15 @@ impl App {
 
     fn handle_settings_input(&mut self, key: KeyEvent) {
         match key.code {
-            KeyCode::Up => {
+            KeyCode::Up | KeyCode::Char('k') => {
                 self.settings_state.selected_setting =
                     (self.settings_state.selected_setting + 4) % 5; // Wrap around 5 settings
             }
-            KeyCode::Down => {
+            KeyCode::Down | KeyCode::Char('j') => {
                 self.settings_state.selected_setting =
                     (self.settings_state.selected_setting + 1) % 5; // Wrap around 5 settings
             }
-            KeyCode::Left => {
+            KeyCode::Left | KeyCode::Char('h') => {
                 let current_setting = self.settings_state.selected_setting;
                 if current_setting == 0 {
                     // Language setting
@@ -752,13 +752,16 @@ impl App {
                 }
                 self.apply_settings();
             }
-            KeyCode::Right => {
+            KeyCode::Right | KeyCode::Char('l') => {
                 let current_setting = self.settings_state.selected_setting;
                 if current_setting == 0 {
                     // Language setting
                     let current_option = self.settings_state.selected_options[current_setting];
                     self.settings_state.selected_options[current_setting] =
                         (current_option + 1) % 3;
+                } else if current_setting == 1 {
+                    // API Key setting
+                    self.state = AppState::InputApiKey;
                 } else if current_setting != 1 {
                     // Not API Key setting
                     self.settings_state.selected_options[current_setting] =
@@ -772,13 +775,7 @@ impl App {
                     // API Key setting
                     self.state = AppState::InputApiKey;
                 } else {
-                    let current_option = self.settings_state.selected_options[current_setting];
-                    let new_option = match current_setting {
-                        0 => (current_option + 1) % 3, // Language (3 options)
-                        2..=4 => 1 - current_option,   // Toggle settings (2 options)
-                        _ => current_option,
-                    };
-                    self.settings_state.selected_options[current_setting] = new_option;
+                    self.state = AppState::MainMenu;
                     self.apply_settings();
                 }
             }
@@ -813,7 +810,7 @@ impl App {
 
     fn handle_load_game_input(&mut self, key: KeyEvent) {
         match key.code {
-            KeyCode::Enter => {
+            KeyCode::Enter | KeyCode::Char('l') => {
                 if let Some(selected) = self.load_game_menu_state.selected() {
                     if selected < self.save_manager.available_saves.len() {
                         if let Err(e) = self.command_sender.send(AppCommand::LoadGame(
@@ -833,14 +830,14 @@ impl App {
                     }
                 }
             }
-            KeyCode::Esc => {
+            KeyCode::Esc | KeyCode::Char('h') => {
                 self.state = AppState::MainMenu;
             }
-            KeyCode::Up => {
+            KeyCode::Up | KeyCode::Char('k') => {
                 self.backspace_counter = false;
                 self.navigate_load_game_menu(-1)
             }
-            KeyCode::Down => {
+            KeyCode::Down | KeyCode::Char('j') => {
                 self.backspace_counter = false;
                 self.navigate_load_game_menu(1)
             }
@@ -880,11 +877,12 @@ impl App {
 
     fn handle_main_menu_input(&mut self, key: KeyEvent) {
         match key.code {
-            KeyCode::Enter => {
+            KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
                 match self.main_menu_state.selected() {
                     Some(0) => {
                         // Start New Game
                         self.state = AppState::InputSaveName;
+                        self.input_mode = InputMode::Editing;
                         self.save_name_input.reset(); // Clear any previous input
                     }
                     Some(1) => {
@@ -906,8 +904,8 @@ impl App {
                     _ => {}
                 }
             }
-            KeyCode::Up => self.navigate_main_menu(-1),
-            KeyCode::Down => self.navigate_main_menu(1),
+            KeyCode::Up | KeyCode::Char('k') => self.navigate_main_menu(-1),
+            KeyCode::Down | KeyCode::Char('j') => self.navigate_main_menu(1),
             KeyCode::Char(c) if ('1'..='4').contains(&c) => self.select_main_menu_by_char(c),
             KeyCode::Char('q') => {
                 cleanup();
@@ -1274,8 +1272,6 @@ impl App {
             }
         };
         let assistant_id = &assistant.id;
-        // let assistant_id = "asst_oavbUQD3KMkNKgyYRj42tKsM"; //Original
-        // let assistant_id = "asst_4kaphuqlAkwnsbBrf482Z6dR"; //copy
 
         if let Some(ai) = &self.ai_client {
             // Start a new conversation

@@ -42,6 +42,7 @@ pub fn draw_save_name_input(f: &mut Frame, app: &App) {
             Block::default()
                 .borders(Borders::ALL)
                 .title(match app.input_mode {
+                    // TODO: Make the key description dynamic based on a Config File.
                     InputMode::Normal => " Press 'e' to edit or 'r' to record ",
                     InputMode::Editing => " Editing ",
                     InputMode::Recording => " Recording… Press 'Esc' to stop ",
@@ -59,9 +60,12 @@ pub fn draw_save_name_input(f: &mut Frame, app: &App) {
         InputMode::Editing => " EDITING ",
         InputMode::Recording => " RECORDING ",
     };
-    let instructions = Paragraph::new(format!("{} | Enter: confirm | Esc: cancel", mode_indicator))
-        .style(Style::default().fg(Color::Gray))
-        .alignment(Alignment::Center);
+    let instructions = Paragraph::new(format!(
+        "Mode:{} | Enter: confirm | Esc: cancel",
+        mode_indicator
+    ))
+    .style(Style::default().fg(Color::Gray))
+    .alignment(Alignment::Center);
     f.render_widget(instructions, chunks[2]);
 
     // Only show the cursor when in Editing mode
