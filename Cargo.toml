@@ -2,6 +2,14 @@
 name = "sharad_ratatui"
 version = "0.1.33"
 edition = "2021"
+repository = "https://github.com/prohaller/sharad_ratatui"
+authors = ["Roland Haller <haller.roland@gmail.com>"]
+
+[package.metadata.wix]
+upgrade-guid = "B2B70952-3CBF-481B-9517-372DB1D3025C"
+path-guid = "8293C3E7-58FA-4F8E-85D1-A4BF37400653"
+license = false
+eula = false
 
 [dependencies]
 async-openai = "0.24.0"
@@ -34,3 +42,8 @@ tui-input = "0.10.1"
 unicode-segmentation = "1.11.0"
 unicode-width = "0.1.13"
 uuid = { version = "1.10.0", features = ["v4"] }
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
