@@ -745,14 +745,13 @@ impl App {
                 let current_setting = self.settings_state.selected_setting;
                 if current_setting == 0 {
                     // Language setting
-                    let current_option = self.settings_state.selected_options[current_setting];
+                    let current_language = self.settings_state.selected_options[current_setting];
                     self.settings_state.selected_options[current_setting] =
-                        (current_option + 2) % 3;
+                        (current_language + 3) % 4;
                 } else if current_setting == 2 {
                     // Model setting
-                    let current_option = self.settings_state.selected_options[current_setting];
-                    self.settings_state.selected_options[current_setting] =
-                        (current_option + 2) % 3;
+                    let current_model = self.settings_state.selected_options[current_setting];
+                    self.settings_state.selected_options[current_setting] = (current_model + 2) % 3;
                 } else if current_setting != 1 {
                     // Not API Key setting
                     self.settings_state.selected_options[current_setting] =
@@ -766,7 +765,7 @@ impl App {
                     // Language setting
                     let current_option = self.settings_state.selected_options[current_setting];
                     self.settings_state.selected_options[current_setting] =
-                        (current_option + 1) % 3;
+                        (current_option + 1) % 4;
                 } else if current_setting == 1 {
                     // API Key setting
                     self.state = AppState::InputApiKey;
@@ -807,7 +806,7 @@ impl App {
                             let current_option =
                                 self.settings_state.selected_options[current_setting];
                             let new_option = match current_setting {
-                                0 => (current_option + 1) % 3, // Language (3 options)
+                                0 => (current_option + 1) % 4, // Language (3 options)
                                 2..=6 => 1 - current_option,   // Toggle settings (2 options)
                                 _ => current_option,
                             };
@@ -1061,12 +1060,13 @@ impl App {
             0 => "English".to_string(),
             1 => "Français".to_string(),
             2 => "日本語".to_string(),
+            3 => "Türkçe".to_string(),
             _ => self.settings.language.clone(),
         };
-        self.settings.model = match self.settings_state.selected_options[0] {
+        self.settings.model = match self.settings_state.selected_options[2] {
             0 => "gpt-4o-mini".to_string(),
             1 => "gpt-4o".to_string(),
-            2 => "gpt-o1".to_string(),
+            2 => "o1-mini".to_string(),
             _ => self.settings.language.clone(),
         };
         self.settings.audio_output_enabled = self.settings_state.selected_options[3] == 0;

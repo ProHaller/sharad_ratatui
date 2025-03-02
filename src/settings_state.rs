@@ -18,13 +18,14 @@ impl SettingsState {
                     "English" => 0,
                     "Français" => 1,
                     "日本語" => 2,
+                    "Türkçe" => 3,
                     _ => 0,
                 },
                 0, // API Key (always 0 as it's not a toggle)
                 match settings.model.as_str() {
                     "gpt-4o-mini" => 0,
                     "gpt-4o" => 1,
-                    "gpt-o1" => 2,
+                    "o1-mini" => 2,
                     _ => 0,
                 },
                 if settings.audio_output_enabled { 0 } else { 1 },

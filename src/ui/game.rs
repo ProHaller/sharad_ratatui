@@ -4,11 +4,11 @@ use crate::message::{GameMessage, MessageType, UserMessage};
 use crate::ui::utils::spinner_frame;
 use ratatui::style::Styled;
 use ratatui::{
+    Frame,
     layout::{Alignment, Constraint, Direction, Layout, Position, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::*,
-    Frame,
 };
 use std::cell::RefCell;
 use unicode_segmentation::UnicodeSegmentation;
@@ -55,7 +55,7 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
             *cache = Some(new_cache);
         }
 
-        let (_, ref main_chunks, ref left_chunks) = cache.as_ref().unwrap();
+        let (_, main_chunks, left_chunks) = cache.as_ref().unwrap();
         (main_chunks.clone(), left_chunks.clone(), main_chunks[1])
     });
     draw_game_content(f, app, left_chunk[0]);
@@ -306,7 +306,7 @@ fn draw_attributes(
     f: &mut Frame,
     sheet: &CharacterSheet,
     area: Rect,
-    highlighted: &HighlightedSection,
+    _highlighted: &HighlightedSection,
 ) {
     let attributes = vec![
         ("BODY", sheet.body),
@@ -349,7 +349,7 @@ fn draw_derived_attributes(
     f: &mut Frame,
     sheet: &CharacterSheet,
     area: Rect,
-    highlighted: &HighlightedSection,
+    _highlighted: &HighlightedSection,
 ) {
     let derived = [
         format!(
@@ -419,7 +419,7 @@ fn draw_skills(
     f: &mut Frame,
     sheet: &CharacterSheet,
     area: Rect,
-    highlighted: &HighlightedSection,
+    _highlighted: &HighlightedSection,
 ) {
     let categories = [
         ("Combat", &sheet.skills.combat),
@@ -467,7 +467,7 @@ fn draw_qualities(
     f: &mut Frame,
     sheet: &CharacterSheet,
     area: Rect,
-    highlighted: &HighlightedSection,
+    _highlighted: &HighlightedSection,
 ) {
     let qualities: Vec<Span> = sheet
         .qualities
@@ -535,7 +535,7 @@ fn draw_resources(
     f: &mut Frame,
     sheet: &CharacterSheet,
     area: Rect,
-    highlighted: &HighlightedSection,
+    _highlighted: &HighlightedSection,
 ) {
     let info = vec![
         format!("Lifestyle: {}", sheet.lifestyle),
@@ -550,7 +550,7 @@ fn draw_augmentations(
     f: &mut Frame,
     sheet: &CharacterSheet,
     area: Rect,
-    highlighted: &HighlightedSection,
+    _highlighted: &HighlightedSection,
 ) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
@@ -659,11 +659,9 @@ fn draw_inventory(
         .values()
         .map(|item| {
             let style = Style::default().fg(Color::White);
-            Row::new(vec![Cell::from(format!(
-                "{} (x{})",
-                item.name, item.quantity
-            ))
-            .style(style)])
+            Row::new(vec![
+                Cell::from(format!("{} (x{})", item.name, item.quantity)).style(style),
+            ])
         })
         .collect();
 

@@ -48,9 +48,9 @@ pub fn draw_settings(f: &mut Frame, app: &mut App) {
 
 pub fn render_settings(f: &mut Frame, app: &App, area: Rect) {
     let settings = [
-        ("Language", vec!["English", "Français", "日本語"]),
-        ("OpenAI API Key", vec![]),
-        ("OpenAI Model", vec!["gpt-4o-mini", "gpt-4o", "gpt-o1"]),
+        ("Language", vec!["English", "Français", "日本語", "Türkçe"]),
+        ("AI API Key", vec![]),
+        ("OpenAI Model", vec!["gpt-4o-mini", "gpt-4o", "o1-mini"]),
         ("Voice Output", vec!["On", "Off"]),
         ("Voice Input", vec!["On", "Off"]),
         ("Debug Mode", vec!["Off", "On"]),
