@@ -2,6 +2,10 @@
 
 Welcome to Sharad Ratatui, a text-based Shadowrun role-playing game built with Rust and the Ratatui library!
 
+https://github.com/user-attachments/assets/54ca4490-0df8-4e6d-a6fb-7d61336547f5
+
+
+
 ## 🌟 Join Our Adventure
 
 Are you passionate about gaming and development? Do you want to be part of a project that combines the excitement of RPGs with the creativity of programming? Then you've come to the right place!
