@@ -7,10 +7,15 @@ use crate::message::{AIMessage, Message, MessageType};
 use crossterm::{
     event::{Event, KeyEventKind}, // Event handling from crossterm for input events.
     execute,                      // Helper macro to execute terminal commands.
-    terminal::{enable_raw_mode, EnterAlternateScreen, SetSize}, // Terminal manipulation utilities.
+    terminal::{EnterAlternateScreen, SetSize, enable_raw_mode}, // Terminal manipulation utilities.
 };
-use ratatui::{backend::CrosstermBackend, Terminal};
-use std::panic; // Panic handling for cleanup.
+use image::ImageReader;
+use ratatui::{Terminal, backend::CrosstermBackend};
+use ratatui_image::picker::Picker;
+use std::io::Cursor;
+use std::panic;
+use std::path::PathBuf;
+// Panic handling for cleanup.
 use std::{io, sync::Arc, time::Duration}; // Standard I/O and concurrency utilities.
 use tokio::sync::mpsc; // Asynchronous message passing channel.
 use tokio::time::sleep;
@@ -28,7 +33,7 @@ pub mod cleanup;
 pub mod dice;
 pub mod error;
 pub mod game_state;
-pub mod image;
+pub mod imager;
 pub mod message;
 pub mod save;
 pub mod settings;
@@ -43,7 +48,7 @@ const MIN_HEIGHT: u16 = 40;
 // Function to ensure the terminal size meets minimum requirements.
 fn ensure_minimum_terminal_size() -> io::Result<()> {
     let (width, height) = crossterm::terminal::size()?; // Get current size of the terminal.
-                                                        // If the current size is less than minimum, resize to the minimum required.
+    // If the current size is less than minimum, resize to the minimum required.
     if width < MIN_WIDTH || height < MIN_HEIGHT {
         execute!(
             io::stdout(),
@@ -85,9 +90,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Set up unbounded channel for AI messages.
     let (ai_sender, ai_receiver) = mpsc::unbounded_channel::<AIMessage>();
+    // Set up unbounded channel for images.
+    let (image_sender, image_receiver) = mpsc::unbounded_channel::<PathBuf>();
 
     // Initialize the application.
-    let (app, command_receiver) = App::new(ai_sender).await;
+    let (app, command_receiver) = App::new(ai_sender, image_sender).await;
     let error_receiver = error::initialize_global_error_handler().await;
     let app = Arc::new(Mutex::new(app));
 
@@ -98,6 +105,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         command_receiver,
         ai_receiver,
         error_receiver,
+        image_receiver,
     )
     .await
     {
@@ -114,6 +122,7 @@ async fn run_app(
     mut command_receiver: mpsc::UnboundedReceiver<AppCommand>,
     mut ai_receiver: mpsc::UnboundedReceiver<AIMessage>,
     mut error_receiver: mpsc::UnboundedReceiver<ShadowrunError>,
+    mut image_receiver: mpsc::UnboundedReceiver<PathBuf>,
 ) -> io::Result<()> {
     let mut last_tick = Instant::now();
     let tick_rate = Duration::from_millis(16);
@@ -227,6 +236,10 @@ async fn run_app(
                         app.handle_ai_response(response).await;
                     }
                 }
+            }
+            Some(image_path) = image_receiver.recv() => {
+                let mut app = app.lock().await;
+                let _ = app.load_image_from_file(image_path);
             }
             Some(error) = error_receiver.recv() => {
                 app.lock().await.add_error(error);

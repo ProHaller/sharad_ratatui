@@ -9,7 +9,7 @@ pub mod cleanup;
 pub mod dice;
 pub mod error;
 pub mod game_state;
-pub mod image;
+pub mod imager;
 pub mod message;
 pub mod save;
 pub mod settings;

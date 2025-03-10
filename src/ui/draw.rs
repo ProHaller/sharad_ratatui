@@ -8,11 +8,11 @@ use crate::{app::App, error::ErrorMessage};
 
 use ratatui::widgets::{List, ListItem};
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::Span,
     widgets::{Block, Borders, Clear},
-    Frame,
 };
 
 use super::{api_key_input, create_image, game, load_game, main_menu, save_name_input, settings};
@@ -94,6 +94,10 @@ fn draw_error_messages(f: &mut Frame, app: &App, area: Rect) {
                     ),
                     ShadowrunError::AI(msg) => Span::styled(
                         format!("AI Error: {}", msg),
+                        Style::default().fg(Color::Red),
+                    ),
+                    ShadowrunError::Image(msg) => Span::styled(
+                        format!("Image Error: {}", msg),
                         Style::default().fg(Color::Red),
                     ),
                 };

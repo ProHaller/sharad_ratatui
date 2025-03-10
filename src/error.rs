@@ -4,7 +4,7 @@ use serde_json;
 use std::sync::Arc;
 use std::time::Instant;
 use thiserror::Error;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 
 static GLOBAL_ERROR_HANDLER: Lazy<Arc<Mutex<Option<ErrorHandler>>>> =
     Lazy::new(|| Arc::new(Mutex::new(None)));
@@ -42,6 +42,8 @@ pub enum ShadowrunError {
     IO(String),
     #[error("OpenAI API error: {0}")]
     OpenAI(String),
+    #[error("Image error: {0}")]
+    Image(String),
     #[error("Unknown error: {0}")]
     Unknown(String),
 }
@@ -84,6 +86,7 @@ impl ErrorHandler {
             ShadowrunError::Serialization(msg) => error!("Serialization Error: {}", msg),
             ShadowrunError::IO(msg) => error!("IO Error: {}", msg),
             ShadowrunError::OpenAI(msg) => error!("OpenAI Error: {}", msg),
+            ShadowrunError::Image(msg) => error!("Image Error: {}", msg),
             ShadowrunError::Unknown(msg) => error!("Unknown Error: {}", msg),
         }
     }
@@ -163,6 +166,12 @@ impl From<serde_json::Error> for ShadowrunError {
 impl From<std::io::Error> for ShadowrunError {
     fn from(error: std::io::Error) -> Self {
         ShadowrunError::IO(error.to_string())
+    }
+}
+
+impl From<image::ImageError> for ShadowrunError {
+    fn from(error: image::ImageError) -> Self {
+        ShadowrunError::Image(error.to_string())
     }
 }
 
@@ -250,6 +259,11 @@ impl From<String> for AudioError {
     }
 }
 
+impl From<ratatui_image::errors::Errors> for ShadowrunError {
+    fn from(error: ratatui_image::errors::Errors) -> Self {
+        ShadowrunError::Image(error.to_string())
+    }
+}
 impl From<tokio::task::JoinError> for AIError {
     fn from(err: tokio::task::JoinError) -> Self {
         AIError::ThreadJoinError(err.to_string())

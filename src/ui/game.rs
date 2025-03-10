@@ -2,7 +2,6 @@ use crate::app::{App, InputMode};
 use crate::character::CharacterSheet;
 use crate::message::{GameMessage, MessageType, UserMessage};
 use crate::ui::utils::spinner_frame;
-use ratatui::style::Styled;
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Position, Rect},
@@ -10,6 +9,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::*,
 };
+use ratatui_image::StatefulImage;
 use std::cell::RefCell;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
@@ -78,7 +78,7 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
         f.render_widget(spinner_widget, spinner_area);
     }
 
-    if let Some(game_state) = &app.current_game {
+    if let Some(game_state) = &app.current_game.clone() {
         match game_state.try_lock() {
             Ok(locked_game_state) => {
                 if let Some(sheet) = &locked_game_state.main_character_sheet {
@@ -88,7 +88,7 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
                     let character_sheet_area = game_info_area;
 
                     draw_character_sheet(f, sheet, character_sheet_area, &app.highlighted_section);
-                    draw_detailed_info(f, sheet, left_chunk[0], &app.highlighted_section);
+                    draw_detailed_info(app, f, sheet, left_chunk[0]);
                 } else {
                     app.last_known_character_sheet = None;
                     let no_character = Paragraph::new("No character sheet available.")
@@ -98,7 +98,7 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
                 }
             }
             Err(_) => {
-                if let Some(last_sheet) = &app.last_known_character_sheet {
+                if let Some(last_sheet) = &app.last_known_character_sheet.clone() {
                     let character_sheet_area = game_info_area;
                     let details_area = Rect::new(
                         character_sheet_area.x,
@@ -113,7 +113,7 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
                         character_sheet_area,
                         &app.highlighted_section,
                     );
-                    draw_detailed_info(f, last_sheet, details_area, &app.highlighted_section);
+                    draw_detailed_info(app, f, last_sheet, details_area);
                 } else {
                     let no_character = Paragraph::new("No character sheet available.")
                         .style(Style::default().fg(Color::Yellow))
@@ -162,12 +162,8 @@ fn draw_character_sheet(
     draw_skills_qualities_and_other(f, sheet, chunks[2], highlighted);
 }
 
-pub fn draw_detailed_info(
-    f: &mut Frame,
-    sheet: &CharacterSheet,
-    area: Rect,
-    highlighted: &HighlightedSection,
-) {
+pub fn draw_detailed_info(app: &mut App, f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
+    let highlighted = &app.highlighted_section;
     // Early return if HighlightedSection::None
     if matches!(highlighted, HighlightedSection::None) {
         return;
@@ -231,7 +227,13 @@ pub fn draw_detailed_info(
         .wrap(Wrap { trim: true });
 
     // Render the content inside the block
-    f.render_widget(detail_paragraph, inner_area);
+    // f.render_widget(detail_paragraph, inner_area);
+    let stateful_image = StatefulImage::default();
+    if let Some(image) = app.image.as_mut() {
+        f.render_stateful_widget(stateful_image, area, image);
+    } else {
+        f.render_widget(detail_paragraph, inner_area);
+    }
 }
 
 // Display basic information like name, race, and gender.

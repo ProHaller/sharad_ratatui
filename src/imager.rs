@@ -1,16 +1,16 @@
 use crate::settings::Settings;
 use async_openai::{
+    Client,
     config::OpenAIConfig,
     types::{CreateImageRequestArgs, ImageModel, ImageResponseFormat, ImageSize},
-    Client,
 };
-use std::error::Error;
 use std::process::Command;
-use tokio::time::{timeout, Duration};
+use std::{error::Error, path::PathBuf};
+use tokio::time::{Duration, timeout};
 
 // TODO: Provide an image viewer within the terminal for compatible terminals.
 
-pub async fn generate_and_save_image(prompt: &str) -> Result<(), Box<dyn Error>> {
+pub async fn generate_and_save_image(prompt: &str) -> Result<PathBuf, Box<dyn Error>> {
     let settings = Settings::load()?;
     let api_key = match settings.openai_api_key {
         Some(key) => key,
@@ -53,7 +53,7 @@ pub async fn generate_and_save_image(prompt: &str) -> Result<(), Box<dyn Error>>
         #[cfg(target_os = "linux")]
         Command::new("xdg-open").arg(path_str).spawn()?;
 
-        Ok(())
+        Ok(path.clone())
     } else {
         Err("No image file path received.".into())
     }

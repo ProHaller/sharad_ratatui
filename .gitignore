@@ -11,3 +11,6 @@ temp.rs
 todo.rs
 .DS_Store
 .DS_Store
+hello.py
+pyproject.toml
+uv.lock
