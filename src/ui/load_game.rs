@@ -4,17 +4,17 @@ use super::main_menu::{render_art, render_header, render_status, render_title};
 use super::utils::centered_rect;
 use crate::app::App;
 use ratatui::{
+    Frame,
     layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::*,
-    Frame,
 };
 
 pub fn draw_load_game(f: &mut Frame, app: &App) {
     let size = f.area();
 
-    if size.width < 100 || size.height < 50 {
+    if size.width < 20 || size.height < 10 {
         let warning = Paragraph::new("Terminal too small. Please resize.")
             .style(Style::default().fg(Color::Red))
             .alignment(Alignment::Center);

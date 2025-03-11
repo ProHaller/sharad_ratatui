@@ -6,17 +6,17 @@ use crate::ui::main_menu::{
 };
 use crate::ui::utils::centered_rect;
 use ratatui::{
+    Frame,
     layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::*,
-    Frame,
 };
 
 pub fn draw_settings(f: &mut Frame, app: &mut App) {
     let size = f.area();
 
-    if size.width < 101 || size.height < 50 {
+    if size.width < 20 || size.height < 10 {
         let warning = Paragraph::new("Terminal too small. Please resize.")
             .style(Style::default().fg(Color::Red))
             .alignment(Alignment::Center);

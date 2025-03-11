@@ -42,8 +42,8 @@ pub mod ui;
 pub mod utils;
 
 // Constants for minimum terminal size.
-const MIN_WIDTH: u16 = 100;
-const MIN_HEIGHT: u16 = 40;
+const MIN_WIDTH: u16 = 20;
+const MIN_HEIGHT: u16 = 10;
 
 // Function to ensure the terminal size meets minimum requirements.
 fn ensure_minimum_terminal_size() -> io::Result<()> {
@@ -239,6 +239,12 @@ async fn run_app(
             }
             Some(image_path) = image_receiver.recv() => {
                 let mut app = app.lock().await;
+                let current = app.current_game.clone().unwrap();
+                let mut game_state = current.lock().await;
+                game_state.image_path = Some(image_path.clone());
+                app.current_game = Some(Arc::new(Mutex::new(game_state.clone())));
+                app.save_current_game().await;
+
                 let _ = app.load_image_from_file(image_path);
             }
             Some(error) = error_receiver.recv() => {

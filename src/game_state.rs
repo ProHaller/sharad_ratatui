@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 // Import necessary modules from the local crate and external crates.
 use crate::character::{CharacterSheet, CharacterSheetUpdate};
 use serde::{Deserialize, Serialize};
@@ -9,6 +11,7 @@ pub struct GameState {
     pub thread_id: String,
     pub main_character_sheet: Option<CharacterSheet>,
     pub save_name: String,
+    pub image_path: Option<PathBuf>,
     pub characters: Vec<CharacterSheet>,
 }
 
@@ -20,6 +23,7 @@ impl std::fmt::Debug for GameState {
             .field("assistant_id", &self.assistant_id)
             .field("thread_id", &self.thread_id)
             .field("character_sheet", &self.main_character_sheet)
+            .field("image_path", &self.image_path)
             .finish() // Properly ends the debug struct helper.
     }
 }

@@ -9,8 +9,9 @@ use ratatui::{
     text::{Line, Span},
     widgets::*,
 };
-use ratatui_image::StatefulImage;
+use ratatui_image::{Resize, StatefulImage};
 use std::cell::RefCell;
+use std::path::PathBuf;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -30,7 +31,7 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
     let size = f.area();
     *app.debug_info.borrow_mut() = format!("Terminal size: {}x{}", size.width, size.height);
 
-    if size.width < 101 || size.height < 50 {
+    if size.width < 20 || size.height < 10 {
         let warning = Paragraph::new("Terminal too small. Please resize.")
             .style(Style::default().fg(Color::Red))
             .alignment(Alignment::Center);
@@ -163,13 +164,12 @@ fn draw_character_sheet(
 }
 
 pub fn draw_detailed_info(app: &mut App, f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
-    let highlighted = &app.highlighted_section;
     // Early return if HighlightedSection::None
-    if matches!(highlighted, HighlightedSection::None) {
+    if matches!(&app.highlighted_section, HighlightedSection::None) {
         return;
     }
 
-    let detail_text = match highlighted {
+    let detail_text = match &app.highlighted_section {
         HighlightedSection::None => unreachable!(), // We've already returned in this case
         HighlightedSection::Backstory => sheet.backstory.clone(),
         HighlightedSection::InventoryItem(_) => sheet
@@ -183,7 +183,7 @@ pub fn draw_detailed_info(app: &mut App, f: &mut Frame, sheet: &CharacterSheet, 
             .values()
             .map(|contact| {
                 format!(
-                    "{}: Loyalty {}, Connection {}\n{}",
+                    "{}: Loyalty {}, Connection {}\n\n{}",
                     contact.name, contact.loyalty, contact.connection, contact.description
                 )
             })
@@ -195,10 +195,11 @@ pub fn draw_detailed_info(app: &mut App, f: &mut Frame, sheet: &CharacterSheet, 
     let content_height = wrapped_text.len() as u16 + 2; // +2 for top and bottom margins
 
     // Calculate the size and position of the floating frame
-    let width = area.width.saturating_sub(4).max(20); // Minimum width of 20
-    let height = content_height.min(area.height.saturating_sub(4));
-    let x = area.x + (area.width - width) / 2;
-    let y = area.y + (area.height - height) / 2;
+    let width = (area.width - (f.area().width - 2) / 3).saturating_sub(4); // Minimum width of 20
+    let height = content_height.max(f.area().height.saturating_sub(2));
+    // let x = area.x + (area.width - width) / 2;
+    let x = (f.area().width / 3) + 2;
+    let y = 1;
 
     let details_area = Rect::new(x, y, width, height);
 
@@ -206,7 +207,7 @@ pub fn draw_detailed_info(app: &mut App, f: &mut Frame, sheet: &CharacterSheet, 
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::White))
-        .title(match highlighted {
+        .title(match &app.highlighted_section {
             HighlightedSection::Backstory => " Backstory ",
             HighlightedSection::InventoryItem(_) => " Inventory Details ",
             HighlightedSection::Contact(_) => " Contact Details ",
@@ -227,10 +228,20 @@ pub fn draw_detailed_info(app: &mut App, f: &mut Frame, sheet: &CharacterSheet, 
         .wrap(Wrap { trim: true });
 
     // Render the content inside the block
-    // f.render_widget(detail_paragraph, inner_area);
-    let stateful_image = StatefulImage::default();
+    let mut stateful_image = StatefulImage::default();
     if let Some(image) = app.image.as_mut() {
-        f.render_stateful_widget(stateful_image, area, image);
+        let image_rect = Rect::new(1, 1, (f.area().width + 2) / 3, f.area().height - 2);
+        let image_block = Block::default()
+            .borders(Borders::ALL)
+            .title(format!(" {} ", sheet.name));
+
+        let resize: Resize = Resize::Fit(None);
+        stateful_image = stateful_image.resize(resize);
+
+        f.render_widget(detail_paragraph, inner_area);
+        f.render_widget(Clear, image_rect);
+        f.render_widget(image_block.clone(), image_rect);
+        f.render_stateful_widget(stateful_image, image_block.inner(image_rect), image);
     } else {
         f.render_widget(detail_paragraph, inner_area);
     }
@@ -339,7 +350,7 @@ fn draw_attributes(
     let table = Table::new(rows, vec![Constraint::Percentage(25); 4])
         .block(Block::default().borders(Borders::ALL).title(" Attributes "))
         .style(Style::default().fg(Color::White))
-        .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+        .row_highlight_style(Style::default().add_modifier(Modifier::BOLD))
         .column_spacing(1);
 
     f.render_widget(table, area);
@@ -389,7 +400,7 @@ fn draw_derived_attributes(
                 .title(" Derived Attributes "),
         )
         .style(Style::default().fg(Color::White))
-        .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+        .row_highlight_style(Style::default().add_modifier(Modifier::BOLD))
         .column_spacing(1);
 
     f.render_widget(table, area);
@@ -457,7 +468,7 @@ fn draw_skills(
     )
     .block(Block::default().borders(Borders::ALL).title(" Skills "))
     .style(Style::default().fg(Color::White))
-    .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+    .row_highlight_style(Style::default().add_modifier(Modifier::BOLD))
     .column_spacing(1);
 
     f.render_widget(table, area);
@@ -708,7 +719,7 @@ fn create_table<'a>(info: &'a [String], title: &'a str) -> Table<'a> {
                 .title(format!(" {} ", title)),
         )
         .style(Style::default().fg(Color::White))
-        .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+        .row_highlight_style(Style::default().add_modifier(Modifier::BOLD))
         .highlight_symbol(">>")
         .column_spacing(1)
 }

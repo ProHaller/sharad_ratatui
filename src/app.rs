@@ -6,7 +6,7 @@ use crate::audio::{self, play_audio};
 use crate::character::CharacterSheet;
 use crate::cleanup::cleanup;
 use crate::error::{AppError, ErrorMessage, ShadowrunError};
-use crate::game_state::GameState;
+use crate::game_state::{self, GameState};
 use crate::imager;
 use crate::message::{self, AIMessage, GameMessage, Message, MessageType};
 use crate::save::SaveManager;
@@ -1334,6 +1334,7 @@ impl App {
                 main_character_sheet: None,
                 characters: Vec::new(),
                 save_name: save_name.clone(),
+                image_path: None,
             }));
 
             self.current_game = Some(new_game_state);
@@ -1379,6 +1380,13 @@ impl App {
     }
 
     pub fn load_image_from_file(&mut self, path: PathBuf) -> Result<(), ShadowrunError> {
+        if let Some(current_game_state) = self.current_game.clone() {
+            let path_clone = path.clone();
+            tokio::spawn(async move {
+                current_game_state.lock().await.image_path = Some(path_clone);
+            });
+        };
+
         let picker: Picker = Picker::from_query_stdio()?;
 
         // Open and decode the image file
@@ -1386,7 +1394,6 @@ impl App {
             Ok(image) => {
                 // Store the image with the new resize protocol
                 self.image = Some(picker.new_resize_protocol(image));
-                self.add_debug_message(format!("Image loaded from file: {}", path.display()));
                 Ok(())
             }
             Err(err) => {
@@ -1473,6 +1480,9 @@ impl App {
             .ok_or("No current game")?;
         // Extract the save name from the path
         game_state.save_name = save_name.to_string();
+        if let Some(path) = game_state.image_path.clone() {
+            self.load_image_from_file(path)?;
+        }
 
         self.update_save_name(game_state.save_name.clone()).await;
         if self.ai_client.is_none() {

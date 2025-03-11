@@ -125,17 +125,12 @@ impl GameAI {
             .map_err(ShadowrunError::from)?;
 
         self.add_message_to_thread(&thread_id, formatted_message)
-            .await
-            .map_err(ShadowrunError::from)?;
+            .await?;
 
-        let run = self
-            .create_run(&thread_id, &assistant_id)
-            .await
-            .map_err(ShadowrunError::from)?;
+        let run = self.create_run(&thread_id, &assistant_id).await?;
 
         self.wait_for_run_completion(&thread_id, &run.id, game_state)
-            .await
-            .map_err(ShadowrunError::from)?;
+            .await?;
 
         let response = self.get_latest_message(&thread_id).await?;
 
@@ -411,8 +406,10 @@ impl GameAI {
 
         let image_sender = self.image_sender.clone();
         tokio::spawn(async move {
-            let path = generate_and_save_image(&args["image_generation_prompt"].to_string()).await;
-            let _ = image_sender.send(path.unwrap());
+            let path = generate_and_save_image(&args["image_generation_prompt"].to_string())
+                .await
+                .expect("Something went wrong generating image");
+            let _ = image_sender.send(path);
         });
 
         Ok("Generating image...".to_string())

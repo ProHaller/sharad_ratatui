@@ -1,16 +1,16 @@
 use crate::app::{App, InputMode};
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Position},
     prelude::Alignment,
     style::{Color, Style},
     widgets::*,
-    Frame,
 };
 
 pub fn draw_save_name_input(f: &mut Frame, app: &App) {
     let size = f.area();
 
-    if size.width < 100 || size.height < 50 {
+    if size.width < 20 || size.height < 10 {
         let warning = Paragraph::new("Terminal too small. Please resize.")
             .style(Style::default().fg(Color::Red))
             .alignment(Alignment::Center);
