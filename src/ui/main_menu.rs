@@ -7,19 +7,19 @@ use crate::app::App; // Main application struct.
 use crate::app_state::AppState; // Enum for managing application state.
 use crate::message::MessageType; // Enum for different types of messages.
 use ratatui::{
+    Frame,
     // Library for building text-based user interfaces.
     layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::*,
-    Frame,
 };
 
 // Function to draw the main menu interface.
 pub fn draw_main_menu(f: &mut Frame, app: &App) {
     let size = f.area();
 
-    if size.width < 100 || size.height < 50 {
+    if size.width < 20 || size.height < 10 {
         let warning = Paragraph::new("Terminal too small. Please resize.")
             .style(Style::default().fg(Color::Red))
             .alignment(Alignment::Center);

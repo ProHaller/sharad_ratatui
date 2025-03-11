@@ -2,26 +2,27 @@ use crate::character::{
     CharacterSheet, CharacterSheetBuilder, CharacterSheetUpdate, Contact, Item, MatrixAttributes,
     Quality, Race, Skills, UpdateOperation,
 };
-use crate::dice::{perform_dice_roll, DiceRollRequest, DiceRollResponse};
+use crate::dice::{DiceRollRequest, DiceRollResponse, perform_dice_roll};
 use crate::error::{AIError, AppError, GameError, ShadowrunError};
 use crate::game_state::GameState;
-use crate::image::generate_and_save_image;
+use crate::imager::generate_and_save_image;
 use crate::message;
 use crate::message::{Message, MessageType};
 use async_openai::types::{RequiredAction, RunToolCallObject};
 use async_openai::{
+    Client,
     config::OpenAIConfig,
     types::{
         CreateMessageRequestArgs, CreateRunRequestArgs, CreateThreadRequestArgs, MessageContent,
         MessageRole, Model, RunObject, RunStatus, SubmitToolOutputsRunRequest, ToolsOutputs,
     },
-    Client,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, mpsc};
 use tokio::time::{Duration, Instant};
 
 // TODO: Create a character_sheet_updater routine that verifies the character sheet is updated
@@ -39,6 +40,7 @@ pub struct GameAI {
     pub client: Client<OpenAIConfig>,
     pub conversation_state: Arc<Mutex<Option<GameConversationState>>>,
     pub debug_callback: Arc<dyn Fn(String) + Send + Sync>,
+    pub image_sender: mpsc::UnboundedSender<PathBuf>,
 }
 
 impl Clone for GameAI {
@@ -47,6 +49,7 @@ impl Clone for GameAI {
             client: self.client.clone(),
             conversation_state: Arc::clone(&self.conversation_state),
             debug_callback: Arc::clone(&self.debug_callback),
+            image_sender: self.image_sender.clone(),
         }
     }
 }
@@ -55,6 +58,7 @@ impl GameAI {
     pub async fn new(
         api_key: String,
         debug_callback: impl Fn(String) + Send + Sync + 'static,
+        image_sender: mpsc::UnboundedSender<PathBuf>,
     ) -> Result<Self, AppError> {
         let openai_config = OpenAIConfig::new().with_api_key(api_key);
         let client = Client::with_config(openai_config);
@@ -63,6 +67,7 @@ impl GameAI {
             client,
             conversation_state: Arc::new(Mutex::new(None)),
             debug_callback: Arc::new(debug_callback),
+            image_sender,
         })
     }
 
@@ -120,17 +125,12 @@ impl GameAI {
             .map_err(ShadowrunError::from)?;
 
         self.add_message_to_thread(&thread_id, formatted_message)
-            .await
-            .map_err(ShadowrunError::from)?;
+            .await?;
 
-        let run = self
-            .create_run(&thread_id, &assistant_id)
-            .await
-            .map_err(ShadowrunError::from)?;
+        let run = self.create_run(&thread_id, &assistant_id).await?;
 
         self.wait_for_run_completion(&thread_id, &run.id, game_state)
-            .await
-            .map_err(ShadowrunError::from)?;
+            .await?;
 
         let response = self.get_latest_message(&thread_id).await?;
 
@@ -330,7 +330,7 @@ impl GameAI {
                     return Err(ShadowrunError::Game(format!(
                         "Unknown function: {}",
                         tool_call.function.name
-                    )))
+                    )));
                 }
             };
 
@@ -403,8 +403,13 @@ impl GameAI {
         tool_call: &RunToolCallObject,
     ) -> Result<String, ShadowrunError> {
         let args: Value = serde_json::from_str(&tool_call.function.arguments)?;
+
+        let image_sender = self.image_sender.clone();
         tokio::spawn(async move {
-            let _ = generate_and_save_image(&args["image_generation_prompt"].to_string()).await;
+            let path = generate_and_save_image(&args["image_generation_prompt"].to_string())
+                .await
+                .expect("Something went wrong generating image");
+            let _ = image_sender.send(path);
         });
 
         Ok("Generating image...".to_string())
@@ -627,7 +632,7 @@ impl GameAI {
             _ => {
                 return Err(ShadowrunError::Game(
                     "Invalid inventory operation".to_string(),
-                ))
+                ));
             }
         };
 
@@ -695,7 +700,7 @@ impl GameAI {
                 _ => {
                     return Err(ShadowrunError::Game(
                         "Invalid qualities operation".to_string(),
-                    ))
+                    ));
                 }
             },
         };
@@ -801,7 +806,7 @@ impl GameAI {
                 _ => {
                     return Err(ShadowrunError::Game(
                         "Invalid contacts operation".to_string(),
-                    ))
+                    ));
                 }
             },
         };
@@ -858,7 +863,7 @@ impl GameAI {
                 _ => {
                     return Err(ShadowrunError::Game(
                         "Invalid augmentations operation".to_string(),
-                    ))
+                    ));
                 }
             },
         };

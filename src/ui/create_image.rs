@@ -1,17 +1,17 @@
 use crate::app::{App, InputMode};
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Position},
     prelude::Alignment,
     style::{Color, Style},
     widgets::*,
-    Frame,
 };
 
 // Function to draw the image creation interface in the application.
 pub fn draw_create_image(f: &mut Frame, app: &App) {
     let size = f.area();
 
-    if size.width < 100 || size.height < 50 {
+    if size.width < 20 || size.height < 10 {
         let warning = Paragraph::new("Terminal too small. Please resize.")
             .style(Style::default().fg(Color::Red))
             .alignment(Alignment::Center);

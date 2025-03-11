@@ -1,13 +1,13 @@
 use crate::ai::{GameAI, GameConversationState};
-use crate::ai_response::{create_user_message, UserMessage};
+use crate::ai_response::{UserMessage, create_user_message};
 use crate::app_state::AppState;
 use crate::assistant::{create_assistant, delete_assistant, get_assistant_id};
 use crate::audio::{self, play_audio};
 use crate::character::CharacterSheet;
 use crate::cleanup::cleanup;
-use crate::error::{send_global_error, AppError, ErrorMessage, ShadowrunError};
-use crate::game_state::GameState;
-use crate::image;
+use crate::error::{AppError, ErrorMessage, ShadowrunError};
+use crate::game_state::{self, GameState};
+use crate::imager;
 use crate::message::{self, AIMessage, GameMessage, Message, MessageType};
 use crate::save::SaveManager;
 use crate::settings::Settings;
@@ -21,19 +21,22 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use futures::stream::{FuturesOrdered, StreamExt};
 use ratatui::widgets::ListState;
 use ratatui::{layout::Alignment, text::Line};
+use ratatui_image::picker::Picker;
+use ratatui_image::protocol::StatefulProtocol;
 use std::borrow::BorrowMut;
 use std::cell::RefCell;
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use tokio::sync::{mpsc, Mutex};
-use tui_input::backend::crossterm::EventHandler;
+use tokio::sync::{Mutex, mpsc};
 use tui_input::Input;
 use tui_input::InputRequest;
+use tui_input::backend::crossterm::EventHandler;
 
 pub enum AppCommand {
     LoadGame(String),
@@ -112,6 +115,7 @@ pub struct App {
 
     // Asynchronous message handling
     ai_sender: mpsc::UnboundedSender<AIMessage>,
+    image_sender: mpsc::UnboundedSender<PathBuf>,
     pub command_sender: mpsc::UnboundedSender<AppCommand>,
 
     // UI components and helpers
@@ -122,11 +126,14 @@ pub struct App {
 
     // Last known data
     pub last_known_character_sheet: Option<CharacterSheet>,
+    // Image state
+    pub image: Option<StatefulProtocol>,
 }
 
 impl App {
     pub async fn new(
         ai_sender: mpsc::UnboundedSender<AIMessage>,
+        image_sender: mpsc::UnboundedSender<PathBuf>,
     ) -> (Self, mpsc::UnboundedReceiver<AppCommand>) {
         let (command_sender, command_receiver) = mpsc::unbounded_channel();
 
@@ -176,6 +183,7 @@ impl App {
             message_line_counts: Vec::new(),
             clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
             ai_sender,
+            image_sender,
             current_game_response: None,
             last_user_message: None,
             backspace_counter: false,
@@ -185,6 +193,7 @@ impl App {
             current_save_name: Arc::new(RwLock::new(String::new())),
             last_known_character_sheet: None,
             is_recording: Arc::new(AtomicBool::new(false)),
+            image: None,
         };
 
         (app, command_receiver)
@@ -209,7 +218,8 @@ impl App {
             let _ = ai_sender.send(message::AIMessage::Debug(message));
         };
 
-        self.ai_client = Some(GameAI::new(api_key, debug_callback).await?);
+        self.ai_client =
+            Some(GameAI::new(api_key, debug_callback, self.image_sender.clone()).await?);
 
         Ok(())
     }
@@ -940,8 +950,10 @@ impl App {
                 KeyCode::Enter => {
                     let prompt = self.image_prompt.value().to_owned();
 
+                    // let image_sender = self.image_sender.clone();
                     tokio::spawn(async move {
-                        let _ = image::generate_and_save_image(&prompt).await;
+                        let _path = imager::generate_and_save_image(&prompt).await;
+                        // let _ = image_sender.send(path.unwrap());
                     });
                     self.add_message(Message::new(
                         MessageType::System,
@@ -1322,6 +1334,7 @@ impl App {
                 main_character_sheet: None,
                 characters: Vec::new(),
                 save_name: save_name.clone(),
+                image_path: None,
             }));
 
             self.current_game = Some(new_game_state);
@@ -1362,6 +1375,30 @@ impl App {
                 } else {
                     self.add_debug_message("Character sheet updated successfully".to_string());
                 }
+            }
+        }
+    }
+
+    pub fn load_image_from_file(&mut self, path: PathBuf) -> Result<(), ShadowrunError> {
+        if let Some(current_game_state) = self.current_game.clone() {
+            let path_clone = path.clone();
+            tokio::spawn(async move {
+                current_game_state.lock().await.image_path = Some(path_clone);
+            });
+        };
+
+        let picker: Picker = Picker::from_query_stdio()?;
+
+        // Open and decode the image file
+        match image::ImageReader::open(&path)?.decode() {
+            Ok(image) => {
+                // Store the image with the new resize protocol
+                self.image = Some(picker.new_resize_protocol(image));
+                Ok(())
+            }
+            Err(err) => {
+                // Convert ImageError to ShadowrunError using the implemented From trait
+                Err(ShadowrunError::from(err))
             }
         }
     }
@@ -1443,6 +1480,9 @@ impl App {
             .ok_or("No current game")?;
         // Extract the save name from the path
         game_state.save_name = save_name.to_string();
+        if let Some(path) = game_state.image_path.clone() {
+            self.load_image_from_file(path)?;
+        }
 
         self.update_save_name(game_state.save_name.clone()).await;
         if self.ai_client.is_none() {
