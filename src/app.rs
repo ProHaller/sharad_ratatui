@@ -6,7 +6,7 @@ use crate::audio::{self, play_audio};
 use crate::character::CharacterSheet;
 use crate::cleanup::cleanup;
 use crate::error::{AppError, ErrorMessage, ShadowrunError};
-use crate::game_state::{self, GameState};
+use crate::game_state::GameState;
 use crate::imager;
 use crate::message::{self, AIMessage, GameMessage, Message, MessageType};
 use crate::save::SaveManager;
@@ -1013,7 +1013,6 @@ impl App {
     }
 
     fn cycle_highlighted_section(&mut self) {
-        // This is a basic implementation. You might want to adjust this based on your layout.
         self.highlighted_section = match self.highlighted_section {
             HighlightedSection::None => HighlightedSection::Backstory,
             HighlightedSection::Backstory => {
@@ -1023,6 +1022,12 @@ impl App {
                     .and_then(|sheet| sheet.inventory.iter().next())
                 {
                     HighlightedSection::InventoryItem(name.clone())
+                } else if let Some((name, _)) = self
+                    .last_known_character_sheet
+                    .as_ref()
+                    .and_then(|sheet| sheet.contacts.iter().next())
+                {
+                    HighlightedSection::Contact(name.clone())
                 } else {
                     HighlightedSection::None
                 }
@@ -1241,7 +1246,7 @@ impl App {
                 let mut game_state = game_state.lock().await;
                 ai.send_message(&formatted_message, &mut game_state)
                     .await
-                    .map_err(|e| AppError::Shadowrun(ShadowrunError::from(e)))
+                    .map_err(AppError::Shadowrun)
             } else if self.ai_client.is_none() {
                 Err(AppError::AIClientNotInitialized)
             } else {

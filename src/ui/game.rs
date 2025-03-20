@@ -170,7 +170,6 @@ pub fn draw_detailed_info(app: &mut App, f: &mut Frame, sheet: &CharacterSheet, 
     }
 
     let detail_text = match &app.highlighted_section {
-        HighlightedSection::None => unreachable!(), // We've already returned in this case
         HighlightedSection::Backstory => sheet.backstory.clone(),
         HighlightedSection::InventoryItem(_) => sheet
             .inventory
@@ -189,6 +188,7 @@ pub fn draw_detailed_info(app: &mut App, f: &mut Frame, sheet: &CharacterSheet, 
             })
             .collect::<Vec<_>>()
             .join("\n\n"),
+        HighlightedSection::None => unreachable!(), // We've already returned in this case
     };
     // Wrap the text to fit within the area width
     let wrapped_text = textwrap::wrap(&detail_text, area.width as usize - 4); // -4 for margins

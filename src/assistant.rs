@@ -1,18 +1,18 @@
 use async_openai::types::{ResponseFormat, ResponseFormatJsonSchema};
-use include_dir::{include_dir, Dir, DirEntry};
+use include_dir::{Dir, DirEntry, include_dir};
 use serde_json::Value;
 use std::error::Error;
 use std::fs::File;
 use std::io::Read;
 
-use crate::save::SAVE_DIR;
+use crate::save::get_save_dir;
 use async_openai::{
+    Client,
     config::OpenAIConfig,
     types::{
         AssistantObject, AssistantTools, AssistantsApiResponseFormatOption,
         CreateAssistantRequestArgs, FunctionObject,
     },
-    Client,
 };
 
 // TODO: Make sure the model is formating properly the dialogue responses in French and english.
@@ -127,7 +127,9 @@ pub async fn create_assistant(
 }
 
 pub fn get_assistant_id(save_name: &str) -> Result<String, Box<dyn Error>> {
-    let file_path = format!("{}/{}.json", SAVE_DIR, save_name);
+    let file_path = get_save_dir()
+        .join(save_name)
+        .join(format!("{}.json", save_name));
     let mut file = File::open(file_path)?;
 
     // Read the file content into a string

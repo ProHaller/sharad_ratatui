@@ -10,10 +10,9 @@ use crossterm::{
     execute,                      // Helper macro to execute terminal commands.
     terminal::{EnterAlternateScreen, SetSize, enable_raw_mode}, // Terminal manipulation utilities.
 };
-use image::ImageReader;
 use ratatui::{Terminal, backend::CrosstermBackend};
-use ratatui_image::picker::Picker;
-use std::io::Cursor;
+use self_update::backends::github::{ReleaseList, Update};
+use semver::Version;
 use std::panic;
 use std::path::PathBuf;
 // Panic handling for cleanup.

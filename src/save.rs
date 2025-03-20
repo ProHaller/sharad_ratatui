@@ -2,11 +2,21 @@ use crate::game_state::GameState;
 
 use chrono::Local;
 use serde::{Deserialize, Serialize};
-use std::fs::{create_dir_all, read_dir, remove_file, write, File, OpenOptions};
+use std::fs::{File, OpenOptions, create_dir_all, read_dir, remove_file, write};
 use std::io::Write;
-use std::path::Path;
 
-pub const SAVE_DIR: &str = "./data/save";
+use dir;
+use std::path::PathBuf;
+
+pub fn get_save_dir() -> PathBuf {
+    let mut path = dir::home_dir().unwrap_or("./".into());
+    path.push("sharad");
+    path.push("save");
+    if !&path.exists() {
+        let _ = create_dir_all(&path);
+    }
+    path
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SaveManager {
@@ -29,7 +39,7 @@ impl SaveManager {
     }
 
     pub fn scan_save_files() -> Vec<String> {
-        let save_dir = Path::new(SAVE_DIR);
+        let save_dir = get_save_dir();
         if !save_dir.exists() {
             return Vec::new();
         }
@@ -49,7 +59,9 @@ impl SaveManager {
     }
 
     pub fn load_from_file(mut self, save_name: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let path = format!("{}/{}.json", SAVE_DIR, save_name);
+        let file_name = format!("{}.json", save_name);
+        let path = get_save_dir();
+        path.join(file_name);
         let file = File::open(path).map_err(|e| {
             eprintln!("Failed to open file: {}", e);
             e
@@ -72,12 +84,14 @@ impl SaveManager {
     }
 
     pub fn save(self) -> Result<(), std::io::Error> {
-        create_dir_all(SAVE_DIR)?;
         let current_save = self.current_save.ok_or(std::io::Error::new(
             std::io::ErrorKind::Other,
             "There is no game to save",
         ))?;
-        let save_path = format!("{}/{}.json", SAVE_DIR, current_save.save_name);
+        let save_file = format!("{}.json", current_save.save_name);
+        let save_dir = get_save_dir();
+        let save_path = save_dir.join(&current_save.save_name).join(save_file);
+
         let serialized = serde_json::to_string_pretty(&current_save)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
         write(save_path, serialized)?;
@@ -85,12 +99,15 @@ impl SaveManager {
     }
 
     pub fn delete_save(mut self, save_name: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let save_path = format!("{}/{}.json", SAVE_DIR, save_name);
-        let audio_folder_path = format!("./data/logs/{}", save_name);
+        let save_file = format!("{}.json", save_name);
+        let save_dir = get_save_dir();
+        let save_path = save_dir.join(save_file);
+        let save_logs = save_dir.join("logs");
+        let audio_folder_path = save_logs.join("audio");
 
         match remove_file(save_path) {
             Ok(()) => {
-                delete_folder_contents(&audio_folder_path)?;
+                delete_folder_contents(&audio_folder_path.to_str().unwrap_or(""))?;
                 self.available_saves = Self::scan_save_files();
                 Ok(())
             }

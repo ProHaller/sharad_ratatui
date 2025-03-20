@@ -1,9 +1,11 @@
 [package]
 name = "sharad_ratatui"
-version = "0.1.38"
+version = "0.2.0"
 edition = "2024"
 repository = "https://github.com/prohaller/sharad_ratatui"
 authors = ["Roland Haller <haller.roland@gmail.com>"]
+description = "A terminal based Shadowrun RPG Using AI as a Game Master"
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [package.metadata.wix]
 upgrade-guid = "B2B70952-3CBF-481B-9517-372DB1D3025C"
@@ -19,6 +21,7 @@ copypasta = "0.10.1"
 cpal = "0.15.3"
 crossterm = "0.28.1"
 ctrlc = "3.4.5"
+dir = "0.1.2"
 futures = "0.3.30"
 hound = "3.5.1"
 hyphenation = "0.8.4"
