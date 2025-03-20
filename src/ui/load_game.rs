@@ -46,9 +46,12 @@ pub fn draw_load_game(f: &mut Frame, app: &App) {
 
 fn render_console(f: &mut Frame, app: &App, area: Rect) {
     let console_text = if app.save_manager.available_saves.is_empty() {
-        "No save files found in ./data/save/"
+        format!(
+            "No save files found in {}/sharad/data/save/",
+            dir::home_dir().unwrap().display()
+        )
     } else {
-        "Select a save file to load"
+        "Select a save file to load".to_string()
     };
 
     let console = Paragraph::new(console_text)
@@ -68,9 +71,10 @@ fn render_load_game_menu(f: &mut Frame, app: &App, area: Rect) {
             .iter()
             .enumerate()
             .map(|(i, save)| {
+                let save_name = save.file_stem().unwrap().to_string_lossy().to_string();
                 if Some(i) == app.load_game_menu_state.selected() {
                     Line::from(Span::styled(
-                        format!("{}. {}", (i + 1), save),
+                        format!("{}. {}", (i + 1), save_name),
                         Style::default()
                             .fg(if !app.backspace_counter {
                                 Color::Yellow
@@ -80,7 +84,7 @@ fn render_load_game_menu(f: &mut Frame, app: &App, area: Rect) {
                             .add_modifier(Modifier::BOLD),
                     ))
                 } else {
-                    Line::from(Span::raw(format!("{}. {}", (i + 1), save)))
+                    Line::from(Span::raw(format!("{}. {}", (i + 1), save_name)))
                 }
             })
             .collect()

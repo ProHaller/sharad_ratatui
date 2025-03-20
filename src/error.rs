@@ -6,6 +6,9 @@ use std::time::Instant;
 use thiserror::Error;
 use tokio::sync::{Mutex, mpsc};
 
+// TODO: Add Jeremy Chone Error trick https://www.youtube.com/watch?v=j-VQCYP7wyw
+// pub type Result<T> = core::result::Result<T, Error>;
+
 static GLOBAL_ERROR_HANDLER: Lazy<Arc<Mutex<Option<ErrorHandler>>>> =
     Lazy::new(|| Arc::new(Mutex::new(None)));
 

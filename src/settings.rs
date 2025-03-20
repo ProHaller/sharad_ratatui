@@ -1,9 +1,10 @@
 use async_openai::error::OpenAIError;
 // Import necessary libraries and modules for API interaction, file I/O, and serialization.
-use async_openai::{config::OpenAIConfig, Client};
+use async_openai::{Client, config::OpenAIConfig};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{self, Write};
+use std::path::PathBuf;
 
 use crate::error::send_global_error;
 
@@ -43,26 +44,30 @@ impl Settings {
 
     // Load settings from a default file path.
     pub fn load() -> io::Result<Self> {
-        Self::load_settings_from_file("./data/settings.json")
+        let home_dir = dir::home_dir().expect("Failed to get home directory");
+        let path = home_dir.join("sharad").join("data").join("settings.json");
+        Self::load_settings_from_file(path)
     }
 
     // Save current settings to a default file path.
     pub fn save(&self) -> io::Result<()> {
-        std::fs::create_dir_all("./data")?; // Ensure the data directory exists.
-        self.save_to_file("./data/settings.json")
+        let home_dir = dir::home_dir().expect("Failed to get home directory");
+        let path = home_dir.join("sharad").join("data").join("settings.json");
+        std::fs::create_dir_all(&path)?; // Ensure the data directory exists.
+        self.save_to_file(path)
     }
 
     // Load settings from a specified file path.
-    pub fn load_settings_from_file(path: &str) -> io::Result<Self> {
+    pub fn load_settings_from_file(path: PathBuf) -> io::Result<Self> {
         let data = fs::read_to_string(path)?; // Read settings from file.
         let settings = serde_json::from_str(&data)?; // Deserialize JSON data into settings.
         Ok(settings)
     }
 
     // Save current settings to a specified file path.
-    pub fn save_to_file(&self, path: &str) -> io::Result<()> {
+    pub fn save_to_file(&self, path: PathBuf) -> io::Result<()> {
         let data = serde_json::to_string_pretty(self)?; // Serialize settings into pretty JSON format.
-        if let Some(parent) = std::path::Path::new(path).parent() {
+        if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?; // Create the directory if it doesn't exist.
         }
         let mut file = fs::File::create(path)?; // Create or overwrite the file.

@@ -11,10 +11,10 @@ use ratatui::{
 };
 use ratatui_image::{Resize, StatefulImage};
 use std::cell::RefCell;
-use std::path::PathBuf;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
+// TODO: Wrap this into another type
 thread_local! {
     static CACHED_LAYOUTS: RefCell<Option<(Rect, Vec<Rect>, Vec<Rect>)>> = RefCell::new(None);
 }

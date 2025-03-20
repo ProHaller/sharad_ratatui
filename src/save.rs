@@ -2,14 +2,14 @@ use crate::game_state::GameState;
 
 use chrono::Local;
 use serde::{Deserialize, Serialize};
-use std::fs::{File, OpenOptions, create_dir_all, read_dir, remove_file, write};
+use std::fs::{File, OpenOptions, create_dir_all, read_dir, remove_dir_all, remove_file, write};
 use std::io::Write;
 
 use dir;
 use std::path::PathBuf;
 
-pub fn get_save_dir() -> PathBuf {
-    let mut path = dir::home_dir().unwrap_or("./".into());
+pub fn get_save_base_dir() -> PathBuf {
+    let mut path = dir::home_dir().expect("Failed to get home directory");
     path.push("sharad");
     path.push("save");
     if !&path.exists() {
@@ -20,7 +20,7 @@ pub fn get_save_dir() -> PathBuf {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SaveManager {
-    pub available_saves: Vec<String>,
+    pub available_saves: Vec<PathBuf>,
     pub current_save: Option<GameState>,
 }
 
@@ -38,31 +38,37 @@ impl SaveManager {
         }
     }
 
-    pub fn scan_save_files() -> Vec<String> {
-        let save_dir = get_save_dir();
-        if !save_dir.exists() {
-            return Vec::new();
-        }
+    pub fn scan_save_files() -> Vec<PathBuf> {
+        let save_dir = get_save_base_dir();
+        Self::get_save_paths(save_dir)
+    }
 
-        read_dir(save_dir)
+    fn get_save_paths(last_dir: PathBuf) -> Vec<PathBuf> {
+        let mut path_vec: Vec<PathBuf> = Vec::new();
+        let reccursive_path_vec: Vec<PathBuf> = read_dir(last_dir)
             .unwrap()
             .filter_map(|entry| {
                 let entry = entry.ok()?;
                 let path = entry.path();
                 if path.is_file() && path.extension()? == "json" {
-                    path.file_stem()?.to_str().map(String::from)
+                    Some(path)
+                } else if path.is_dir() {
+                    path_vec.extend(Self::get_save_paths(path));
+                    None
                 } else {
                     None
                 }
             })
-            .collect()
+            .collect();
+        path_vec.extend(reccursive_path_vec);
+        path_vec
     }
 
-    pub fn load_from_file(mut self, save_name: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let file_name = format!("{}.json", save_name);
-        let path = get_save_dir();
-        path.join(file_name);
-        let file = File::open(path).map_err(|e| {
+    pub fn load_from_file(
+        mut self,
+        save_path: &PathBuf,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let file = File::open(save_path).map_err(|e| {
             eprintln!("Failed to open file: {}", e);
             e
         })?;
@@ -88,45 +94,46 @@ impl SaveManager {
             std::io::ErrorKind::Other,
             "There is no game to save",
         ))?;
-        let save_file = format!("{}.json", current_save.save_name);
-        let save_dir = get_save_dir();
-        let save_path = save_dir.join(&current_save.save_name).join(save_file);
+        if let Some(save_path) = current_save.save_path.clone() {
+            create_dir_all(save_path.parent().unwrap())?;
+            let serialized = serde_json::to_string_pretty(&current_save)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            write(save_path, serialized)?;
+        } else {
+            let save_dir = get_save_base_dir();
+            let game_save_dir = save_dir.join(&current_save.save_name);
+            create_dir_all(&game_save_dir)?;
+            let mut current_save = current_save;
+            current_save.save_path =
+                Some(game_save_dir.join(format!("{}.json", current_save.save_name)));
+            let serialized = serde_json::to_string_pretty(&current_save)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            write(current_save.save_path.unwrap(), serialized)?;
+        }
 
-        let serialized = serde_json::to_string_pretty(&current_save)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
-        write(save_path, serialized)?;
         Ok(())
     }
 
-    pub fn delete_save(mut self, save_name: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let save_file = format!("{}.json", save_name);
-        let save_dir = get_save_dir();
-        let save_path = save_dir.join(save_file);
-        let save_logs = save_dir.join("logs");
-        let audio_folder_path = save_logs.join("audio");
-
-        match remove_file(save_path) {
-            Ok(()) => {
-                delete_folder_contents(&audio_folder_path.to_str().unwrap_or(""))?;
+    pub fn delete_save(mut self, save_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(save_dir) = save_path.parent() {
+            if save_dir != get_save_base_dir() {
+                remove_dir_all(save_dir)?;
                 self.available_saves = Self::scan_save_files();
-                Ok(())
+                return Ok(());
+            } else {
+                remove_file(save_path)?;
+                return Ok(());
             }
-            Err(e) => Err(Box::new(e)),
-        }
+        } else {
+            panic!("This save should not be here! {}", save_path.display());
+        };
     }
 }
 
-fn delete_folder_contents(folder_path: &str) -> Result<(), Box<dyn std::error::Error>> {
-    for entry in std::fs::read_dir(folder_path)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir() {
-            delete_folder_contents(path.to_str().unwrap())?;
-            std::fs::remove_dir(path)?;
-        } else {
-            std::fs::remove_file(path)?;
-        }
-    }
-    std::fs::remove_dir(folder_path)?;
-    Ok(())
+#[test]
+fn test_get_save_paths() {
+    let base_save_dir = get_save_base_dir();
+    let save_files = SaveManager::get_save_paths(base_save_dir);
+    println!("{:#?}", save_files);
+    assert!(!save_files.is_empty());
 }

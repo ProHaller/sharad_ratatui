@@ -22,13 +22,19 @@ pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
         .split(popup_layout[1])[1]
 }
 
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 const SPINNER_CHARS: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 pub struct Spinner {
     current_frame: Arc<AtomicUsize>,
+}
+
+impl Default for Spinner {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Spinner {

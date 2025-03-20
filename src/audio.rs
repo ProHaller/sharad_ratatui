@@ -1,8 +1,11 @@
-use crate::error::{AIError, AudioError};
+use crate::{
+    error::{AIError, AudioError},
+    save::get_save_base_dir,
+};
 use async_openai::{
+    Audio,
     config::OpenAIConfig,
     types::{CreateSpeechRequestArgs, CreateTranscriptionRequestArgs, SpeechModel, Voice},
-    Audio,
 };
 use chrono::Local;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -14,7 +17,6 @@ use std::sync::{Arc, Mutex};
 use std::{fs::File, path::PathBuf};
 use std::{
     fs::{self},
-    path::Path,
     thread,
     time::Duration,
 };
@@ -41,16 +43,14 @@ pub async fn generate_audio(
         .await
         .map_err(AIError::OpenAI)?;
 
+    let saves_dir = get_save_base_dir();
+    let save_dir = saves_dir.join(save_name);
+    let logs_dir = save_dir.join("logs");
+    fs::create_dir_all(&logs_dir).map_err(AIError::Io)?;
+
     let uuid = Uuid::new_v4();
-    let file_name = format!(
-        "{}_{}_{}.mp3",
-        save_name,
-        Local::now().format("%Y%m%d_%H%M%S"),
-        uuid
-    );
-    let folder_path = Path::new("./data/logs").join(save_name);
-    let file_path = folder_path.join(file_name);
-    fs::create_dir_all(&folder_path).map_err(AIError::Io)?;
+    let file_name = format!("{}_{}.mp3", Local::now().format("%Y-%m-%d_%H:%M:%S"), uuid);
+    let file_path = logs_dir.join(file_name);
     response
         .save(file_path.to_str().unwrap())
         .await
@@ -73,7 +73,7 @@ pub fn play_audio(file_path: PathBuf) -> Result<(), AIError> {
     Ok(())
 }
 
-const PATH: &str = "./data/recording.wav";
+// const PATH: &str = "./sharad/data/recording.wav";
 
 pub fn record_audio(is_recording: Arc<AtomicBool>) -> Result<(), AudioError> {
     let host = cpal::default_host();
@@ -86,7 +86,9 @@ pub fn record_audio(is_recording: Arc<AtomicBool>) -> Result<(), AudioError> {
         .map_err(|e| AudioError::AudioRecordingError(e.to_string()))?;
 
     let spec = wav_spec_from_config(&config);
-    let writer = hound::WavWriter::create(PATH, spec)?;
+    let home_dir = dir::home_dir().expect("Failed to get home directory");
+    let path = home_dir.join("sharad").join("data").join("recording.wav");
+    let writer = hound::WavWriter::create(path, spec)?;
     let writer = Arc::new(Mutex::new(Some(writer)));
     let writer_clone = writer.clone();
 
@@ -122,7 +124,7 @@ pub fn record_audio(is_recording: Arc<AtomicBool>) -> Result<(), AudioError> {
         sample_format => {
             return Err(AudioError::AudioRecordingError(format!(
                 "Unsupported sample format '{sample_format}'"
-            )))
+            )));
         }
     };
 
@@ -195,7 +197,10 @@ pub async fn transcribe_audio(
     client: &async_openai::Client<OpenAIConfig>,
 ) -> Result<String, AudioError> {
     let audio = Audio::new(client);
-    let recording_path = PATH;
+
+    let home_dir = dir::home_dir().expect("Failed to get home directory");
+    let path = home_dir.join("sharad").join("data").join("recording.wav");
+    let recording_path = path;
 
     match audio
         .transcribe(

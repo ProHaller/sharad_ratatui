@@ -4,8 +4,8 @@ use async_openai::{
     config::OpenAIConfig,
     types::{CreateImageRequestArgs, ImageModel, ImageResponseFormat, ImageSize},
 };
-use std::process::Command;
 use std::{error::Error, path::PathBuf};
+use std::{path, process::Command};
 use tokio::time::{Duration, timeout};
 
 // TODO: Provide an image viewer within the terminal for compatible terminals.
@@ -36,7 +36,9 @@ pub async fn generate_and_save_image(prompt: &str) -> Result<PathBuf, Box<dyn Er
         return Err("No image URLs received.".into());
     }
 
-    let paths = response.save("./data").await?;
+    let home_dir = dir::home_dir().expect("Failed to get home directory");
+    let path = home_dir.join("sharad").join("data");
+    let paths = response.save(path).await?;
     if let Some(path) = paths.first() {
         // Convert the path to a string
         let path_str = path.to_str().ok_or("Invalid path")?;

@@ -1,11 +1,10 @@
 use async_openai::types::{ResponseFormat, ResponseFormatJsonSchema};
 use include_dir::{Dir, DirEntry, include_dir};
 use serde_json::Value;
-use std::error::Error;
 use std::fs::File;
 use std::io::Read;
+use std::{error::Error, path::PathBuf};
 
-use crate::save::get_save_dir;
 use async_openai::{
     Client,
     config::OpenAIConfig,
@@ -126,11 +125,8 @@ pub async fn create_assistant(
     Ok(assistant)
 }
 
-pub fn get_assistant_id(save_name: &str) -> Result<String, Box<dyn Error>> {
-    let file_path = get_save_dir()
-        .join(save_name)
-        .join(format!("{}.json", save_name));
-    let mut file = File::open(file_path)?;
+pub fn get_assistant_id(save_name: &PathBuf) -> Result<String, Box<dyn Error>> {
+    let mut file = File::open(save_name)?;
 
     // Read the file content into a string
     let mut content = String::new();

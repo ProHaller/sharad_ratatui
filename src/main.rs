@@ -179,8 +179,8 @@ async fn run_app(
                         app.handle_ai_response(result).await;
                         app.scroll_to_bottom();
                     },
-                    AppCommand::LoadGame(save_name) => {
-                        if let Err(e) = app.lock().await.load_game(&save_name).await {
+                    AppCommand::LoadGame(save_path) => {
+                        if let Err(e) = app.lock().await.load_game(&save_path).await {
                             app.lock().await.add_message(Message::new( MessageType::System, format!("Failed to load game: {:#?}", e)));
                         }
                     },
@@ -247,7 +247,7 @@ async fn run_app(
                 let mut game_state = current.lock().await;
                 game_state.image_path = Some(image_path.clone());
                 app.current_game = Some(Arc::new(Mutex::new(game_state.clone())));
-                app.save_current_game().await;
+                app.save_current_game().await.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
                 let _ = app.load_image_from_file(image_path);
             }

@@ -148,6 +148,7 @@ impl std::fmt::Debug for Message {
 // Enumeration for AI-generated messages with different purposes.
 pub enum AIMessage {
     Debug(String),
+    // TODO: Try Box this to avoid the size difference warning
     Response(Result<GameMessage, AppError>),
 }
 

@@ -9,7 +9,7 @@ use crate::error::{AppError, ErrorMessage, ShadowrunError};
 use crate::game_state::GameState;
 use crate::imager;
 use crate::message::{self, AIMessage, GameMessage, Message, MessageType};
-use crate::save::SaveManager;
+use crate::save::{SaveManager, get_save_base_dir};
 use crate::settings::Settings;
 use crate::settings_state::SettingsState;
 use crate::ui::utils::Spinner;
@@ -39,9 +39,10 @@ use tui_input::InputRequest;
 use tui_input::backend::crossterm::EventHandler;
 
 pub enum AppCommand {
-    LoadGame(String),
+    LoadGame(PathBuf),
     StartNewGame(String),
     ProcessMessage(String),
+    // TODO: Try to Box this to avoid the size difference warning
     AIResponse(Result<GameMessage, AppError>),
     ApiKeyValidationResult(bool),
     TranscriptionResult(String, TranscriptionTarget),
@@ -140,8 +141,9 @@ impl App {
         let mut main_menu_state = ListState::default();
         main_menu_state.select(Some(0));
 
-        let settings =
-            Settings::load_settings_from_file("./data/settings.json").unwrap_or_default();
+        let home_dir = dir::home_dir().expect("Failed to get home directory");
+        let path = home_dir.join("sharad").join("data").join("settings.json");
+        let settings = Settings::load_settings_from_file(path).unwrap_or_default();
         let settings_state = SettingsState::from_settings(&settings);
 
         let mut load_game_menu_state = ListState::default();
@@ -736,7 +738,9 @@ impl App {
                 "API Key Validated, Thank you.".to_string(),
             ));
         }
-        if let Err(e) = self.settings.save_to_file("./data/settings.json") {
+        let home_dir = dir::home_dir().expect("Failed to get home directory");
+        let path = home_dir.join("sharad").join("data").join("settings.json");
+        if let Err(e) = self.settings.save_to_file(path) {
             self.add_debug_message(format!("Failed to save settings: {:#?}", e));
         }
     }
@@ -1091,7 +1095,9 @@ impl App {
         self.settings.debug_mode = self.settings_state.selected_options[5] == 1;
 
         // Save settings to file
-        if let Err(e) = self.settings.save_to_file("./data/settings.json") {
+        let home_dir = dir::home_dir().expect("Failed to get home directory");
+        let path = home_dir.join("sharad").join("data").join("settings.json");
+        if let Err(e) = self.settings.save_to_file(path) {
             eprintln!("Failed to save settings: {:#?}", e);
         }
     }
@@ -1339,6 +1345,11 @@ impl App {
                 main_character_sheet: None,
                 characters: Vec::new(),
                 save_name: save_name.clone(),
+                save_path: Some(
+                    get_save_base_dir()
+                        .join(&save_name)
+                        .join(format!("{}.json", &save_name)),
+                ),
                 image_path: None,
             }));
 
@@ -1475,18 +1486,20 @@ impl App {
         self.load_game_menu_state.select(Some(next));
     }
 
-    pub async fn load_game(&mut self, save_name: &str) -> Result<(), Box<dyn std::error::Error>> {
-        self.save_manager = self.save_manager.clone().load_from_file(save_name)?;
+    pub async fn load_game(
+        &mut self,
+        save_path: &PathBuf,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.save_manager = self.save_manager.clone().load_from_file(save_path)?;
 
-        let mut game_state = self
+        let game_state = self
             .save_manager
             .current_save
             .clone()
             .ok_or("No current game")?;
-        // Extract the save name from the path
-        game_state.save_name = save_name.to_string();
-        if let Some(path) = game_state.image_path.clone() {
-            self.load_image_from_file(path)?;
+        // game_state.save_name = save_name.to_string();
+        if let Some(image_path) = game_state.image_path.clone() {
+            self.load_image_from_file(image_path)?;
         }
 
         self.update_save_name(game_state.save_name.clone()).await;

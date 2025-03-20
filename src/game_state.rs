@@ -11,6 +11,7 @@ pub struct GameState {
     pub thread_id: String,
     pub main_character_sheet: Option<CharacterSheet>,
     pub save_name: String,
+    pub save_path: Option<PathBuf>,
     pub image_path: Option<PathBuf>,
     pub characters: Vec<CharacterSheet>,
 }
