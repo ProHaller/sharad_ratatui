@@ -171,16 +171,8 @@ impl GameAI {
                 }
                 RunStatus::RequiresAction => {
                     self.add_debug_message("Run requires action".to_string());
-                    let required_action_result = self
-                        .handle_required_action(thread_id, run_id, &run, game_state)
-                        .await;
-                    match required_action_result {
-                        Ok(()) => return Ok(()),
-                        Err(e) => {
-                            let _ = self.cancel_run(thread_id, run_id).await;
-                            return Err(e);
-                        }
-                    }
+                    self.handle_required_action(thread_id, run_id, &run, game_state)
+                        .await?;
                 }
                 RunStatus::Failed | RunStatus::Cancelled | RunStatus::Expired => {
                     self.add_debug_message("Run failed, cancelled, or expired".to_string());

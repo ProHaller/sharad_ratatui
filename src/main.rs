@@ -19,7 +19,7 @@ use std::path::PathBuf;
 use std::{io, sync::Arc, time::Duration}; // Standard I/O and concurrency utilities.
 use tokio::sync::mpsc; // Asynchronous message passing channel.
 use tokio::time::sleep;
-use tokio::{sync::Mutex, time::Instant};
+use tokio::{fs::copy, sync::Mutex, time::Instant};
 
 // Modules are declared which should be assumed to be part of the application architecture.
 pub mod ai;
@@ -242,14 +242,19 @@ async fn run_app(
                 }
             }
             Some(image_path) = image_receiver.recv() => {
+                let image_name = image_path.file_name().unwrap();
                 let mut app = app.lock().await;
                 let current = app.current_game.clone().unwrap();
                 let mut game_state = current.lock().await;
-                game_state.image_path = Some(image_path.clone());
+                let save_dir = game_state.save_path.clone().unwrap().parent().unwrap().to_path_buf();
+                let new_image_path = save_dir.join(image_name);
+                copy(image_path, &new_image_path).await?;
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                game_state.image_path = Some(new_image_path.clone().to_path_buf());
                 app.current_game = Some(Arc::new(Mutex::new(game_state.clone())));
                 app.save_current_game().await.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
-                let _ = app.load_image_from_file(image_path);
+                let _ = app.load_image_from_file(new_image_path);
             }
             Some(error) = error_receiver.recv() => {
                 app.lock().await.add_error(error);
