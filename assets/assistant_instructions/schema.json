@@ -27,19 +27,11 @@
                 },
                 "gender": {
                   "type": "string",
-                  "enum": [
-                    "NonBinary",
-                    "Male",
-                    "Female"
-                  ],
+                  "enum": ["Female", "Male", "NonBinary"],
                   "description": "Gender of the speaker. Must be 'NonBinary' for the Narrator."
                 }
               },
-              "required": [
-                "index",
-                "name",
-                "gender"
-              ],
+              "required": ["index", "name", "gender"],
               "additionalProperties": false
             }
           },
@@ -57,25 +49,16 @@
                   "description": "Must contain at least one line. For Game master narration: Narrator's text, including interracting with the player, dialogue tags, action breaks, and general narration but never direct speaker speech. For speech: Direct dialogue of a character but only direct speech."
                 }
               },
-              "required": [
-                "speaker_index",
-                "text"
-              ],
+              "required": ["speaker_index", "text"],
               "additionalProperties": false
             }
           }
         },
-        "required": [
-          "speakers",
-          "dialogue"
-        ],
+        "required": ["speakers", "dialogue"],
         "additionalProperties": false
       }
     },
-    "required": [
-      "crunch",
-      "fluff"
-    ],
+    "required": ["crunch", "fluff"],
     "additionalProperties": false
   }
 }
