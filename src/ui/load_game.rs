@@ -14,31 +14,44 @@ use ratatui::{
 pub fn draw_load_game(f: &mut Frame, app: &App) {
     let size = f.area();
 
-    if size.width < 20 || size.height < 10 {
+    if size.width < 40 || size.height < 20 {
         let warning = Paragraph::new("Terminal too small. Please resize.")
             .style(Style::default().fg(Color::Red))
             .alignment(Alignment::Center);
         f.render_widget(warning, size);
         return;
     }
+    let saves_length = app.save_manager.available_saves.len() as u16;
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints(
             [
-                Constraint::Max(3),
-                Constraint::Max(20),
-                Constraint::Max(7),
-                Constraint::Max(3),
-                Constraint::Min(app.save_manager.available_saves.len() as u16),
-                Constraint::Max(3),
+                Constraint::Max(1),
+                Constraint::Min(if size.height - saves_length - 20 > 20 {
+                    20
+                } else {
+                    0
+                }),
+                Constraint::Min(if (size.height - saves_length - 7) > 7 {
+                    7
+                } else {
+                    0
+                }),
+                Constraint::Max(1),
+                Constraint::Min(saves_length + 2),
+                Constraint::Max(1),
             ]
             .as_ref(),
         )
         .split(f.area());
 
     render_header(f, chunks[0]);
-    render_art(f, chunks[1]);
-    render_title(f, chunks[2]);
+    if size.height - saves_length - 18 > 20 {
+        render_art(f, chunks[1]);
+    }
+    if size.height - saves_length - 18 > 10 {
+        render_title(f, chunks[2]);
+    }
     render_console(f, app, chunks[3]);
     render_load_game_menu(f, app, chunks[4]);
     render_status(f, app, chunks[5]);

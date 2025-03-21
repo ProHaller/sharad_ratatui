@@ -27,19 +27,21 @@ pub fn draw_settings(f: &mut Frame, app: &mut App) {
         .direction(Direction::Vertical)
         .constraints(
             [
-                Constraint::Max(3),
-                Constraint::Max(20),
-                Constraint::Max(7),
-                Constraint::Fill(1),
-                Constraint::Fill(2),
-                Constraint::Max(3),
+                Constraint::Max(1),
+                Constraint::Min(if size.height - 20 > 20 { 20 } else { 0 }),
+                Constraint::Min(if size.height - 7 > 7 { 7 } else { 0 }),
+                Constraint::Max(1),
+                Constraint::Min(10),
+                Constraint::Max(1),
             ]
             .as_ref(),
         )
         .split(f.area());
 
     render_header(f, chunks[0]);
-    render_art(f, chunks[1]);
+    if (size.height - 20) > 20 {
+        render_art(f, chunks[1]);
+    }
     render_title(f, chunks[2]);
     render_console(f, app, chunks[3]);
     render_settings(f, app, chunks[4]);

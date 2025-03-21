@@ -19,7 +19,7 @@ use ratatui::{
 pub fn draw_main_menu(f: &mut Frame, app: &App) {
     let size = f.area();
 
-    if size.width < 20 || size.height < 10 {
+    if size.width < 40 || size.height < 20 {
         let warning = Paragraph::new("Terminal too small. Please resize.")
             .style(Style::default().fg(Color::Red))
             .alignment(Alignment::Center);
@@ -31,12 +31,12 @@ pub fn draw_main_menu(f: &mut Frame, app: &App) {
         .direction(Direction::Vertical)
         .constraints(
             [
-                Constraint::Max(3),
-                Constraint::Max(20),
-                Constraint::Max(7),
-                Constraint::Fill(1),
-                Constraint::Min(6),
-                Constraint::Max(3),
+                Constraint::Max(1),
+                Constraint::Min(if size.height - 20 > 20 { 20 } else { 0 }),
+                Constraint::Min(if size.height - 7 > 7 { 7 } else { 0 }),
+                Constraint::Max(1),
+                Constraint::Min(10),
+                Constraint::Max(2),
             ]
             .as_ref(),
         )
@@ -44,7 +44,9 @@ pub fn draw_main_menu(f: &mut Frame, app: &App) {
 
     // Render individual parts of the main menu using the layout defined above.
     render_header(f, chunks[0]);
-    render_art(f, chunks[1]);
+    if (size.height / 2) > 20 {
+        render_art(f, chunks[1]);
+    }
     render_title(f, chunks[2]);
     render_console(f, app, chunks[3]);
     render_menu(f, app, chunks[4]);
@@ -65,8 +67,8 @@ pub fn render_art(f: &mut Frame, area: Rect) {
     let outer_block = Block::default().style(Style::default().fg(Color::DarkGray));
     f.render_widget(outer_block, area);
 
-    let center_x = area.x + (area.width - 80) / 2; // Calculate center x for inner rectangle.
-    let center_y = area.y + (area.height - 18) / 2; // Calculate center y for inner rectangle.
+    let center_x = area.x + (area.width.saturating_sub(80)) / 2; // Calculate center x for inner rectangle.
+    let center_y = area.y + (area.height.saturating_sub(18)) / 2; // Calculate center y for inner rectangle.
     let inner_rect = Rect::new(center_x, center_y, 80, 18);
 
     let inner_block = Block::default()
