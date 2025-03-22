@@ -71,14 +71,14 @@ pub struct CharacterSheet {
     // Economic and Social Information
     #[serde(default)]
     pub nuyen: u32,
-    pub lifestyle: String,
+    pub lifestyle: String, // TODO: Make this into a struct cf assets/lifestyle.md
     #[serde(default)]
     pub contacts: HashMap<String, Contact>,
     pub qualities: Vec<Quality>,
-    pub cyberware: Vec<String>,
-    pub bioware: Vec<String>,
+    pub cyberware: Vec<String>, // TODO: Make this a struct Cyberware
+    pub bioware: Vec<String>,   // TODO: Make this a struct Bioware
     #[serde(default)]
-    pub inventory: HashMap<String, Item>, // FIX: simplify this data structure to a simple HashMap
+    pub inventory: HashMap<String, Item>, // TODO: simplify this data structure to a simple HashMap
     pub matrix_attributes: Option<MatrixAttributes>,
 }
 
@@ -112,7 +112,9 @@ pub struct Contact {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Quality {
     pub name: String,
-    pub positive: bool, // Indicates if the quality is advantageous.
+    pub positive: bool,
+    // TODO: Add a description field
+    // pub description: String,
 }
 
 // Define a structure for matrix attributes, applicable if the character interacts with virtual environments.

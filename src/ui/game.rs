@@ -1,8 +1,9 @@
 use crate::app::{App, InputMode};
 use crate::character::CharacterSheet;
+use crate::descriptions::LIFESTYLE;
 use crate::message::{GameMessage, MessageType, UserMessage};
 use crate::ui::utils::spinner_frame;
-use ratatui::layout::Flex;
+use ratatui::layout::{Flex, Margin};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Position, Rect},
@@ -12,6 +13,7 @@ use ratatui::{
 };
 use ratatui_image::StatefulImage;
 use std::cell::RefCell;
+use std::cmp::min;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -28,6 +30,7 @@ pub enum HighlightedSection {
     Contact,
     Cyberware,
     Bioware,
+    Resources,
 }
 
 pub fn draw_in_game(f: &mut Frame, app: &mut App) {
@@ -213,6 +216,30 @@ pub fn draw_detailed_info(app: &mut App, f: &mut Frame, sheet: &CharacterSheet, 
             .iter()
             .flat_map(|bw| vec![Line::from(vec![Span::raw(bw)])])
             .collect::<Vec<_>>(),
+        HighlightedSection::Resources => vec![
+            Line::from(vec![
+                Span::styled("Nuyen: ", Style::default().fg(Color::Yellow)),
+                Span::styled(
+                    sheet.nuyen.to_string(),
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]),
+            Line::from(vec![Span::raw(
+                "The Nuyen (pronounced New Yen), symbol ¥, is the currency of Japan and the primary monetary unit of international trade. It replaced the older Yen as Japan's currency on June 1 2012 as part of the Yamato act. ",
+            )]),
+            Line::from(vec![
+                Span::styled("Lifestyle: ", Style::default().fg(Color::Yellow)),
+                Span::styled(
+                    sheet.lifestyle.to_string(),
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]),
+            Line::from(vec![Span::raw(LIFESTYLE)]),
+        ],
         HighlightedSection::None => unreachable!(),
     };
 
@@ -354,23 +381,42 @@ fn draw_attributes(
         ("MAGIC", sheet.magic.unwrap_or(0)),
         ("RESONANCE", sheet.resonance.unwrap_or(0)),
     ];
+    let max_area: usize = area.width as usize / 6;
+    let max_length =
+        if (attributes.iter().map(|(name, _)| name.len()).max().unwrap() + 1) > max_area {
+            3
+        } else {
+            attributes.iter().map(|(name, _)| name.len()).max().unwrap() + 1
+        };
 
     let rows: Vec<Row> = attributes
         .chunks(4)
         .map(|chunk| {
-            Row::new(chunk.iter().map(|(name, value)| {
-                Cell::from(Span::styled(
-                    format!("{}: {}", name, value),
-                    Style::default().fg(Color::Green),
-                ))
+            Row::new(chunk.iter().map(|(attr, value)| {
+                Cell::from(Line::from(vec![
+                    Span::styled(
+                        attr.split_at(min(attr.len(), max_length.max(3)))
+                            .0
+                            .to_string(),
+                        Style::default().fg(Color::Green),
+                    ),
+                    Span::raw(if attr.len() < max_length {
+                        " ".repeat(max_length - attr.len())
+                    } else {
+                        " ".to_string()
+                    }),
+                    Span::raw(value.to_string()),
+                ]))
             }))
         })
         .collect();
 
-    let table = Table::new(rows, vec![Constraint::Percentage(25); 4])
+    let table = Table::new(rows, [Constraint::Percentage(20); 4])
+        .flex(Flex::Center)
         .block(Block::default().borders(Borders::ALL).title(" Attributes "))
         .style(Style::default().fg(Color::White))
         .row_highlight_style(Style::default().add_modifier(Modifier::BOLD))
+        .header(Row::new(vec![""]))
         .column_spacing(1);
 
     f.render_widget(table, area);
@@ -568,15 +614,51 @@ fn draw_resources(
     f: &mut Frame,
     sheet: &CharacterSheet,
     area: Rect,
-    _highlighted: &HighlightedSection,
+    highlighted: &HighlightedSection,
 ) {
-    let info = vec![
-        format!("Lifestyle: {}", sheet.lifestyle),
-        format!("Nuyen: {}", sheet.nuyen),
-    ];
+    let header_cells = ["Nuyen", "Lifestyle"]
+        .iter()
+        .map(|h| Cell::from(*h).style(Style::default().fg(Color::Yellow)));
+    let header = Row::new(header_cells)
+        .style(Style::default())
+        .height(1)
+        .bottom_margin(0);
 
-    let resources_table = create_table(&info, "Resources");
-    f.render_widget(resources_table, area);
+    let nuyen = sheet.nuyen;
+    let life_style = sheet.lifestyle.to_string();
+    let rows: Vec<Row> = vec![Row::new(vec![
+        Cell::from(nuyen.to_string()),
+        Cell::from(life_style),
+    ])];
+    // let rows: Vec<Row> = sheet
+    //     .contacts
+    //     .iter()
+    //     .map(|(name, contact)| {
+    //         let style = Style::default().fg(Color::White);
+    //         let cells = vec![
+    //             Cell::from(name.clone()).style(style),
+    //             Cell::from(contact.loyalty.to_string()),
+    //             Cell::from(contact.connection.to_string()),
+    //         ];
+    //         Row::new(cells).height(1).bottom_margin(0)
+    //     })
+    //     .collect();
+
+    let widths = vec![Constraint::Max(10), Constraint::Fill(0)];
+    let table = Table::new(rows, widths).header(header).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(
+                if matches!(highlighted, HighlightedSection::Resources) {
+                    Color::Yellow
+                } else {
+                    Color::White
+                },
+            ))
+            .title(" Resources "),
+    );
+
+    f.render_widget(table, area);
 }
 
 fn draw_augmentations(
@@ -682,11 +764,7 @@ fn draw_contacts(
         })
         .collect();
 
-    let widths = vec![
-        Constraint::Percentage(30),
-        Constraint::Percentage(30),
-        Constraint::Percentage(40),
-    ];
+    let widths = vec![Constraint::Fill(0), Constraint::Max(8), Constraint::Max(11)];
     let table = Table::new(rows, widths).header(header).block(
         Block::default()
             .borders(Borders::ALL)
