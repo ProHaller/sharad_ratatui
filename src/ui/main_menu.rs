@@ -36,7 +36,7 @@ pub fn draw_main_menu(f: &mut Frame, app: &App) {
                 Constraint::Min(if size.height - 7 > 7 { 7 } else { 0 }),
                 Constraint::Max(1),
                 Constraint::Min(10),
-                Constraint::Max(2),
+                Constraint::Max(1),
             ]
             .as_ref(),
         )
@@ -44,7 +44,7 @@ pub fn draw_main_menu(f: &mut Frame, app: &App) {
 
     // Render individual parts of the main menu using the layout defined above.
     render_header(f, chunks[0]);
-    if (size.height / 2) > 20 {
+    if (size.height - 20) > 20 {
         render_art(f, chunks[1]);
     }
     render_title(f, chunks[2]);

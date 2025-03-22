@@ -46,10 +46,10 @@ pub fn draw_load_game(f: &mut Frame, app: &App) {
         .split(f.area());
 
     render_header(f, chunks[0]);
-    if size.height - saves_length - 18 > 20 {
+    if size.height - saves_length - 20 > 20 {
         render_art(f, chunks[1]);
     }
-    if size.height - saves_length - 18 > 10 {
+    if size.height - saves_length - 7 > 7 {
         render_title(f, chunks[2]);
     }
     render_console(f, app, chunks[3]);
