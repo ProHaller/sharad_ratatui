@@ -78,7 +78,7 @@ pub struct CharacterSheet {
     pub cyberware: Vec<String>,
     pub bioware: Vec<String>,
     #[serde(default)]
-    pub inventory: HashMap<String, Item>,
+    pub inventory: HashMap<String, Item>, // FIX: simplify this data structure to a simple HashMap
     pub matrix_attributes: Option<MatrixAttributes>,
 }
 
@@ -511,7 +511,7 @@ impl CharacterSheet {
                 return Err(format!(
                     "Invalid attribute-value pair for modification: {} {:#?}",
                     attribute, value
-                ))
+                ));
             }
         }
         Ok(())
@@ -537,7 +537,7 @@ impl CharacterSheet {
                 return Err(format!(
                     "Invalid attribute-value pair for addition: {} {:#?}",
                     attribute, value
-                ))
+                ));
             }
         }
         Ok(())
@@ -569,7 +569,7 @@ impl CharacterSheet {
                 return Err(format!(
                     "Invalid attribute-value pair for removal: {} {:#?}",
                     attribute, value
-                ))
+                ));
             }
         }
         Ok(())

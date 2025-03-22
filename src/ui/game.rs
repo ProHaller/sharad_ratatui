@@ -2,6 +2,7 @@ use crate::app::{App, InputMode};
 use crate::character::CharacterSheet;
 use crate::message::{GameMessage, MessageType, UserMessage};
 use crate::ui::utils::spinner_frame;
+use ratatui::layout::Flex;
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Position, Rect},
@@ -9,7 +10,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::*,
 };
-use ratatui_image::{Resize, StatefulImage};
+use ratatui_image::StatefulImage;
 use std::cell::RefCell;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
@@ -23,8 +24,10 @@ thread_local! {
 pub enum HighlightedSection {
     None,
     Backstory,
-    InventoryItem(String), // String is the item name
-    Contact(String),       // String is the contact name
+    Inventory,
+    Contact,
+    Cyberware,
+    Bioware,
 }
 
 pub fn draw_in_game(f: &mut Frame, app: &mut App) {
@@ -41,7 +44,7 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
 
     let (_main_chunk, left_chunk, game_info_area) = CACHED_LAYOUTS.with(|cache| {
         let mut cache = cache.borrow_mut();
-        if cache.as_ref().map_or(true, |&(area, _, _)| area != size) {
+        if cache.is_none() || cache.as_ref().unwrap().0 != size {
             let main_chunk = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
@@ -85,36 +88,28 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
                 if let Some(sheet) = &locked_game_state.main_character_sheet {
                     app.last_known_character_sheet = Some(sheet.clone());
 
-                    // Split the game_info_area into two parts: character sheet and details
-                    let character_sheet_area = game_info_area;
-
-                    draw_character_sheet(f, sheet, character_sheet_area, &app.highlighted_section);
+                    draw_character_sheet(f, sheet, game_info_area, &app.highlighted_section);
                     draw_detailed_info(app, f, sheet, left_chunk[0]);
                 } else {
                     app.last_known_character_sheet = None;
-                    let no_character = Paragraph::new("No character sheet available.")
+                    let center_rect = center_vertical(game_info_area, 5);
+                    let center_block = Block::bordered();
+                    let no_character = Paragraph::new("No character sheet available yet.")
                         .style(Style::default().fg(Color::Yellow))
-                        .alignment(Alignment::Center);
-                    f.render_widget(no_character, game_info_area);
+                        .alignment(Alignment::Center)
+                        .block(center_block.padding(Padding {
+                            left: 0,
+                            right: 0,
+                            top: 1,
+                            bottom: 0,
+                        }));
+                    f.render_widget(no_character, center_rect);
                 }
             }
             Err(_) => {
                 if let Some(last_sheet) = &app.last_known_character_sheet.clone() {
-                    let character_sheet_area = game_info_area;
-                    let details_area = Rect::new(
-                        character_sheet_area.x,
-                        character_sheet_area.bottom(),
-                        character_sheet_area.width,
-                        size.height - character_sheet_area.bottom(),
-                    );
-
-                    draw_character_sheet(
-                        f,
-                        last_sheet,
-                        character_sheet_area,
-                        &app.highlighted_section,
-                    );
-                    draw_detailed_info(app, f, last_sheet, details_area);
+                    draw_character_sheet(f, last_sheet, game_info_area, &app.highlighted_section);
+                    draw_detailed_info(app, f, last_sheet, left_chunk[0]);
                 } else {
                     let no_character = Paragraph::new("No character sheet available.")
                         .style(Style::default().fg(Color::Yellow))
@@ -170,33 +165,60 @@ pub fn draw_detailed_info(app: &mut App, f: &mut Frame, sheet: &CharacterSheet, 
     }
 
     let detail_text = match &app.highlighted_section {
-        HighlightedSection::Backstory => sheet.backstory.clone(),
-        HighlightedSection::InventoryItem(_) => sheet
+        HighlightedSection::Backstory => vec![Line::from(vec![Span::raw(&sheet.backstory)])],
+        HighlightedSection::Inventory => sheet
             .inventory
             .values()
-            .map(|item| format!("{}: {} (x{})", item.name, item.description, item.quantity))
-            .collect::<Vec<_>>()
-            .join("\n\n"),
-        HighlightedSection::Contact(_) => sheet
+            .map(|item| {
+                Line::from(vec![
+                    Span::styled(&item.name, Style::default().fg(Color::Yellow)),
+                    Span::raw(format!("(x{}): {} ", &item.quantity, &item.description)),
+                ])
+            })
+            .collect::<Vec<_>>(),
+        HighlightedSection::Contact => sheet
             .contacts
             .values()
-            .map(|contact| {
-                format!(
-                    "{}: Loyalty {}, Connection {}\n\n{}",
-                    contact.name, contact.loyalty, contact.connection, contact.description
-                )
+            .flat_map(|contact| {
+                vec![
+                    Line::from(vec![Span::styled(
+                        &contact.name,
+                        Style::default().fg(Color::Yellow),
+                    )]),
+                    Line::from(vec![
+                        Span::styled(
+                            format!(" Loyalty: {} ", &contact.loyalty),
+                            Style::default()
+                                .fg(Color::White)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                        Span::styled(
+                            format!("Connection: {} ", &contact.connection),
+                            Style::default()
+                                .fg(Color::White)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                    ]),
+                    Line::from(vec![Span::raw(&contact.description)]),
+                ]
             })
-            .collect::<Vec<_>>()
-            .join("\n\n"),
-        HighlightedSection::None => unreachable!(), // We've already returned in this case
+            .collect::<Vec<_>>(),
+        HighlightedSection::Cyberware => sheet
+            .cyberware
+            .iter()
+            .flat_map(|cw| vec![Line::from(vec![Span::raw(cw)])])
+            .collect::<Vec<_>>(),
+        HighlightedSection::Bioware => sheet
+            .bioware
+            .iter()
+            .flat_map(|bw| vec![Line::from(vec![Span::raw(bw)])])
+            .collect::<Vec<_>>(),
+        HighlightedSection::None => unreachable!(),
     };
-    // Wrap the text to fit within the area width
-    let wrapped_text = textwrap::wrap(&detail_text, area.width as usize - 4); // -4 for margins
-    let content_height = wrapped_text.len() as u16 + 2; // +2 for top and bottom margins
 
     // Calculate the size and position of the floating frame
     let width = (area.width - (f.area().width - 2) / 3).saturating_sub(4); // Minimum width of 20
-    let height = content_height.max(f.area().height.saturating_sub(2));
+    let height = f.area().height.saturating_sub(2);
     // let x = area.x + (area.width - width) / 2;
     let x = (f.area().width / 3) + 2;
     let y = 1;
@@ -209,8 +231,10 @@ pub fn draw_detailed_info(app: &mut App, f: &mut Frame, sheet: &CharacterSheet, 
         .border_style(Style::default().fg(Color::White))
         .title(match &app.highlighted_section {
             HighlightedSection::Backstory => " Backstory ",
-            HighlightedSection::InventoryItem(_) => " Inventory Details ",
-            HighlightedSection::Contact(_) => " Contact Details ",
+            HighlightedSection::Inventory => " Inventory Details ",
+            HighlightedSection::Contact => " Contact Details ",
+            HighlightedSection::Cyberware => " Cyberware Details ",
+            HighlightedSection::Bioware => " Bioware Details ",
             _ => " Details ",
         })
         .style(Style::default()); // Make the block opaque
@@ -222,26 +246,22 @@ pub fn draw_detailed_info(app: &mut App, f: &mut Frame, sheet: &CharacterSheet, 
     // Get the inner area of the block for the content
     let inner_area = block.inner(details_area);
 
-    let detail_paragraph = Paragraph::new(wrapped_text.join("\n"))
+    let detail_paragraph = Paragraph::new(detail_text) // Use
+        // the wrapped text as the Paragraph detail_text)
         .style(Style::default().fg(Color::White))
         .alignment(Alignment::Left)
         .wrap(Wrap { trim: true });
 
     // Render the content inside the block
-    let mut stateful_image = StatefulImage::default();
     if let Some(image) = app.image.as_mut() {
         let image_rect = Rect::new(1, 1, (f.area().width + 2) / 3, f.area().height - 2);
-        let image_block = Block::default()
-            .borders(Borders::ALL)
-            .title(format!(" {} ", sheet.name));
-
-        let resize: Resize = Resize::Fit(None);
-        stateful_image = stateful_image.resize(resize);
+        let image_block = Block::default().borders(Borders::ALL).title(" Portrait ");
 
         f.render_widget(detail_paragraph, inner_area);
         f.render_widget(Clear, image_rect);
-        f.render_widget(image_block.clone(), image_rect);
-        f.render_stateful_widget(stateful_image, image_block.inner(image_rect), image);
+        f.render_widget(&image_block, image_rect);
+        // FIX: How to make the first rendering faster? Pre-rendering?
+        f.render_stateful_widget(StatefulImage::new(), image_block.inner(image_rect), image);
     } else {
         f.render_widget(detail_paragraph, inner_area);
     }
@@ -563,7 +583,7 @@ fn draw_augmentations(
     f: &mut Frame,
     sheet: &CharacterSheet,
     area: Rect,
-    _highlighted: &HighlightedSection,
+    highlighted: &HighlightedSection,
 ) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
@@ -601,11 +621,33 @@ fn draw_augmentations(
         .collect();
 
     let cyberware_paragraph = Paragraph::new(cyberware_elements)
-        .block(Block::default().borders(Borders::ALL).title(" Cyberware "))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(if sheet.cyberware.is_empty() {
+                    Color::DarkGray
+                } else if matches!(highlighted, HighlightedSection::Cyberware) {
+                    Color::Yellow
+                } else {
+                    Color::White
+                }))
+                .title(" Cyberware "),
+        )
         .wrap(Wrap { trim: true });
 
     let bioware_paragraph = Paragraph::new(bioware_elements)
-        .block(Block::default().borders(Borders::ALL).title(" Bioware "))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(if sheet.bioware.is_empty() {
+                    Color::DarkGray
+                } else if matches!(highlighted, HighlightedSection::Bioware) {
+                    Color::Yellow
+                } else {
+                    Color::White
+                }))
+                .title(" Bioware "),
+        )
         .wrap(Wrap { trim: true });
 
     f.render_widget(cyberware_paragraph, chunks[0]);
@@ -649,7 +691,7 @@ fn draw_contacts(
         Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(
-                if matches!(highlighted, HighlightedSection::Contact(_)) {
+                if matches!(highlighted, HighlightedSection::Contact) {
                     Color::Yellow
                 } else {
                     Color::White
@@ -684,13 +726,13 @@ fn draw_inventory(
             Block::default()
                 .borders(Borders::ALL)
                 .title(" Inventory ")
-                .border_style(Style::default().fg(
-                    if matches!(highlighted, HighlightedSection::InventoryItem(_)) {
-                        Color::Yellow
-                    } else {
-                        Color::White
-                    },
-                )),
+                .border_style(Style::default().fg(if sheet.inventory.is_empty() {
+                    Color::DarkGray
+                } else if matches!(highlighted, HighlightedSection::Inventory) {
+                    Color::Yellow
+                } else {
+                    Color::White
+                })),
         )
         .widths([Constraint::Percentage(100)])
         .column_spacing(1);
@@ -1015,4 +1057,10 @@ fn parse_markdown(line: String, base_style: Style) -> Line<'static> {
     }
 
     Line::from(spans)
+}
+fn center_vertical(area: Rect, height: u16) -> Rect {
+    let [area] = Layout::vertical([Constraint::Length(height)])
+        .flex(Flex::Center)
+        .areas(area);
+    area
 }

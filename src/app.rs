@@ -1017,37 +1017,38 @@ impl App {
     }
 
     fn cycle_highlighted_section(&mut self) {
-        self.highlighted_section = match self.highlighted_section {
-            HighlightedSection::None => HighlightedSection::Backstory,
-            HighlightedSection::Backstory => {
-                if let Some((name, _)) = self
-                    .last_known_character_sheet
-                    .as_ref()
-                    .and_then(|sheet| sheet.inventory.iter().next())
-                {
-                    HighlightedSection::InventoryItem(name.clone())
-                } else if let Some((name, _)) = self
-                    .last_known_character_sheet
-                    .as_ref()
-                    .and_then(|sheet| sheet.contacts.iter().next())
-                {
-                    HighlightedSection::Contact(name.clone())
-                } else {
-                    HighlightedSection::None
-                }
-            }
-            HighlightedSection::InventoryItem(_) => {
-                if let Some((name, _)) = self
-                    .last_known_character_sheet
-                    .as_ref()
-                    .and_then(|sheet| sheet.contacts.iter().next())
-                {
-                    HighlightedSection::Contact(name.clone())
-                } else {
-                    HighlightedSection::None
-                }
-            }
-            HighlightedSection::Contact(_) => HighlightedSection::None,
+        let Some(character_sheet) = self.last_known_character_sheet.as_ref() else {
+            return;
+        };
+
+        let available_sections = [
+            Some(HighlightedSection::Backstory),
+            (!character_sheet.inventory.is_empty()).then_some(HighlightedSection::Inventory),
+            (!character_sheet.contacts.is_empty()).then_some(HighlightedSection::Contact),
+            (!character_sheet.cyberware.is_empty()).then_some(HighlightedSection::Cyberware),
+            (!character_sheet.bioware.is_empty()).then_some(HighlightedSection::Bioware),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+
+        if available_sections.is_empty() {
+            self.highlighted_section = HighlightedSection::None;
+            return;
+        }
+
+        let current_index = available_sections
+            .iter()
+            .position(|s| s == &self.highlighted_section)
+            .unwrap_or(usize::MAX);
+
+        let next_index =
+            (current_index.wrapping_add(1)) % (available_sections.len().wrapping_add(1));
+
+        self.highlighted_section = if next_index < available_sections.len() {
+            available_sections[next_index].clone()
+        } else {
+            HighlightedSection::None
         };
     }
 
@@ -1497,7 +1498,6 @@ impl App {
             .current_save
             .clone()
             .ok_or("No current game")?;
-        // game_state.save_name = save_name.to_string();
         if let Some(image_path) = game_state.image_path.clone() {
             self.load_image_from_file(image_path)?;
         }
