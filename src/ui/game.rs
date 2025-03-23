@@ -14,6 +14,7 @@ use ratatui::{
 };
 use ratatui_image::StatefulImage;
 use std::cell::RefCell;
+use std::char::ToLowercase;
 use std::cmp::min;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
@@ -277,18 +278,18 @@ pub fn draw_detailed_info(app: &mut App, f: &mut Frame, sheet: &CharacterSheet, 
                         ),
                     ]),
                     Line::from(vec![Span::raw(match attr.0 {
-                        "Strength" => STRENGTH,
-                        "Agility" => AGILITY,
-                        "Body" => BODY,
-                        "Logic" => LOGIC,
-                        "Intuition" => INTUITION,
-                        "Charisma" => CHARISMA,
-                        "Willpower" => WILLPOWER,
-                        "Reaction" => REACTION,
-                        "Edge" => EDGE,
-                        "Magic" => MAGIC,
-                        "Resonance" => RESONANCE,
-                        _ => unreachable!(),
+                        "STRENGTH" => STRENGTH,
+                        "AGILITY" => AGILITY,
+                        "BODY" => BODY,
+                        "LOGIC" => LOGIC,
+                        "INTUITION" => INTUITION,
+                        "CHARISMA" => CHARISMA,
+                        "WILLPOWER" => WILLPOWER,
+                        "REACTION" => REACTION,
+                        "EDGE" => EDGE,
+                        "MAGIC" => MAGIC,
+                        "RESONANCE" => RESONANCE,
+                        _ => "This should not appear…",
                     })]),
                 ]
             })
@@ -306,8 +307,33 @@ pub fn draw_detailed_info(app: &mut App, f: &mut Frame, sheet: &CharacterSheet, 
             ),
             Span::styled("D6", Style::default().fg(Color::White)),
         ])],
-        HighlightedSection::Skills => todo!(),
-        HighlightedSection::Qualities => todo!(),
+        HighlightedSection::Skills => vec![Line::from(vec![
+            Span::styled("Initiative: ", Style::default().fg(Color::Yellow)),
+            Span::styled(
+                sheet.derived_attributes.initiative.0.to_string(),
+                Style::default().fg(Color::White),
+            ),
+            Span::styled("+", Style::default().fg(Color::White)),
+            Span::styled(
+                sheet.derived_attributes.initiative.1.to_string(),
+                Style::default().fg(Color::White),
+            ),
+            Span::styled("D6", Style::default().fg(Color::White)),
+        ])],
+        HighlightedSection::Qualities => vec![Line::from(vec![
+            Span::styled("Initiative: ", Style::default().fg(Color::Yellow)),
+            Span::styled(
+                sheet.derived_attributes.initiative.0.to_string(),
+                Style::default().fg(Color::White),
+            ),
+            Span::styled("+", Style::default().fg(Color::White)),
+            Span::styled(
+                sheet.derived_attributes.initiative.1.to_string(),
+                Style::default().fg(Color::White),
+            ),
+            Span::styled("D6", Style::default().fg(Color::White)),
+        ])],
+
         HighlightedSection::None => unreachable!(),
     };
 

@@ -22,9 +22,9 @@ fn test_character_sheet_creation_from_json() {
     assert_eq!(character_sheet.name, "Alex 'Raven' Hayes");
     assert_eq!(character_sheet.race, Race::Human);
     assert_eq!(character_sheet.gender, "Male");
-    assert_eq!(character_sheet.body, 4);
-    assert_eq!(character_sheet.agility, 5);
-    assert_eq!(character_sheet.charisma, 3);
+    assert_eq!(character_sheet.attributes.body, 4);
+    assert_eq!(character_sheet.attributes.agility, 5);
+    assert_eq!(character_sheet.attributes.charisma, 3);
 
     // Check skills
     assert_eq!(character_sheet.skills.combat.get("Pistols"), Some(&4));
@@ -37,9 +37,11 @@ fn test_character_sheet_creation_from_json() {
     }));
 
     // Check contacts
-    assert!(character_sheet
-        .contacts
-        .contains_key("Jenna 'Fixer' Morgan"));
+    assert!(
+        character_sheet
+            .contacts
+            .contains_key("Jenna 'Fixer' Morgan")
+    );
 
     println!("Created Character Sheet: {:?}", character_sheet);
 }
@@ -194,10 +196,12 @@ fn test_character_sheet_update_from_json() {
 
     println!("{:#?}", character_sheet);
     // Step 7: Verify the changes
-    assert!(character_sheet
-        .qualities
-        .iter()
-        .any(|quality| quality.name == "Street Samurai" && quality.positive));
+    assert!(
+        character_sheet
+            .qualities
+            .iter()
+            .any(|quality| quality.name == "Street Samurai" && quality.positive)
+    );
 
     println!("Updated Character Sheet: {:?}", character_sheet);
 }

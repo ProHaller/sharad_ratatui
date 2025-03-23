@@ -1,10 +1,7 @@
 // Import necessary modules from external crates.
-use derive_more::Display;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fmt::{self, Display};
-
-use crate::descriptions::*;
+use std::fmt::{self};
 
 // TODO: Add descriptions everywhere
 
@@ -53,7 +50,7 @@ pub struct Attributes {
     pub edge: u8,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Display)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DerivedAttributes {
     pub initiative: (u8, u8),
     pub limits: Limits,
@@ -62,20 +59,20 @@ pub struct DerivedAttributes {
     pub edge_points: u8,
     pub armor: u8,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, Display)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Limits {
     pub physical: u8,
     pub mental: u8,
     pub social: u8,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Display)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Monitors {
     pub physical: u8,
     pub stun: u8,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Display)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Essence {
     pub current: f32,
     pub max: f32,
