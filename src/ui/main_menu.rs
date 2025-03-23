@@ -1,6 +1,7 @@
 // src/ui/main_menu.rs
 
 // Import required modules and structs from other parts of the application or external crates.
+use super::super::utils::{MIN_HEIGHT, MIN_WIDTH};
 use super::constants::{ART, TITLE}; // Constants like ART and TITLE for UI.
 use super::utils::centered_rect; // Utility function for centering rectangles in the UI.
 use crate::app::App; // Main application struct.
@@ -19,7 +20,7 @@ use ratatui::{
 pub fn draw_main_menu(f: &mut Frame, app: &App) {
     let size = f.area();
 
-    if size.width < 40 || size.height < 20 {
+    if size.width < MIN_WIDTH || size.height < MIN_HEIGHT {
         let warning = Paragraph::new("Terminal too small. Please resize.")
             .style(Style::default().fg(Color::Red))
             .alignment(Alignment::Center);

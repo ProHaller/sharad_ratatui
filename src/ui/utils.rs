@@ -26,6 +26,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 const SPINNER_CHARS: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+// const SPINNER_DICE: &[char] = &['⚀', '⚁', '⚂', '⚃', '⚄', '⚅',];
 
 pub struct Spinner {
     current_frame: Arc<AtomicUsize>,

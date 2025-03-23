@@ -1,7 +1,10 @@
 // Import necessary modules from external crates.
+use derive_more::Display;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fmt;
+use std::fmt::{self, Display};
+
+use crate::descriptions::*;
 
 // TODO: Add descriptions everywhere
 
@@ -28,6 +31,55 @@ impl fmt::Display for Race {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Magic {
+    pub magic: Option<u8>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Resonance {
+    pub resonance: Option<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Attributes {
+    pub body: u8,
+    pub agility: u8,
+    pub strength: u8,
+    pub reaction: u8,
+    pub willpower: u8,
+    pub intuition: u8,
+    pub charisma: u8,
+    pub logic: u8,
+    pub edge: u8,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Display)]
+pub struct DerivedAttributes {
+    pub initiative: (u8, u8),
+    pub limits: Limits,
+    pub monitors: Monitors,
+    pub essence: Essence,
+    pub edge_points: u8,
+    pub armor: u8,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, Display)]
+pub struct Limits {
+    pub physical: u8,
+    pub mental: u8,
+    pub social: u8,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Display)]
+pub struct Monitors {
+    pub physical: u8,
+    pub stun: u8,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Display)]
+pub struct Essence {
+    pub current: f32,
+    pub max: f32,
+}
 // Define a structure representing a character's information sheet in a role-playing game.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharacterSheet {
@@ -39,30 +91,12 @@ pub struct CharacterSheet {
     pub main: bool,
 
     // Basic Attributes
-    pub body: u8,
-    pub agility: u8,
-    pub reaction: u8,
-    pub strength: u8,
-    pub willpower: u8,
-    pub logic: u8,
-    pub intuition: u8,
-    pub charisma: u8,
-    pub edge: u8,
-    pub magic: Option<u8>,
-    pub resonance: Option<u8>,
+    pub attributes: Attributes,
+    pub magic: Magic,
+    pub resonance: Resonance,
 
     // Secondary Attributes
-    pub initiative: (u8, u8),
-    pub essence: f32,
-    pub edge_points: u8,
-    pub physical_monitor: u8,
-    pub stun_monitor: u8,
-
-    // Derived Attributes
-    pub armor: u8,
-    pub physical_limit: u8,
-    pub mental_limit: u8,
-    pub social_limit: u8,
+    pub derived_attributes: DerivedAttributes,
 
     // Skills and Knowledge
     pub skills: Skills,
@@ -136,26 +170,53 @@ impl CharacterSheet {
             gender: builder.gender,
             backstory: builder.backstory,
             main: builder.main,
-            body: builder.body,
-            agility: builder.agility,
-            reaction: builder.reaction,
-            strength: builder.strength,
-            willpower: builder.willpower,
-            logic: builder.logic,
-            intuition: builder.intuition,
-            charisma: builder.charisma,
-            edge: builder.edge,
-            magic: Some(builder.magic),
-            resonance: Some(builder.resonance),
-            initiative: (0, 1),
-            essence: 6.0,
-            edge_points: 1,
-            physical_monitor: 9,
-            stun_monitor: 9,
-            armor: 0,
-            physical_limit: 1,
-            mental_limit: 1,
-            social_limit: 1,
+            attributes: Attributes {
+                body: builder.body,
+                agility: builder.agility,
+                reaction: builder.reaction,
+                strength: builder.strength,
+                willpower: builder.willpower,
+                logic: builder.logic,
+                intuition: builder.intuition,
+                charisma: builder.charisma,
+                edge: builder.edge,
+            },
+            magic: Magic {
+                magic: Some(builder.magic),
+            },
+            resonance: Resonance {
+                resonance: Some(builder.resonance),
+            },
+            derived_attributes: DerivedAttributes {
+                initiative: (0, 1),
+                limits: Limits {
+                    physical: 1,
+                    mental: 1,
+                    social: 1,
+                },
+                monitors: Monitors {
+                    physical: 9,
+                    stun: 9,
+                },
+                essence: Essence {
+                    current: 6.0,
+                    max: 6.0,
+                },
+                edge_points: 1,
+                armor: 0,
+            },
+            // initiative: Initiative { initiative: (0, 1) },
+            // essence: Essence {
+            //     current: 6.0,
+            //     max: 6.0,
+            // },
+            // edge_points: 1,
+            // physical_monitor: 9,
+            // stun_monitor: 9,
+            // armor: 0,
+            // physical_limit: 1,
+            // mental_limit: 1,
+            // social_limit: 1,
             skills: builder.skills,
             knowledge_skills: builder.knowledge_skills,
             nuyen: builder.nuyen,
@@ -178,47 +239,58 @@ impl CharacterSheet {
     pub fn apply_race_modifiers(&mut self, race: Race) {
         match race {
             Race::Human => {
-                self.edge = self.edge.clamp(2, 7);
+                self.attributes.edge = self.attributes.edge.clamp(2, 7);
             }
             Race::Elf => {
-                self.agility = (self.agility + 1).min(7);
-                self.charisma = (self.charisma + 2).min(8);
+                self.attributes.agility = (self.attributes.agility + 1).min(7);
+                self.attributes.charisma = (self.attributes.charisma + 2).min(8);
             }
             Race::Dwarf => {
-                self.body = (self.body + 2).min(8);
-                self.agility = self.agility.min(5);
-                self.reaction = self.reaction.min(5);
-                self.strength = (self.strength + 2).min(8);
-                self.willpower = (self.willpower + 1).min(7);
+                self.attributes.body = (self.attributes.body + 2).min(8);
+                self.attributes.agility = self.attributes.agility.min(5);
+                self.attributes.reaction = self.attributes.reaction.min(5);
+                self.attributes.strength = (self.attributes.strength + 2).min(8);
+                self.attributes.willpower = (self.attributes.willpower + 1).min(7);
             }
             Race::Ork => {
-                self.body = (self.body + 3).min(9);
-                self.strength = (self.strength + 2).min(8);
-                self.logic = self.logic.min(5);
-                self.charisma = self.charisma.min(5);
+                self.attributes.body = (self.attributes.body + 3).min(9);
+                self.attributes.strength = (self.attributes.strength + 2).min(8);
+                self.attributes.logic = self.attributes.logic.min(5);
+                self.attributes.charisma = self.attributes.charisma.min(5);
             }
             Race::Troll => {
-                self.body = (self.body + 4).min(10);
-                self.agility = self.agility.min(5);
-                self.strength = (self.strength + 4).min(10);
-                self.logic = self.logic.min(5);
-                self.intuition = self.intuition.min(5);
-                self.charisma = self.charisma.min(4);
+                self.attributes.body = (self.attributes.body + 4).min(10);
+                self.attributes.agility = self.attributes.agility.min(5);
+                self.attributes.strength = (self.attributes.strength + 4).min(10);
+                self.attributes.logic = self.attributes.logic.min(5);
+                self.attributes.intuition = self.attributes.intuition.min(5);
+                self.attributes.charisma = self.attributes.charisma.min(4);
             }
         }
     }
 
     // Update derived attributes based on basic and secondary attributes.
     pub fn update_derived_attributes(&mut self) {
-        self.initiative = (self.reaction + self.intuition, 1);
-        self.physical_monitor = 8 + (self.body + 1) / 2;
-        self.stun_monitor = 8 + (self.willpower + 1) / 2;
-        self.physical_limit =
-            ((self.strength * 2 + self.body + self.reaction) as f32 / 3.0).ceil() as u8;
-        self.mental_limit =
-            ((self.logic * 2 + self.intuition + self.willpower) as f32 / 3.0).ceil() as u8;
-        self.social_limit =
-            ((self.charisma * 2 + self.willpower + self.essence as u8) as f32 / 3.0).ceil() as u8;
+        self.derived_attributes.initiative =
+            (self.attributes.reaction + self.attributes.intuition, 1);
+        self.derived_attributes.monitors.physical = 8 + (self.attributes.body + 1) / 2;
+        self.derived_attributes.monitors.stun = 8 + (self.attributes.willpower + 1) / 2;
+        self.derived_attributes.limits.physical = ((self.attributes.strength * 2
+            + self.attributes.body
+            + self.attributes.reaction) as f32
+            / 3.0)
+            .ceil() as u8;
+        self.derived_attributes.limits.mental = ((self.attributes.logic * 2
+            + self.attributes.intuition
+            + self.attributes.willpower) as f32
+            / 3.0)
+            .ceil() as u8;
+        self.derived_attributes.limits.social = ((self.attributes.charisma * 2
+            + self.attributes.willpower
+            + self.derived_attributes.essence.current as u8)
+            as f32
+            / 3.0)
+            .ceil() as u8;
     }
 
     // Retrieve all active skills combined from different skill categories.
@@ -234,14 +306,14 @@ impl CharacterSheet {
     // Calculate the dice pool for an action based on attribute and skill levels.
     pub fn get_dice_pool(&self, attribute: &str, skill: &str) -> u8 {
         let attribute_value = match attribute.to_lowercase().as_str() {
-            "body" => self.body,
-            "agility" => self.agility,
-            "reaction" => self.reaction,
-            "strength" => self.strength,
-            "willpower" => self.willpower,
-            "logic" => self.logic,
-            "intuition" => self.intuition,
-            "charisma" => self.charisma,
+            "body" => self.attributes.body,
+            "agility" => self.attributes.agility,
+            "reaction" => self.attributes.reaction,
+            "strength" => self.attributes.strength,
+            "willpower" => self.attributes.willpower,
+            "logic" => self.attributes.logic,
+            "intuition" => self.attributes.intuition,
+            "charisma" => self.attributes.charisma,
             _ => 0,
         };
 
@@ -257,9 +329,9 @@ impl CharacterSheet {
     // Get the maximum limit for an action based on the type of limit (physical, mental, social).
     pub fn get_limit(&self, limit_type: &str) -> u8 {
         match limit_type.to_lowercase().as_str() {
-            "physical" => self.physical_limit,
-            "mental" => self.mental_limit,
-            "social" => self.social_limit,
+            "physical" => self.derived_attributes.limits.physical,
+            "mental" => self.derived_attributes.limits.mental,
+            "social" => self.derived_attributes.limits.social,
             _ => 0,
         }
     }
@@ -477,17 +549,17 @@ impl CharacterSheet {
             ("gender", Value::String(v)) => self.gender = v,
             ("backstory", Value::String(v)) => self.backstory = v,
             ("main", Value::U8(v)) => self.main = v != 0,
-            ("body", Value::U8(v)) => self.body = v,
-            ("agility", Value::U8(v)) => self.agility = v,
-            ("reaction", Value::U8(v)) => self.reaction = v,
-            ("strength", Value::U8(v)) => self.strength = v,
-            ("willpower", Value::U8(v)) => self.willpower = v,
-            ("logic", Value::U8(v)) => self.logic = v,
-            ("intuition", Value::U8(v)) => self.intuition = v,
-            ("charisma", Value::U8(v)) => self.charisma = v,
-            ("edge", Value::U8(v)) => self.edge = v,
-            ("magic", Value::OptionU8(v)) => self.magic = v,
-            ("resonance", Value::OptionU8(v)) => self.resonance = v,
+            ("body", Value::U8(v)) => self.attributes.body = v,
+            ("agility", Value::U8(v)) => self.attributes.agility = v,
+            ("reaction", Value::U8(v)) => self.attributes.reaction = v,
+            ("strength", Value::U8(v)) => self.attributes.strength = v,
+            ("willpower", Value::U8(v)) => self.attributes.willpower = v,
+            ("logic", Value::U8(v)) => self.attributes.logic = v,
+            ("intuition", Value::U8(v)) => self.attributes.intuition = v,
+            ("charisma", Value::U8(v)) => self.attributes.charisma = v,
+            ("edge", Value::U8(v)) => self.attributes.edge = v,
+            ("magic", Value::OptionU8(v)) => self.magic.magic = v,
+            ("resonance", Value::OptionU8(v)) => self.resonance.resonance = v,
             ("skills", Value::Skills(v)) => self.skills = v,
             ("knowledge_skills", Value::HashMapStringU8(v)) => self.knowledge_skills = v,
             ("nuyen", Value::U32(v)) => self.nuyen = v,

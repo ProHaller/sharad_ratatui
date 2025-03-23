@@ -3,6 +3,7 @@ use crate::app::{App, AppCommand};
 use crate::cleanup::cleanup;
 use crate::error::ShadowrunError;
 use crate::message::{AIMessage, Message, MessageType};
+use crate::utils::{MIN_HEIGHT, MIN_WIDTH};
 
 use core::cmp::Ordering;
 use crossterm::{
@@ -15,9 +16,8 @@ use self_update::backends::github::{ReleaseList, Update};
 use semver::Version;
 use std::panic;
 use std::path::PathBuf;
-// Panic handling for cleanup.
-use std::{io, sync::Arc, time::Duration}; // Standard I/O and concurrency utilities.
-use tokio::sync::mpsc; // Asynchronous message passing channel.
+use std::{io, sync::Arc, time::Duration};
+use tokio::sync::mpsc;
 use tokio::time::sleep;
 use tokio::{fs::copy, sync::Mutex, time::Instant};
 
@@ -41,10 +41,6 @@ pub mod settings;
 pub mod settings_state;
 pub mod ui;
 pub mod utils;
-
-// Constants for minimum terminal size.
-const MIN_WIDTH: u16 = 20;
-const MIN_HEIGHT: u16 = 10;
 
 // Function to ensure the terminal size meets minimum requirements.
 fn ensure_minimum_terminal_size() -> io::Result<()> {

@@ -1,5 +1,6 @@
 // ui/load_game.rs
 
+use super::super::utils::{MIN_HEIGHT, MIN_WIDTH};
 use super::main_menu::{render_art, render_header, render_status, render_title};
 use super::utils::centered_rect;
 use crate::app::App;
@@ -14,7 +15,7 @@ use ratatui::{
 pub fn draw_load_game(f: &mut Frame, app: &App) {
     let size = f.area();
 
-    if size.width < 40 || size.height < 20 {
+    if size.width < MIN_WIDTH || size.height < MIN_HEIGHT {
         let warning = Paragraph::new("Terminal too small. Please resize.")
             .style(Style::default().fg(Color::Red))
             .alignment(Alignment::Center);

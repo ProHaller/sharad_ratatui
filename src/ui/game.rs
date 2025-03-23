@@ -1,9 +1,10 @@
+use super::super::utils::{MIN_HEIGHT, MIN_WIDTH};
 use crate::app::{App, InputMode};
 use crate::character::CharacterSheet;
-use crate::descriptions::LIFESTYLE;
+use crate::descriptions::*;
 use crate::message::{GameMessage, MessageType, UserMessage};
 use crate::ui::utils::spinner_frame;
-use ratatui::layout::{Flex, Margin};
+use ratatui::layout::Flex;
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Position, Rect},
@@ -26,6 +27,10 @@ thread_local! {
 pub enum HighlightedSection {
     None,
     Backstory,
+    Attributes,
+    Derived,
+    Skills,
+    Qualities,
     Inventory,
     Contact,
     Cyberware,
@@ -37,7 +42,7 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
     let size = f.area();
     *app.debug_info.borrow_mut() = format!("Terminal size: {}x{}", size.width, size.height);
 
-    if size.width < 20 || size.height < 10 {
+    if size.width < MIN_WIDTH || size.height < MIN_HEIGHT {
         let warning = Paragraph::new("Terminal too small. Please resize.")
             .style(Style::default().fg(Color::Red))
             .alignment(Alignment::Center);
@@ -167,6 +172,26 @@ pub fn draw_detailed_info(app: &mut App, f: &mut Frame, sheet: &CharacterSheet, 
         return;
     }
 
+    let attributes = get_attributes(sheet);
+    let derived = vec![
+        format!(
+            "Initiative:  {}+{}d6",
+            sheet.derived_attributes.initiative.0, sheet.derived_attributes.initiative.1
+        ),
+        format!(
+            "Limits:  PHY:{} MEN:{} SOC:{}",
+            sheet.derived_attributes.limits.physical,
+            sheet.derived_attributes.limits.mental,
+            sheet.derived_attributes.limits.social
+        ),
+        format!(
+            "Monitors:  PHY:{} SOC:{}",
+            sheet.derived_attributes.monitors.physical, sheet.derived_attributes.monitors.stun
+        ),
+        format!("Essence:  {:.2}", sheet.derived_attributes.essence.current),
+        format!("Edge Points:  {}", sheet.attributes.edge),
+        format!("Armor:  {}", sheet.derived_attributes.armor),
+    ];
     let detail_text = match &app.highlighted_section {
         HighlightedSection::Backstory => vec![Line::from(vec![Span::raw(&sheet.backstory)])],
         HighlightedSection::Inventory => sheet
@@ -220,15 +245,13 @@ pub fn draw_detailed_info(app: &mut App, f: &mut Frame, sheet: &CharacterSheet, 
             Line::from(vec![
                 Span::styled("Nuyen: ", Style::default().fg(Color::Yellow)),
                 Span::styled(
-                    sheet.nuyen.to_string(),
+                    format!("¥{}", sheet.nuyen),
                     Style::default()
                         .fg(Color::White)
                         .add_modifier(Modifier::BOLD),
                 ),
             ]),
-            Line::from(vec![Span::raw(
-                "The Nuyen (pronounced New Yen), symbol ¥, is the currency of Japan and the primary monetary unit of international trade. It replaced the older Yen as Japan's currency on June 1 2012 as part of the Yamato act. ",
-            )]),
+            Line::from(vec![Span::raw(NUYEN)]),
             Line::from(vec![
                 Span::styled("Lifestyle: ", Style::default().fg(Color::Yellow)),
                 Span::styled(
@@ -240,6 +263,51 @@ pub fn draw_detailed_info(app: &mut App, f: &mut Frame, sheet: &CharacterSheet, 
             ]),
             Line::from(vec![Span::raw(LIFESTYLE)]),
         ],
+        HighlightedSection::Attributes => attributes
+            .iter()
+            .flat_map(|attr| {
+                vec![
+                    Line::from(vec![
+                        Span::styled(format!("{}: ", attr.0), Style::default().fg(Color::Yellow)),
+                        Span::styled(
+                            format!("{}", attr.1),
+                            Style::default()
+                                .fg(Color::White)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                    ]),
+                    Line::from(vec![Span::raw(match attr.0 {
+                        "Strength" => STRENGTH,
+                        "Agility" => AGILITY,
+                        "Body" => BODY,
+                        "Logic" => LOGIC,
+                        "Intuition" => INTUITION,
+                        "Charisma" => CHARISMA,
+                        "Willpower" => WILLPOWER,
+                        "Reaction" => REACTION,
+                        "Edge" => EDGE,
+                        "Magic" => MAGIC,
+                        "Resonance" => RESONANCE,
+                        _ => unreachable!(),
+                    })]),
+                ]
+            })
+            .collect::<Vec<_>>(),
+        HighlightedSection::Derived => vec![Line::from(vec![
+            Span::styled("Initiative: ", Style::default().fg(Color::Yellow)),
+            Span::styled(
+                sheet.derived_attributes.initiative.0.to_string(),
+                Style::default().fg(Color::White),
+            ),
+            Span::styled("+", Style::default().fg(Color::White)),
+            Span::styled(
+                sheet.derived_attributes.initiative.1.to_string(),
+                Style::default().fg(Color::White),
+            ),
+            Span::styled("D6", Style::default().fg(Color::White)),
+        ])],
+        HighlightedSection::Skills => todo!(),
+        HighlightedSection::Qualities => todo!(),
         HighlightedSection::None => unreachable!(),
     };
 
@@ -258,11 +326,16 @@ pub fn draw_detailed_info(app: &mut App, f: &mut Frame, sheet: &CharacterSheet, 
         .border_style(Style::default().fg(Color::White))
         .title(match &app.highlighted_section {
             HighlightedSection::Backstory => " Backstory ",
-            HighlightedSection::Inventory => " Inventory Details ",
-            HighlightedSection::Contact => " Contact Details ",
-            HighlightedSection::Cyberware => " Cyberware Details ",
-            HighlightedSection::Bioware => " Bioware Details ",
-            _ => " Details ",
+            HighlightedSection::Inventory => " Inventory ",
+            HighlightedSection::Contact => " Contact ",
+            HighlightedSection::Cyberware => " Cyberware ",
+            HighlightedSection::Bioware => " Bioware ",
+            HighlightedSection::Attributes => " Attributes ",
+            HighlightedSection::Derived => " Derived Attributes ",
+            HighlightedSection::Skills => " Skills ",
+            HighlightedSection::Qualities => " Qualities ",
+            HighlightedSection::Resources => " Resources ",
+            HighlightedSection::None => unreachable!(),
         })
         .style(Style::default()); // Make the block opaque
 
@@ -292,6 +365,25 @@ pub fn draw_detailed_info(app: &mut App, f: &mut Frame, sheet: &CharacterSheet, 
     } else {
         f.render_widget(detail_paragraph, inner_area);
     }
+}
+
+fn get_attributes(sheet: &CharacterSheet) -> Vec<(&str, u8)> {
+    vec![
+        ("BODY", sheet.attributes.body),
+        ("AGILITY", sheet.attributes.agility),
+        ("REACTION", sheet.attributes.reaction),
+        ("STRENGTH", sheet.attributes.strength),
+        ("WILLPOWER", sheet.attributes.willpower),
+        ("LOGIC", sheet.attributes.logic),
+        ("INTUITION", sheet.attributes.intuition),
+        ("CHARISMA", sheet.attributes.charisma),
+        ("EDGE", sheet.attributes.edge),
+        ("MAGIC", sheet.magic.magic.unwrap_or(0)),
+        ("RESONANCE", sheet.resonance.resonance.unwrap_or(0)),
+    ]
+}
+fn get_derived_attributes(sheet: &CharacterSheet) -> Vec<(&str, u8)> {
+    vec![]
 }
 
 // Display basic information like name, race, and gender.
@@ -368,19 +460,7 @@ fn draw_attributes(
     area: Rect,
     _highlighted: &HighlightedSection,
 ) {
-    let attributes = vec![
-        ("BODY", sheet.body),
-        ("AGILITY", sheet.agility),
-        ("REACTION", sheet.reaction),
-        ("STRENGTH", sheet.strength),
-        ("WILLPOWER", sheet.willpower),
-        ("LOGIC", sheet.logic),
-        ("INTUITION", sheet.intuition),
-        ("CHARISMA", sheet.charisma),
-        ("EDGE", sheet.edge),
-        ("MAGIC", sheet.magic.unwrap_or(0)),
-        ("RESONANCE", sheet.resonance.unwrap_or(0)),
-    ];
+    let attributes = get_attributes(sheet);
     let max_area: usize = area.width as usize / 6;
     let max_length =
         if (attributes.iter().map(|(name, _)| name.len()).max().unwrap() + 1) > max_area {
@@ -422,8 +502,6 @@ fn draw_attributes(
     f.render_widget(table, area);
 }
 
-// Display derived attributes like initiative and limits.
-
 fn draw_derived_attributes(
     f: &mut Frame,
     sheet: &CharacterSheet,
@@ -433,19 +511,21 @@ fn draw_derived_attributes(
     let derived = [
         format!(
             "Initiative:  {}+{}d6",
-            sheet.initiative.0, sheet.initiative.1
+            sheet.derived_attributes.initiative.0, sheet.derived_attributes.initiative.1
         ),
         format!(
             "Limits:  PHY:{} MEN:{} SOC:{}",
-            sheet.physical_limit, sheet.mental_limit, sheet.social_limit
+            sheet.derived_attributes.limits.physical,
+            sheet.derived_attributes.limits.mental,
+            sheet.derived_attributes.limits.social
         ),
         format!(
-            "Monitors:  PHY:{} SOC:{}",
-            sheet.physical_monitor, sheet.stun_monitor
+            "Monitors:  PHY:{} STU:{}",
+            sheet.derived_attributes.monitors.physical, sheet.derived_attributes.monitors.stun
         ),
-        format!("Essence:  {:.2}", sheet.essence),
-        format!("Edge Points:  {}", sheet.edge_points),
-        format!("Armor:  {}", sheet.armor),
+        format!("Essence:  {:.2}", sheet.derived_attributes.essence.current),
+        format!("Edge Points:  {}", sheet.attributes.edge),
+        format!("Armor:  {}", sheet.derived_attributes.armor),
     ];
 
     let rows: Vec<Row> = derived
@@ -627,23 +707,9 @@ fn draw_resources(
     let nuyen = sheet.nuyen;
     let life_style = sheet.lifestyle.to_string();
     let rows: Vec<Row> = vec![Row::new(vec![
-        Cell::from(nuyen.to_string()),
+        Cell::from(format!("¥{}", nuyen)),
         Cell::from(life_style),
     ])];
-    // let rows: Vec<Row> = sheet
-    //     .contacts
-    //     .iter()
-    //     .map(|(name, contact)| {
-    //         let style = Style::default().fg(Color::White);
-    //         let cells = vec![
-    //             Cell::from(name.clone()).style(style),
-    //             Cell::from(contact.loyalty.to_string()),
-    //             Cell::from(contact.connection.to_string()),
-    //         ];
-    //         Row::new(cells).height(1).bottom_margin(0)
-    //     })
-    //     .collect();
-
     let widths = vec![Constraint::Max(10), Constraint::Fill(0)];
     let table = Table::new(rows, widths).header(header).block(
         Block::default()

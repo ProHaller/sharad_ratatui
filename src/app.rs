@@ -1023,6 +1023,10 @@ impl App {
 
         let available_sections = [
             Some(HighlightedSection::Backstory),
+            Some(HighlightedSection::Attributes),
+            Some(HighlightedSection::Derived),
+            Some(HighlightedSection::Qualities),
+            Some(HighlightedSection::Skills),
             Some(HighlightedSection::Resources),
             (!character_sheet.inventory.is_empty()).then_some(HighlightedSection::Inventory),
             (!character_sheet.contacts.is_empty()).then_some(HighlightedSection::Contact),
