@@ -1,6 +1,6 @@
 use super::super::utils::{MIN_HEIGHT, MIN_WIDTH};
 use crate::app::{App, InputMode};
-use crate::character::CharacterSheet;
+use crate::character::{CharacterSheet, DerivedAttributes};
 use crate::descriptions::*;
 use crate::message::{GameMessage, MessageType, UserMessage};
 use crate::ui::utils::spinner_frame;
@@ -14,22 +14,21 @@ use ratatui::{
 };
 use ratatui_image::StatefulImage;
 use std::cell::RefCell;
-use std::char::ToLowercase;
 use std::cmp::min;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-// TODO: Wrap this into another type
+type Cache = RefCell<Option<(Rect, Vec<Rect>, Vec<Rect>)>>;
 thread_local! {
-    static CACHED_LAYOUTS: RefCell<Option<(Rect, Vec<Rect>, Vec<Rect>)>> = RefCell::new(None);
+    static CACHED_LAYOUTS: Cache = const {RefCell::new(None)};
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HighlightedSection {
     None,
     Backstory,
-    Attributes,
-    Derived,
+    Attributes(usize),
+    Derived(usize),
     Skills,
     Qualities,
     Inventory,
@@ -51,7 +50,7 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
         return;
     }
 
-    let (_main_chunk, left_chunk, game_info_area) = CACHED_LAYOUTS.with(|cache| {
+    let (_main_chunk, left_chunk, game_info_area) = CACHED_LAYOUTS.with(|cache: &Cache| {
         let mut cache = cache.borrow_mut();
         if cache.is_none() || cache.as_ref().unwrap().0 != size {
             let main_chunk = Layout::default()
@@ -174,25 +173,6 @@ pub fn draw_detailed_info(app: &mut App, f: &mut Frame, sheet: &CharacterSheet, 
     }
 
     let attributes = get_attributes(sheet);
-    let derived = vec![
-        format!(
-            "Initiative:  {}+{}d6",
-            sheet.derived_attributes.initiative.0, sheet.derived_attributes.initiative.1
-        ),
-        format!(
-            "Limits:  PHY:{} MEN:{} SOC:{}",
-            sheet.derived_attributes.limits.physical,
-            sheet.derived_attributes.limits.mental,
-            sheet.derived_attributes.limits.social
-        ),
-        format!(
-            "Monitors:  PHY:{} SOC:{}",
-            sheet.derived_attributes.monitors.physical, sheet.derived_attributes.monitors.stun
-        ),
-        format!("Essence:  {:.2}", sheet.derived_attributes.essence.current),
-        format!("Edge Points:  {}", sheet.attributes.edge),
-        format!("Armor:  {}", sheet.derived_attributes.armor),
-    ];
     let detail_text = match &app.highlighted_section {
         HighlightedSection::Backstory => vec![Line::from(vec![Span::raw(&sheet.backstory)])],
         HighlightedSection::Inventory => sheet
@@ -264,49 +244,11 @@ pub fn draw_detailed_info(app: &mut App, f: &mut Frame, sheet: &CharacterSheet, 
             ]),
             Line::from(vec![Span::raw(LIFESTYLE)]),
         ],
-        HighlightedSection::Attributes => attributes
-            .iter()
-            .flat_map(|attr| {
-                vec![
-                    Line::from(vec![
-                        Span::styled(format!("{}: ", attr.0), Style::default().fg(Color::Yellow)),
-                        Span::styled(
-                            format!("{}", attr.1),
-                            Style::default()
-                                .fg(Color::White)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                    ]),
-                    Line::from(vec![Span::raw(match attr.0 {
-                        "STRENGTH" => STRENGTH,
-                        "AGILITY" => AGILITY,
-                        "BODY" => BODY,
-                        "LOGIC" => LOGIC,
-                        "INTUITION" => INTUITION,
-                        "CHARISMA" => CHARISMA,
-                        "WILLPOWER" => WILLPOWER,
-                        "REACTION" => REACTION,
-                        "EDGE" => EDGE,
-                        "MAGIC" => MAGIC,
-                        "RESONANCE" => RESONANCE,
-                        _ => "This should not appear…",
-                    })]),
-                ]
-            })
-            .collect::<Vec<_>>(),
-        HighlightedSection::Derived => vec![Line::from(vec![
-            Span::styled("Initiative: ", Style::default().fg(Color::Yellow)),
-            Span::styled(
-                sheet.derived_attributes.initiative.0.to_string(),
-                Style::default().fg(Color::White),
-            ),
-            Span::styled("+", Style::default().fg(Color::White)),
-            Span::styled(
-                sheet.derived_attributes.initiative.1.to_string(),
-                Style::default().fg(Color::White),
-            ),
-            Span::styled("D6", Style::default().fg(Color::White)),
-        ])],
+        HighlightedSection::Attributes(0) => chunk_attributes(attributes, 0),
+        HighlightedSection::Attributes(1) => chunk_attributes(attributes, 1),
+        HighlightedSection::Attributes(_) => chunk_attributes(attributes, 2),
+        HighlightedSection::Derived(0) => get_derived(&sheet.derived_attributes, 0),
+        HighlightedSection::Derived(_) => get_derived(&sheet.derived_attributes, 1),
         HighlightedSection::Skills => vec![Line::from(vec![
             Span::styled("Initiative: ", Style::default().fg(Color::Yellow)),
             Span::styled(
@@ -356,8 +298,11 @@ pub fn draw_detailed_info(app: &mut App, f: &mut Frame, sheet: &CharacterSheet, 
             HighlightedSection::Contact => " Contact ",
             HighlightedSection::Cyberware => " Cyberware ",
             HighlightedSection::Bioware => " Bioware ",
-            HighlightedSection::Attributes => " Attributes ",
-            HighlightedSection::Derived => " Derived Attributes ",
+            HighlightedSection::Attributes(0) => " Attributes 1/3 ",
+            HighlightedSection::Attributes(1) => " Attributes 2/3 ",
+            HighlightedSection::Attributes(_) => " Attributes 3/3 ",
+            HighlightedSection::Derived(0) => " Derived Attributes 1/2",
+            HighlightedSection::Derived(_) => " Derived Attributes 2/2",
             HighlightedSection::Skills => " Skills ",
             HighlightedSection::Qualities => " Qualities ",
             HighlightedSection::Resources => " Resources ",
@@ -393,6 +338,35 @@ pub fn draw_detailed_info(app: &mut App, f: &mut Frame, sheet: &CharacterSheet, 
     }
 }
 
+fn chunk_attributes(attributes: Vec<(&str, u8)>, chunk_nb: u8) -> Vec<Line<'_>> {
+    let line_chunks = attributes
+        .chunks(4)
+        .map(|chunk| {
+            chunk
+                .iter()
+                .flat_map(|attr| {
+                    vec![
+                        Line::from(vec![
+                            Span::styled(
+                                format!("{}: ", attr.0),
+                                Style::default().fg(Color::Yellow),
+                            ),
+                            Span::styled(
+                                format!("{}", attr.1),
+                                Style::default()
+                                    .fg(Color::White)
+                                    .add_modifier(Modifier::BOLD),
+                            ),
+                        ]),
+                        Line::from(vec![Span::raw(get_attribute_description(attr))]),
+                    ]
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    line_chunks[chunk_nb as usize].clone()
+}
+
 fn get_attributes(sheet: &CharacterSheet) -> Vec<(&str, u8)> {
     vec![
         ("BODY", sheet.attributes.body),
@@ -408,8 +382,101 @@ fn get_attributes(sheet: &CharacterSheet) -> Vec<(&str, u8)> {
         ("RESONANCE", sheet.resonance.resonance.unwrap_or(0)),
     ]
 }
-fn get_derived_attributes(sheet: &CharacterSheet) -> Vec<(&str, u8)> {
-    vec![]
+
+fn get_attribute_description(attributes: &(&str, u8)) -> &'static str {
+    match attributes.0 {
+        "STRENGTH" => STRENGTH,
+        "AGILITY" => AGILITY,
+        "BODY" => BODY,
+        "LOGIC" => LOGIC,
+        "INTUITION" => INTUITION,
+        "CHARISMA" => CHARISMA,
+        "WILLPOWER" => WILLPOWER,
+        "REACTION" => REACTION,
+        "EDGE" => EDGE,
+        "MAGIC" => MAGIC,
+        "RESONANCE" => RESONANCE,
+        _ => "This should not appear…",
+    }
+}
+
+macro_rules! styled_line {
+    ($label:expr, $value:expr) => {
+        Line::from(vec![
+            Span::styled(
+                $label,
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("{}", $value),
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ])
+    };
+}
+
+fn get_derived(derived: &DerivedAttributes, nb: usize) -> Vec<Line<'_>> {
+    let derived_lines = [
+        vec![
+            styled_line!(
+                "Initiative: ",
+                format!("{}+{}d6", derived.initiative.0, derived.initiative.1)
+            ),
+            Line::from(vec![Span::raw(INITIATIVE)]),
+            styled_line!("Armor: ", derived.armor),
+            Line::from(vec![Span::raw(ARMOR)]),
+            styled_line!(
+                "Monitors: ",
+                format!(
+                    "PHY:{} STU:{}",
+                    derived.monitors.physical, derived.monitors.stun
+                )
+            ),
+            Line::from(vec![Span::styled(
+                "PHY: ",
+                Style::default().fg(Color::Yellow),
+            )]),
+            Line::from(vec![Span::raw(MONITOR_PHYSICAL)]),
+            Line::from(vec![Span::styled(
+                "STU: ",
+                Style::default().fg(Color::Yellow),
+            )]),
+            Line::from(vec![Span::raw(MONITOR_STUN)]),
+        ],
+        vec![
+            styled_line!(
+                "Limits: ",
+                format!(
+                    "PHY:{} MEN:{} SOC:{}",
+                    derived.limits.physical, derived.limits.mental, derived.limits.social
+                )
+            ),
+            Line::from(vec![Span::styled(
+                "PHY: ",
+                Style::default().fg(Color::Yellow),
+            )]),
+            Line::from(vec![Span::raw(LIMIT_PHYSICAL)]),
+            Line::from(vec![Span::styled(
+                "MEN: ",
+                Style::default().fg(Color::Yellow),
+            )]),
+            Line::from(vec![Span::raw(LIMIT_MENTAL)]),
+            Line::from(vec![Span::styled(
+                "SOC: ",
+                Style::default().fg(Color::Yellow),
+            )]),
+            Line::from(vec![Span::raw(LIMIT_SOCIAL)]),
+            styled_line!("Essence: ", format!("{:.2}", derived.essence.current)),
+            Line::from(vec![Span::raw(ESSENCE)]),
+            styled_line!("Edge Points: ", derived.edge_points),
+            Line::from(vec![Span::raw(EDGE_POINTS)]),
+        ],
+    ];
+    derived_lines[nb].clone()
 }
 
 // Display basic information like name, race, and gender.
@@ -484,7 +551,7 @@ fn draw_attributes(
     f: &mut Frame,
     sheet: &CharacterSheet,
     area: Rect,
-    _highlighted: &HighlightedSection,
+    highlighted: &HighlightedSection,
 ) {
     let attributes = get_attributes(sheet);
     let max_area: usize = area.width as usize / 6;
@@ -519,11 +586,21 @@ fn draw_attributes(
 
     let table = Table::new(rows, [Constraint::Percentage(20); 4])
         .flex(Flex::Center)
-        .block(Block::default().borders(Borders::ALL).title(" Attributes "))
-        .style(Style::default().fg(Color::White))
-        .row_highlight_style(Style::default().add_modifier(Modifier::BOLD))
         .header(Row::new(vec![""]))
-        .column_spacing(1);
+        .column_spacing(1)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(
+                    if matches!(highlighted, HighlightedSection::Attributes(_)) {
+                        Color::Yellow
+                    } else {
+                        Color::White
+                    },
+                ))
+                .title(" Attributes "),
+        )
+        .row_highlight_style(Style::default().add_modifier(Modifier::BOLD));
 
     f.render_widget(table, area);
 }
@@ -532,12 +609,17 @@ fn draw_derived_attributes(
     f: &mut Frame,
     sheet: &CharacterSheet,
     area: Rect,
-    _highlighted: &HighlightedSection,
+    highlighted: &HighlightedSection,
 ) {
     let derived = [
         format!(
             "Initiative:  {}+{}d6",
             sheet.derived_attributes.initiative.0, sheet.derived_attributes.initiative.1
+        ),
+        format!("Armor:  {}", sheet.derived_attributes.armor),
+        format!(
+            "Monitors:  PHY:{} STU:{}",
+            sheet.derived_attributes.monitors.physical, sheet.derived_attributes.monitors.stun
         ),
         format!(
             "Limits:  PHY:{} MEN:{} SOC:{}",
@@ -545,13 +627,8 @@ fn draw_derived_attributes(
             sheet.derived_attributes.limits.mental,
             sheet.derived_attributes.limits.social
         ),
-        format!(
-            "Monitors:  PHY:{} STU:{}",
-            sheet.derived_attributes.monitors.physical, sheet.derived_attributes.monitors.stun
-        ),
         format!("Essence:  {:.2}", sheet.derived_attributes.essence.current),
         format!("Edge Points:  {}", sheet.attributes.edge),
-        format!("Armor:  {}", sheet.derived_attributes.armor),
     ];
 
     let rows: Vec<Row> = derived
@@ -571,7 +648,13 @@ fn draw_derived_attributes(
                 .borders(Borders::ALL)
                 .title(" Derived Attributes "),
         )
-        .style(Style::default().fg(Color::White))
+        .style(
+            Style::default().fg(if matches!(highlighted, HighlightedSection::Derived(_)) {
+                Color::Yellow
+            } else {
+                Color::White
+            }),
+        )
         .row_highlight_style(Style::default().add_modifier(Modifier::BOLD))
         .column_spacing(1);
 
@@ -604,7 +687,7 @@ fn draw_skills(
     f: &mut Frame,
     sheet: &CharacterSheet,
     area: Rect,
-    _highlighted: &HighlightedSection,
+    highlighted: &HighlightedSection,
 ) {
     let categories = [
         ("Combat", &sheet.skills.combat),
@@ -638,10 +721,20 @@ fn draw_skills(
         rows,
         vec![Constraint::Percentage(20), Constraint::Percentage(80)],
     )
-    .block(Block::default().borders(Borders::ALL).title(" Skills "))
-    .style(Style::default().fg(Color::White))
     .row_highlight_style(Style::default().add_modifier(Modifier::BOLD))
-    .column_spacing(1);
+    .column_spacing(1)
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(" Skills ")
+            .border_style(Style::default().fg(
+                if matches!(highlighted, HighlightedSection::Skills) {
+                    Color::Yellow
+                } else {
+                    Color::White
+                },
+            )),
+    );
 
     f.render_widget(table, area);
 }
@@ -652,7 +745,7 @@ fn draw_qualities(
     f: &mut Frame,
     sheet: &CharacterSheet,
     area: Rect,
-    _highlighted: &HighlightedSection,
+    highlighted: &HighlightedSection,
 ) {
     let qualities: Vec<Span> = sheet
         .qualities
@@ -674,6 +767,13 @@ fn draw_qualities(
 
     let qualities_paragraph = Paragraph::new(Line::from(qualities))
         .block(Block::default().borders(Borders::ALL).title(" Qualities "))
+        .style(
+            Style::default().fg(if matches!(highlighted, HighlightedSection::Qualities) {
+                Color::Yellow
+            } else {
+                Color::White
+            }),
+        )
         .wrap(Wrap { trim: true });
     f.render_widget(qualities_paragraph, area);
 }

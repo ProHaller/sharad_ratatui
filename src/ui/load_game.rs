@@ -28,11 +28,7 @@ pub fn draw_load_game(f: &mut Frame, app: &App) {
         .constraints(
             [
                 Constraint::Max(1),
-                Constraint::Min(if size.height - saves_length - 20 > 20 {
-                    20
-                } else {
-                    0
-                }),
+                Constraint::Min(if size.height - 20 > 20 { 20 } else { 0 }),
                 Constraint::Min(if (size.height - saves_length - 7) > 7 {
                     7
                 } else {
@@ -47,7 +43,7 @@ pub fn draw_load_game(f: &mut Frame, app: &App) {
         .split(f.area());
 
     render_header(f, chunks[0]);
-    if size.height - saves_length - 20 > 20 {
+    if size.height - 20 > 20 {
         render_art(f, chunks[1]);
     }
     if size.height - saves_length - 7 > 7 {

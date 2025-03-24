@@ -185,7 +185,7 @@ impl CharacterSheet {
                 resonance: Some(builder.resonance),
             },
             derived_attributes: DerivedAttributes {
-                initiative: (0, 1),
+                initiative: (builder.reaction + builder.intuition, 1),
                 limits: Limits {
                     physical: 1,
                     mental: 1,
@@ -202,18 +202,6 @@ impl CharacterSheet {
                 edge_points: 1,
                 armor: 0,
             },
-            // initiative: Initiative { initiative: (0, 1) },
-            // essence: Essence {
-            //     current: 6.0,
-            //     max: 6.0,
-            // },
-            // edge_points: 1,
-            // physical_monitor: 9,
-            // stun_monitor: 9,
-            // armor: 0,
-            // physical_limit: 1,
-            // mental_limit: 1,
-            // social_limit: 1,
             skills: builder.skills,
             knowledge_skills: builder.knowledge_skills,
             nuyen: builder.nuyen,
