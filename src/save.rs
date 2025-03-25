@@ -119,14 +119,14 @@ impl SaveManager {
             if save_dir != get_save_base_dir() {
                 remove_dir_all(save_dir)?;
                 self.available_saves = Self::scan_save_files();
-                return Ok(());
+                Ok(())
             } else {
                 remove_file(save_path)?;
-                return Ok(());
+                Ok(())
             }
         } else {
             panic!("This save should not be here! {}", save_path.display());
-        };
+        }
     }
 }
 
