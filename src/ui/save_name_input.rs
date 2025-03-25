@@ -40,6 +40,7 @@ pub fn draw_save_name_input(f: &mut Frame, app: &App) {
         .style(Style::default().fg(Color::White))
         .block(
             Block::default()
+                .border_type(BorderType::Rounded)
                 .borders(Borders::ALL)
                 .title(match app.input_mode {
                     // TODO: Make the key description dynamic based on a Config File.

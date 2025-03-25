@@ -40,7 +40,7 @@ pub fn draw_api_key_input(f: &mut Frame, app: &App) {
 
     let input = Paragraph::new(app.api_key_input.value())
         .style(Style::default().fg(Color::Yellow))
-        .block(Block::default().borders(Borders::ALL).title(" API Key "));
+        .block(Block::default().border_type(BorderType::Rounded).borders(Borders::ALL).title(" API Key "));
     f.render_widget(input, chunks[1]);
 
     let instructions = Paragraph::new(" Press Enter to confirm, Esc to cancel ")

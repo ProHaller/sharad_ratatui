@@ -6,7 +6,7 @@ use crate::app_state::AppState;
 use crate::error::ShadowrunError;
 use crate::{app::App, error::ErrorMessage};
 
-use ratatui::widgets::{List, ListItem};
+use ratatui::widgets::{BorderType, List, ListItem};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -107,7 +107,7 @@ fn draw_error_messages(f: &mut Frame, app: &App, area: Rect) {
 
         // Create a List widget to display all error messages
         let error_list = List::new(error_items).block(
-            Block::default()
+            Block::default().border_type(BorderType::Rounded)
                 .borders(Borders::ALL)
                 .title(" Error: ")
                 .border_style(Style::default().fg(Color::Red)),

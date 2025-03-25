@@ -154,9 +154,10 @@ fn draw_character_sheet(
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // Basic Information
-            Constraint::Length(14), // Attributes and Derived Attributes
-            Constraint::Min(0),     // Skills, Qualities, and Other Info
+            Constraint::Max(3),
+            Constraint::Max(14),
+            Constraint::Fill(1),
+            Constraint::Max(sheet.contacts.len() as u16 + 3),
         ])
         .split(area);
 
@@ -164,6 +165,7 @@ fn draw_character_sheet(
     draw_basic_info(f, sheet, chunks[0], highlighted);
     draw_attributes_and_derived(f, sheet, chunks[1], highlighted);
     draw_skills_qualities_and_other(f, sheet, chunks[2], highlighted);
+    draw_contacts(f, sheet, chunks[3], highlighted);
 }
 
 pub fn draw_detailed_info(app: &mut App, f: &mut Frame, sheet: &CharacterSheet, area: Rect) {
@@ -290,6 +292,7 @@ pub fn draw_detailed_info(app: &mut App, f: &mut Frame, sheet: &CharacterSheet, 
 
     // Create a block for the floating frame
     let block = Block::default()
+        .border_type(BorderType::Rounded)
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::White))
         .title(match &app.highlighted_section {
@@ -326,7 +329,10 @@ pub fn draw_detailed_info(app: &mut App, f: &mut Frame, sheet: &CharacterSheet, 
     // Render the content inside the block
     if let Some(image) = app.image.as_mut() {
         let image_rect = Rect::new(1, 1, (f.area().width + 2) / 3, f.area().height - 2);
-        let image_block = Block::default().borders(Borders::ALL).title(" Portrait ");
+        let image_block = Block::default()
+            .border_type(BorderType::Rounded)
+            .borders(Borders::ALL)
+            .title(" Portrait ");
 
         f.render_widget(detail_paragraph, inner_area);
         f.render_widget(Clear, image_rect);
@@ -346,6 +352,7 @@ fn chunk_attributes(attributes: Vec<(&str, u8)>, chunk_nb: u8) -> Vec<Line<'_>> 
                 .iter()
                 .flat_map(|attr| {
                     vec![
+                        Line::from(vec![Span::raw("")]),
                         Line::from(vec![
                             Span::styled(
                                 format!("{}: ", attr.0),
@@ -514,6 +521,7 @@ fn draw_basic_info(
     let basic_info = Paragraph::new(Line::from(info))
         .block(
             Block::default()
+                .border_type(BorderType::Rounded)
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(
                     if matches!(highlighted, HighlightedSection::Backstory) {
@@ -590,6 +598,7 @@ fn draw_attributes(
         .column_spacing(1)
         .block(
             Block::default()
+                .border_type(BorderType::Rounded)
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(
                     if matches!(highlighted, HighlightedSection::Attributes(_)) {
@@ -617,6 +626,8 @@ fn draw_derived_attributes(
             sheet.derived_attributes.initiative.0, sheet.derived_attributes.initiative.1
         ),
         format!("Armor:  {}", sheet.derived_attributes.armor),
+        format!("Essence:  {:.2}", sheet.derived_attributes.essence.current),
+        format!("Edge Points:  {}", sheet.attributes.edge),
         format!(
             "Monitors:  PHY:{} STU:{}",
             sheet.derived_attributes.monitors.physical, sheet.derived_attributes.monitors.stun
@@ -627,8 +638,6 @@ fn draw_derived_attributes(
             sheet.derived_attributes.limits.mental,
             sheet.derived_attributes.limits.social
         ),
-        format!("Essence:  {:.2}", sheet.derived_attributes.essence.current),
-        format!("Edge Points:  {}", sheet.attributes.edge),
     ];
 
     let rows: Vec<Row> = derived
@@ -645,6 +654,7 @@ fn draw_derived_attributes(
     let table = Table::new(rows, vec![Constraint::Percentage(50); 2])
         .block(
             Block::default()
+                .border_type(BorderType::Rounded)
                 .borders(Borders::ALL)
                 .title(" Derived Attributes "),
         )
@@ -656,7 +666,8 @@ fn draw_derived_attributes(
             }),
         )
         .row_highlight_style(Style::default().add_modifier(Modifier::BOLD))
-        .column_spacing(1);
+        .column_spacing(1)
+        .flex(Flex::Center);
 
     f.render_widget(table, area);
 }
@@ -670,15 +681,13 @@ fn draw_skills_qualities_and_other(
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(10), // Skills
-            Constraint::Length(5),  // Qualities
-            Constraint::Min(0),     // Other Info
+            Constraint::Max(7),  // Skills
+            Constraint::Fill(0), // Other Info
         ])
         .split(area);
 
     draw_skills(f, sheet, chunks[0], highlighted);
-    draw_qualities(f, sheet, chunks[1], highlighted);
-    draw_other_info(f, sheet, chunks[2], highlighted);
+    draw_other_info(f, sheet, chunks[1], highlighted);
 }
 
 // Specific function to handle the display of skills.
@@ -697,44 +706,69 @@ fn draw_skills(
         ("Knowledge", &sheet.knowledge_skills),
     ];
 
-    let rows: Vec<Row> = categories
-        .iter()
-        .map(|(category, skills)| {
-            let skills_str = skills
-                .iter()
-                .map(|(skill, rating)| format!("{}:{}", skill, rating))
-                .collect::<Vec<_>>()
-                .join(", ");
-            Row::new(vec![
+    // Header row
+    let header = Row::new(
+        categories
+            .iter()
+            .map(|(category, _)| {
                 Cell::from(Span::styled(
                     *category,
                     Style::default()
                         .fg(Color::Yellow)
                         .add_modifier(Modifier::BOLD),
-                )),
-                Cell::from(skills_str),
-            ])
+                ))
+            })
+            .collect::<Vec<Cell>>(),
+    );
+
+    // Extract skill lists into a Vec of Vec<(skill, rating)>
+    let skill_columns: Vec<Vec<(String, u8)>> = categories
+        .iter()
+        .map(|(_, skills)| {
+            skills
+                .iter()
+                .map(|(s, r)| (s.to_string(), *r))
+                .collect::<Vec<_>>()
         })
         .collect();
 
-    let table = Table::new(
-        rows,
-        vec![Constraint::Percentage(20), Constraint::Percentage(80)],
-    )
-    .row_highlight_style(Style::default().add_modifier(Modifier::BOLD))
-    .column_spacing(1)
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(" Skills ")
-            .border_style(Style::default().fg(
-                if matches!(highlighted, HighlightedSection::Skills) {
-                    Color::Yellow
-                } else {
-                    Color::White
-                },
-            )),
-    );
+    // Find max number of skill rows
+    let max_rows = skill_columns.iter().map(|col| col.len()).max().unwrap_or(0);
+
+    // Build rows row-by-row across columns
+    let rows: Vec<Row> = (0..max_rows)
+        .map(|i| {
+            let cells = skill_columns
+                .iter()
+                .map(|col| {
+                    if let Some((skill, rating)) = col.get(i) {
+                        Cell::from(format!("{}:{}", skill, rating))
+                    } else {
+                        Cell::from("") // Empty cell if no skill at this row
+                    }
+                })
+                .collect::<Vec<Cell>>();
+            Row::new(cells)
+        })
+        .collect();
+
+    let table = Table::new(rows, vec![Constraint::Fill(0); 5])
+        .header(header)
+        .row_highlight_style(Style::default().add_modifier(Modifier::BOLD))
+        .column_spacing(1)
+        .block(
+            Block::default()
+                .border_type(BorderType::Rounded)
+                .borders(Borders::ALL)
+                .title(" Skills ")
+                .border_style(Style::default().fg(
+                    if matches!(highlighted, HighlightedSection::Skills) {
+                        Color::Yellow
+                    } else {
+                        Color::White
+                    },
+                )),
+        );
 
     f.render_widget(table, area);
 }
@@ -766,7 +800,12 @@ fn draw_qualities(
         .collect();
 
     let qualities_paragraph = Paragraph::new(Line::from(qualities))
-        .block(Block::default().borders(Borders::ALL).title(" Qualities "))
+        .block(
+            Block::default()
+                .border_type(BorderType::Rounded)
+                .borders(Borders::ALL)
+                .title(" Qualities "),
+        )
         .style(
             Style::default().fg(if matches!(highlighted, HighlightedSection::Qualities) {
                 Color::Yellow
@@ -797,23 +836,24 @@ fn draw_other_info(
     let left_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage(30), // Resources
-            Constraint::Percentage(70), // Augmentations
+            Constraint::Min(sheet.qualities.len() as u16 + 1),
+            Constraint::Max(4),
+            Constraint::Fill(0),
         ])
         .split(chunks[0]);
 
     let right_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage(50), // Contacts
-            Constraint::Percentage(50), // Inventory
+            Constraint::Fill((sheet.bioware.len() as u16).max(sheet.cyberware.len() as u16)),
+            Constraint::Min(sheet.inventory.len() as u16 + 2),
         ])
         .split(chunks[1]);
 
-    draw_resources(f, sheet, left_chunks[0], highlighted);
+    draw_qualities(f, sheet, left_chunks[0], highlighted);
+    draw_resources(f, sheet, left_chunks[1], highlighted);
     draw_augmentations(f, sheet, right_chunks[0], highlighted);
-    draw_contacts(f, sheet, right_chunks[1], highlighted);
-    draw_inventory(f, sheet, left_chunks[1], highlighted);
+    draw_inventory(f, sheet, right_chunks[1], highlighted);
 }
 
 fn draw_resources(
@@ -839,6 +879,7 @@ fn draw_resources(
     let widths = vec![Constraint::Max(10), Constraint::Fill(0)];
     let table = Table::new(rows, widths).header(header).block(
         Block::default()
+            .border_type(BorderType::Rounded)
             .borders(Borders::ALL)
             .border_style(Style::default().fg(
                 if matches!(highlighted, HighlightedSection::Resources) {
@@ -861,7 +902,10 @@ fn draw_augmentations(
 ) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .constraints([
+            Constraint::Fill(sheet.cyberware.len() as u16),
+            Constraint::Fill(sheet.bioware.len() as u16),
+        ])
         .split(area);
 
     let cyberware_elements: Vec<Line> = sheet
@@ -897,6 +941,7 @@ fn draw_augmentations(
     let cyberware_paragraph = Paragraph::new(cyberware_elements)
         .block(
             Block::default()
+                .border_type(BorderType::Rounded)
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(if sheet.cyberware.is_empty() {
                     Color::DarkGray
@@ -912,6 +957,7 @@ fn draw_augmentations(
     let bioware_paragraph = Paragraph::new(bioware_elements)
         .block(
             Block::default()
+                .border_type(BorderType::Rounded)
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(if sheet.bioware.is_empty() {
                     Color::DarkGray
@@ -959,6 +1005,7 @@ fn draw_contacts(
     let widths = vec![Constraint::Fill(0), Constraint::Max(8), Constraint::Max(11)];
     let table = Table::new(rows, widths).header(header).block(
         Block::default()
+            .border_type(BorderType::Rounded)
             .borders(Borders::ALL)
             .border_style(Style::default().fg(
                 if matches!(highlighted, HighlightedSection::Contact) {
@@ -994,6 +1041,7 @@ fn draw_inventory(
     let inventory_table = Table::new(inventory_items, widths)
         .block(
             Block::default()
+                .border_type(BorderType::Rounded)
                 .borders(Borders::ALL)
                 .title(" Inventory ")
                 .border_style(Style::default().fg(if sheet.inventory.is_empty() {
@@ -1011,6 +1059,7 @@ fn draw_inventory(
 }
 
 // Helper function to create a styled table from given information.
+#[allow(unused)]
 fn create_table<'a>(info: &'a [String], title: &'a str) -> Table<'a> {
     let rows: Vec<Row> = info
         .iter()
@@ -1027,6 +1076,7 @@ fn create_table<'a>(info: &'a [String], title: &'a str) -> Table<'a> {
     Table::new(rows, widths)
         .block(
             Block::default()
+                .border_type(BorderType::Rounded)
                 .borders(Borders::ALL)
                 .title(format!(" {} ", title)),
         )
@@ -1044,6 +1094,7 @@ pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
         .map_or_else(|| String::from("Loading..."), |save| save.save_name);
 
     let fluff_block = Block::default()
+        .border_type(BorderType::Rounded)
         .title(if save_name.is_empty() {
             " Game will start momentarily ".to_string()
         } else {
@@ -1084,7 +1135,11 @@ pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
     *app.debug_info.borrow_mut() += &format!(", Visible lines: {}", visible_lines.len());
 
     let content = Paragraph::new(visible_lines)
-        .block(Block::default().borders(Borders::NONE))
+        .block(
+            Block::default()
+                .border_type(BorderType::Rounded)
+                .borders(Borders::NONE),
+        )
         .wrap(Wrap { trim: true });
 
     f.render_widget(content, fluff_area);
@@ -1152,6 +1207,7 @@ pub fn parse_game_content(app: &App, max_width: usize) -> Vec<(Line<'static>, Al
 
 pub fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
+        .border_type(BorderType::Rounded)
         .title(match app.input_mode {
             InputMode::Normal => {
                 " Press 'e' to edit, 'r' to record, and ' Tab ' to see character sheet details "

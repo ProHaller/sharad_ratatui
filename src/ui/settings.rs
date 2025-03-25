@@ -105,7 +105,7 @@ pub fn render_settings(f: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let outer_block = Block::default()
+    let outer_block = Block::default().border_type(BorderType::Rounded)
         .borders(Borders::NONE)
         .style(Style::default().fg(Color::DarkGray));
 

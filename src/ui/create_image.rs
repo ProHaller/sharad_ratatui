@@ -41,6 +41,7 @@ pub fn draw_create_image(f: &mut Frame, app: &App) {
         .style(Style::default().fg(Color::White))
         .block(
             Block::default()
+                .border_type(BorderType::Rounded)
                 .borders(Borders::ALL)
                 .title(match app.input_mode {
                     InputMode::Normal => " Press 'e' to edit or 'r' to record",
