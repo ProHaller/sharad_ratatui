@@ -1030,11 +1030,11 @@ impl App {
             Some(HighlightedSection::Derived(1)),
             Some(HighlightedSection::Skills),
             Some(HighlightedSection::Qualities),
+            (!character_sheet.cyberware.is_empty()).then_some(HighlightedSection::Cyberware),
+            (!character_sheet.bioware.is_empty()).then_some(HighlightedSection::Bioware),
             Some(HighlightedSection::Resources),
             (!character_sheet.inventory.is_empty()).then_some(HighlightedSection::Inventory),
             (!character_sheet.contacts.is_empty()).then_some(HighlightedSection::Contact),
-            (!character_sheet.cyberware.is_empty()).then_some(HighlightedSection::Cyberware),
-            (!character_sheet.bioware.is_empty()).then_some(HighlightedSection::Bioware),
         ]
         .into_iter()
         .flatten()
