@@ -9,6 +9,6 @@ mod load_game;
 mod main_menu;
 mod save_name_input;
 mod settings;
-pub mod utils;
+pub mod spinner;
 
-pub use draw::draw;
+pub use draw::{MIN_HEIGHT, MIN_WIDTH, draw};

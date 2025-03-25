@@ -1,8 +1,7 @@
 // ui/load_game.rs
 
-use super::super::utils::{MIN_HEIGHT, MIN_WIDTH};
+use super::draw::{MIN_HEIGHT, MIN_WIDTH, center_rect};
 use super::main_menu::{render_art, render_header, render_status, render_title};
-use super::utils::centered_rect;
 use crate::app::App;
 use ratatui::{
     Frame,
@@ -67,7 +66,11 @@ fn render_console(f: &mut Frame, app: &App, area: Rect) {
     let console = Paragraph::new(console_text)
         .style(Style::default().fg(Color::Yellow))
         .alignment(Alignment::Center)
-        .block(Block::default().border_type(BorderType::Rounded).borders(Borders::NONE));
+        .block(
+            Block::default()
+                .border_type(BorderType::Rounded)
+                .borders(Borders::NONE),
+        );
 
     f.render_widget(console, area);
 }
@@ -100,11 +103,12 @@ fn render_load_game_menu(f: &mut Frame, app: &App, area: Rect) {
             .collect()
     };
 
-    let outer_block = Block::default().border_type(BorderType::Rounded)
+    let outer_block = Block::default()
+        .border_type(BorderType::Rounded)
         .borders(Borders::NONE)
         .style(Style::default().fg(Color::DarkGray));
 
-    let menu_area = centered_rect(100, 100, area);
+    let menu_area = center_rect(area, Constraint::Percentage(90), Constraint::Percentage(90));
     f.render_widget(outer_block, menu_area);
 
     let inner_area = Layout::default()

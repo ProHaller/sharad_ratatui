@@ -1,42 +1,45 @@
-use crate::ai::{GameAI, GameConversationState};
-use crate::ai_response::{UserMessage, create_user_message};
-use crate::app_state::AppState;
-use crate::assistant::{create_assistant, delete_assistant, get_assistant_id};
-use crate::audio::{self, play_audio};
-use crate::character::CharacterSheet;
-use crate::cleanup::cleanup;
-use crate::error::{AppError, ErrorMessage, ShadowrunError};
-use crate::game_state::GameState;
-use crate::imager;
-use crate::message::{self, AIMessage, GameMessage, Message, MessageType};
-use crate::save::{SaveManager, get_save_base_dir};
-use crate::settings::Settings;
-use crate::settings_state::SettingsState;
-use crate::ui::utils::Spinner;
-use crate::ui::{game, game::HighlightedSection};
+use crate::{
+    ai::{GameAI, GameConversationState},
+    ai_response::{UserMessage, create_user_message},
+    app_state::AppState,
+    assistant::{create_assistant, delete_assistant, get_assistant_id},
+    audio::{self, play_audio},
+    character::CharacterSheet,
+    cleanup::cleanup,
+    error::{AppError, ErrorMessage, ShadowrunError},
+    game_state::GameState,
+    imager,
+    message::{self, AIMessage, GameMessage, Message, MessageType},
+    save::{SaveManager, get_save_base_dir},
+    settings::Settings,
+    settings_state::SettingsState,
+    ui::{
+        game::{self, HighlightedSection},
+        spinner::Spinner,
+    },
+};
 
 use chrono::Local;
 use copypasta::{ClipboardContext, ClipboardProvider};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use futures::stream::{FuturesOrdered, StreamExt};
-use ratatui::widgets::ListState;
-use ratatui::{layout::Alignment, text::Line};
-use ratatui_image::picker::Picker;
-use ratatui_image::protocol::StatefulProtocol;
-use std::borrow::BorrowMut;
-use std::cell::RefCell;
-use std::fs::OpenOptions;
-use std::io::Write;
-use std::path::PathBuf;
-use std::rc::Rc;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, Instant};
-use tokio::sync::RwLock;
-use tokio::sync::{Mutex, mpsc};
-use tui_input::Input;
-use tui_input::InputRequest;
-use tui_input::backend::crossterm::EventHandler;
+use ratatui::{layout::Alignment, text::Line, widgets::ListState};
+use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
+use std::{
+    borrow::BorrowMut,
+    cell::RefCell,
+    fs::OpenOptions,
+    io::Write,
+    path::PathBuf,
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant},
+};
+use tokio::sync::{Mutex, RwLock, mpsc};
+use tui_input::{Input, InputRequest, backend::crossterm::EventHandler};
 
 pub enum AppCommand {
     LoadGame(PathBuf),

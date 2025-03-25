@@ -1,9 +1,9 @@
-use super::super::utils::{MIN_HEIGHT, MIN_WIDTH};
+use super::draw::{MIN_HEIGHT, MIN_WIDTH};
 use crate::app::{App, InputMode};
 use crate::character::{CharacterSheet, DerivedAttributes};
 use crate::descriptions::*;
 use crate::message::{GameMessage, MessageType, UserMessage};
-use crate::ui::utils::spinner_frame;
+use crate::ui::spinner::spinner_frame;
 use ratatui::layout::Flex;
 use ratatui::{
     Frame,

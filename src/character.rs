@@ -1,12 +1,13 @@
 // Import necessary modules from external crates.
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fmt::{self};
+
+use crate::descriptions::*;
 
 // TODO: Add descriptions everywhere
 
 // Define an enumeration for character races.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, strum_macros::Display)]
 pub enum Race {
     Human,
     Elf,
@@ -14,20 +15,19 @@ pub enum Race {
     Ork,
     Troll,
 }
-
-// Implement the Display trait for the Race enum to allow for easier printing.
-impl fmt::Display for Race {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Race {
+    pub fn description(&self) -> &str {
         match self {
-            Race::Human => write!(f, "Human"),
-            Race::Elf => write!(f, "Elf"),
-            Race::Dwarf => write!(f, "Dwarf"),
-            Race::Ork => write!(f, "Ork"),
-            Race::Troll => write!(f, "Troll"),
+            Race::Human => HUMAN_DESC,
+            Race::Elf => ELF_DESC,
+            Race::Dwarf => DWARF_DESC,
+            Race::Ork => ORK_DESC,
+            Race::Troll => TROLL_DESC,
         }
     }
 }
 
+// TODO: refactor that type into a single type struct
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Magic {
     pub magic: Option<u8>,

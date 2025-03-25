@@ -3,7 +3,6 @@ use crate::app::{App, AppCommand};
 use crate::cleanup::cleanup;
 use crate::error::ShadowrunError;
 use crate::message::{AIMessage, Message, MessageType};
-use crate::utils::{MIN_HEIGHT, MIN_WIDTH};
 
 use core::cmp::Ordering;
 use crossterm::{
@@ -20,6 +19,7 @@ use std::{io, sync::Arc, time::Duration};
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 use tokio::{fs::copy, sync::Mutex, time::Instant};
+use ui::{MIN_HEIGHT, MIN_WIDTH};
 
 // Modules are declared which should be assumed to be part of the application architecture.
 pub mod ai;
@@ -40,7 +40,6 @@ pub mod save;
 pub mod settings;
 pub mod settings_state;
 pub mod ui;
-pub mod utils;
 
 // Function to ensure the terminal size meets minimum requirements.
 fn ensure_minimum_terminal_size() -> io::Result<()> {

@@ -1,3 +1,7 @@
+pub const TODO: &str = r#"
+NOT YET WRITTEN!
+"#;
+
 // region:  --- Resources
 
 pub const LIFESTYLE: &str = r#"
@@ -101,3 +105,12 @@ Protection against damage. Rated numerically (e.g., Armor Jacket is 12). Added t
 "#;
 
 // ENDREGION:  --- DERIVED ATTRIBUTES
+// REGION:   --- RACES
+
+pub const HUMAN_DESC: &str = TODO;
+pub const ELF_DESC: &str = TODO;
+pub const DWARF_DESC: &str = TODO;
+pub const TROLL_DESC: &str = TODO;
+pub const ORK_DESC: &str = TODO;
+
+// ENDREGION:  --- RACES

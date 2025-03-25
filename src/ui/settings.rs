@@ -1,10 +1,10 @@
 // ui/settings.rs
 
 use crate::app::App;
+use crate::ui::draw::center_rect;
 use crate::ui::main_menu::{
     render_art, render_console, render_header, render_status, render_title,
 };
-use crate::ui::utils::centered_rect;
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
@@ -105,11 +105,16 @@ pub fn render_settings(f: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let outer_block = Block::default().border_type(BorderType::Rounded)
+    let outer_block = Block::default()
+        .border_type(BorderType::Rounded)
         .borders(Borders::NONE)
         .style(Style::default().fg(Color::DarkGray));
 
-    let settings_area = centered_rect(100, 100, area);
+    let settings_area = center_rect(
+        area,
+        Constraint::Percentage(100),
+        Constraint::Percentage(100),
+    );
     f.render_widget(outer_block, settings_area);
 
     let inner_area = Layout::default()

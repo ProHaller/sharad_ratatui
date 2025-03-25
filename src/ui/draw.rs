@@ -6,6 +6,8 @@ use crate::app_state::AppState;
 use crate::error::ShadowrunError;
 use crate::{app::App, error::ErrorMessage};
 
+use super::{api_key_input, create_image, game, load_game, main_menu, save_name_input, settings};
+use ratatui::layout::Flex;
 use ratatui::widgets::{BorderType, List, ListItem};
 use ratatui::{
     Frame,
@@ -15,7 +17,19 @@ use ratatui::{
     widgets::{Block, Borders, Clear},
 };
 
-use super::{api_key_input, create_image, game, load_game, main_menu, save_name_input, settings};
+// Constants for minimum terminal size.
+pub const MIN_WIDTH: u16 = 40;
+pub const MIN_HEIGHT: u16 = 20;
+
+pub fn center_rect(original_area: Rect, horizontal: Constraint, vertical: Constraint) -> Rect {
+    let [horizontal_area] = Layout::horizontal([horizontal])
+        .flex(Flex::Center)
+        .areas(original_area);
+    let [vertical_area] = Layout::vertical([vertical])
+        .flex(Flex::Center)
+        .areas(horizontal_area);
+    vertical_area
+}
 
 pub fn draw(f: &mut Frame, app: &mut App) {
     match app.state {
@@ -107,7 +121,8 @@ fn draw_error_messages(f: &mut Frame, app: &App, area: Rect) {
 
         // Create a List widget to display all error messages
         let error_list = List::new(error_items).block(
-            Block::default().border_type(BorderType::Rounded)
+            Block::default()
+                .border_type(BorderType::Rounded)
                 .borders(Borders::ALL)
                 .title(" Error: ")
                 .border_style(Style::default().fg(Color::Red)),

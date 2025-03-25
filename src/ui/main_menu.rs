@@ -1,9 +1,8 @@
 // src/ui/main_menu.rs
 
 // Import required modules and structs from other parts of the application or external crates.
-use super::super::utils::{MIN_HEIGHT, MIN_WIDTH};
 use super::constants::{ART, TITLE}; // Constants like ART and TITLE for UI.
-use super::utils::centered_rect; // Utility function for centering rectangles in the UI.
+use super::draw::{MIN_HEIGHT, MIN_WIDTH, center_rect};
 use crate::app::App; // Main application struct.
 use crate::app_state::AppState; // Enum for managing application state.
 use crate::message::MessageType; // Enum for different types of messages.
@@ -65,14 +64,17 @@ pub fn render_header(f: &mut Frame, area: Rect) {
 
 // Function to render the art section of the menu.
 pub fn render_art(f: &mut Frame, area: Rect) {
-    let outer_block = Block::default().border_type(BorderType::Rounded).style(Style::default().fg(Color::DarkGray));
+    let outer_block = Block::default()
+        .border_type(BorderType::Rounded)
+        .style(Style::default().fg(Color::DarkGray));
     f.render_widget(outer_block, area);
 
     let center_x = area.x + (area.width.saturating_sub(80)) / 2; // Calculate center x for inner rectangle.
     let center_y = area.y + (area.height.saturating_sub(18)) / 2; // Calculate center y for inner rectangle.
     let inner_rect = Rect::new(center_x, center_y, 80, 18);
 
-    let inner_block = Block::default().border_type(BorderType::Rounded)
+    let inner_block = Block::default()
+        .border_type(BorderType::Rounded)
         .borders(Borders::ALL)
         .style(Style::default().fg(Color::Green));
     f.render_widget(inner_block, inner_rect);
@@ -85,8 +87,11 @@ pub fn render_art(f: &mut Frame, area: Rect) {
 
 // Function to render the title section of the menu.
 pub fn render_title(f: &mut Frame, area: Rect) {
-    let outer_block = Block::default().border_type(BorderType::Rounded).style(Style::default().fg(Color::DarkGray));
-    let title_outer_area = centered_rect(100, 100, area);
+    let outer_block = Block::default()
+        .border_type(BorderType::Rounded)
+        .style(Style::default().fg(Color::DarkGray));
+    let title_outer_area =
+        center_rect(area, Constraint::Percentage(90), Constraint::Percentage(90));
     f.render_widget(&outer_block, title_outer_area);
 
     let title_inner_area = Layout::default()
@@ -109,8 +114,11 @@ pub fn render_title(f: &mut Frame, area: Rect) {
 
 // Function to render the console section of the menu.
 pub fn render_console(f: &mut Frame, app: &App, area: Rect) {
-    let outer_block = Block::default().border_type(BorderType::Rounded).style(Style::default().fg(Color::DarkGray));
-    let console_outer_area = centered_rect(100, 100, area);
+    let outer_block = Block::default()
+        .border_type(BorderType::Rounded)
+        .style(Style::default().fg(Color::DarkGray));
+    let console_outer_area =
+        center_rect(area, Constraint::Percentage(90), Constraint::Percentage(90));
     f.render_widget(&outer_block, console_outer_area);
 
     let console_inner_area = Layout::default()
@@ -174,11 +182,12 @@ pub fn render_menu(f: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let outer_block = Block::default().border_type(BorderType::Rounded)
+    let outer_block = Block::default()
+        .border_type(BorderType::Rounded)
         .borders(Borders::NONE)
         .style(Style::default().fg(Color::DarkGray));
 
-    let menu_area = centered_rect(100, 100, area);
+    let menu_area = center_rect(area, Constraint::Percentage(90), Constraint::Percentage(90));
     f.render_widget(outer_block, menu_area);
 
     let inner_area = Layout::default()
@@ -211,7 +220,11 @@ pub fn render_status(f: &mut Frame, app: &App, area: Rect) {
     };
     let status = Paragraph::new(status_message)
         .style(Style::default().fg(Color::DarkGray))
-        .block(Block::default().border_type(BorderType::Rounded).borders(Borders::NONE))
+        .block(
+            Block::default()
+                .border_type(BorderType::Rounded)
+                .borders(Borders::NONE),
+        )
         .alignment(Alignment::Center);
     f.render_widget(status, area);
 }
