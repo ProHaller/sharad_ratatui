@@ -19,7 +19,7 @@ chrono = "0.4.38"
 cleanup = "0.1.1"
 copypasta = "0.10.1"
 cpal = "0.15.3"
-crossterm = "0.28.1"
+crossterm = { version = "0.28.1", features = ["event-stream"] }
 ctrlc = "3.4.5"
 derive_more = { version = "2.0.1", features = ["full"] }
 dir = "0.1.2"
@@ -49,6 +49,7 @@ textwrap = { version = "0.16.1", features = ["hyphenation"] }
 thiserror = "1.0.63"
 tokio = { version = "1.40.0", features = ["full"] }
 tui-input = "0.10.1"
+tui-rain = "1.0.1"
 unicode-segmentation = "1.11.0"
 unicode-width = "0.1.13"
 uuid = { version = "1.10.0", features = ["v4"] }

@@ -719,6 +719,7 @@ checksum = "829d955a0bb380ef178a640b91779e3987da38c9aea133b20614cfed8cdea9c6"
 dependencies = [
  "bitflags 2.9.0",
  "crossterm_winapi",
+ "futures-core",
  "mio",
  "parking_lot 0.12.3",
  "rustix 0.38.44",
@@ -2648,6 +2649,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rand_pcg"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59cad018caf63deb318e5a4586d99a24424a364f40f1e5778c29aca23f4fc73e"
+dependencies = [
+ "rand_core 0.6.4",
+]
+
+[[package]]
 name = "ratatui"
 version = "0.28.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3284,6 +3294,7 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tui-input",
+ "tui-rain",
  "unicode-segmentation",
  "unicode-width 0.1.14",
  "uuid",
@@ -4114,6 +4125,17 @@ checksum = "bd137780d743c103a391e06fe952487f914b299a4fe2c3626677f6a6339a7c6b"
 dependencies = [
  "ratatui 0.28.1",
  "unicode-width 0.1.14",
+]
+
+[[package]]
+name = "tui-rain"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d279b27af071f5e31fef4ecd68f7c8b0b14ed9b97e8900c4ec66bf7ffbb216de"
+dependencies = [
+ "rand 0.8.5",
+ "rand_pcg",
+ "ratatui 0.29.0",
 ]
 
 [[package]]
