@@ -13,19 +13,18 @@ use crossterm::{
 use ratatui::{Terminal, backend::CrosstermBackend};
 use self_update::backends::github::{ReleaseList, Update};
 use semver::Version;
-use std::panic;
-use std::path::PathBuf;
-use std::{io, sync::Arc, time::Duration};
-use tokio::sync::mpsc;
-use tokio::time::sleep;
-use tokio::{fs::copy, sync::Mutex, time::Instant};
+use std::{io, panic, path::PathBuf, sync::Arc, time::Duration};
+use tokio::{
+    fs::copy,
+    sync::{Mutex, mpsc},
+    time::{Instant, sleep},
+};
 use ui::{MIN_HEIGHT, MIN_WIDTH};
 
 // Modules are declared which should be assumed to be part of the application architecture.
 pub mod ai;
 pub mod ai_response;
 pub mod app;
-pub mod app_state;
 pub mod assistant;
 pub mod audio;
 pub mod character;

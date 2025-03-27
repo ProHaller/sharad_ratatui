@@ -1,15 +1,17 @@
 // src/ui/main_menu.rs
 
 // Import required modules and structs from other parts of the application or external crates.
-use super::constants::{ART, TITLE}; // Constants like ART and TITLE for UI.
-use super::draw::{MIN_HEIGHT, MIN_WIDTH, center_rect};
-use crate::app::App; // Main application struct.
-use crate::app_state::AppState; // Enum for managing application state.
-use crate::message::MessageType; // Enum for different types of messages.
+use super::{
+    constants::{ART, TITLE},
+    draw::{MIN_HEIGHT, MIN_WIDTH, center_rect},
+};
+use crate::{
+    app::{App, AppState},
+    message::MessageType,
+};
 use ratatui::{
     Frame,
-    // Library for building text-based user interfaces.
-    layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::*,
@@ -69,9 +71,7 @@ pub fn render_art(f: &mut Frame, area: Rect) {
         .style(Style::default().fg(Color::DarkGray));
     f.render_widget(outer_block, area);
 
-    let center_x = area.x + (area.width.saturating_sub(80)) / 2; // Calculate center x for inner rectangle.
-    let center_y = area.y + (area.height.saturating_sub(18)) / 2; // Calculate center y for inner rectangle.
-    let inner_rect = Rect::new(center_x, center_y, 80, 18);
+    let inner_rect = center_rect(area, Constraint::Length(80), Constraint::Length(18));
 
     let inner_block = Block::default()
         .border_type(BorderType::Rounded)
@@ -90,26 +90,13 @@ pub fn render_title(f: &mut Frame, area: Rect) {
     let outer_block = Block::default()
         .border_type(BorderType::Rounded)
         .style(Style::default().fg(Color::DarkGray));
-    let title_outer_area =
-        center_rect(area, Constraint::Percentage(90), Constraint::Percentage(90));
-    f.render_widget(&outer_block, title_outer_area);
-
-    let title_inner_area = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(0),
-            Constraint::Max(9),
-            Constraint::Length(0),
-        ])
-        .split(title_outer_area.inner(Margin {
-            vertical: 0,
-            horizontal: 1,
-        }))[1];
+    let title_area = center_rect(area, Constraint::Length(38), Constraint::Length(8));
+    f.render_widget(&outer_block, title_area);
 
     let title = Paragraph::new(TITLE)
         .alignment(Alignment::Center)
         .style(Style::default().fg(Color::Green));
-    f.render_widget(title, title_inner_area);
+    f.render_widget(title, title_area);
 }
 
 // Function to render the console section of the menu.
@@ -117,36 +104,23 @@ pub fn render_console(f: &mut Frame, app: &App, area: Rect) {
     let outer_block = Block::default()
         .border_type(BorderType::Rounded)
         .style(Style::default().fg(Color::DarkGray));
-    let console_outer_area =
-        center_rect(area, Constraint::Percentage(90), Constraint::Percentage(90));
-    f.render_widget(&outer_block, console_outer_area);
+    let console_area = center_rect(area, Constraint::Percentage(90), Constraint::Length(2));
+    f.render_widget(&outer_block, console_area);
 
-    let console_inner_area = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(0),
-            Constraint::Max(3),
-            Constraint::Length(0),
-        ])
-        .split(console_outer_area.inner(Margin {
-            vertical: 1,
-            horizontal: 1,
-        }))[1];
+    let console_message = app
+        .game_content
+        .borrow()
+        .last()
+        .filter(|content| content.message_type == MessageType::System)
+        .map(|content| {
+            Paragraph::new(content.content.to_string())
+                .alignment(Alignment::Center)
+                .style(Style::default().fg(Color::Yellow))
+        });
 
-    let finaly = if let Some(content) = app.game_content.borrow().last() {
-        if content.message_type == MessageType::System {
-            Some(content.content.to_string())
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
-    let text = Paragraph::new(finaly.unwrap_or("".to_string()))
-        .alignment(Alignment::Center)
-        .style(Style::default().fg(Color::Yellow));
-    f.render_widget(text, console_inner_area);
+    if let Some(message) = console_message {
+        f.render_widget(message, console_area);
+    }
 }
 
 // Function to render the interactive menu section of the main menu.
@@ -160,7 +134,7 @@ pub fn render_menu(f: &mut Frame, app: &App, area: Rect) {
     ];
 
     // Map menu items to text lines, applying different styles to the selected item.
-    let text: Vec<Line> = menu_items
+    let menu_lines: Vec<Line> = menu_items
         .iter()
         .enumerate()
         .map(|(i, &item)| {
@@ -182,30 +156,17 @@ pub fn render_menu(f: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let outer_block = Block::default()
-        .border_type(BorderType::Rounded)
-        .borders(Borders::NONE)
-        .style(Style::default().fg(Color::DarkGray));
+    let max_width = menu_lines.iter().map(|l| l.width()).max().unwrap_or(0) as u16;
+    let centered_area = center_rect(
+        area,
+        Constraint::Length(max_width),
+        Constraint::Length(app.save_manager.available_saves.len() as u16 + 2),
+    );
 
-    let menu_area = center_rect(area, Constraint::Percentage(90), Constraint::Percentage(90));
-    f.render_widget(outer_block, menu_area);
-
-    let inner_area = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Min(1),
-            Constraint::Length(1),
-        ])
-        .split(menu_area.inner(Margin {
-            vertical: 1,
-            horizontal: ((area.width - text[0].width() as u16) / 2),
-        }))[1];
-
-    let menu = Paragraph::new(text)
+    let menu = Paragraph::new(menu_lines)
         .alignment(Alignment::Left)
         .style(Style::default().fg(Color::White));
-    f.render_widget(menu, inner_area);
+    f.render_widget(menu, centered_area);
 }
 
 // Function to render the status bar at the bottom of the menu.

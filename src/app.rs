@@ -1,7 +1,6 @@
 use crate::{
     ai::{GameAI, GameConversationState},
     ai_response::{UserMessage, create_user_message},
-    app_state::AppState,
     assistant::{create_assistant, delete_assistant, get_assistant_id},
     audio::{self, play_audio},
     character::CharacterSheet,
@@ -40,6 +39,17 @@ use std::{
 };
 use tokio::sync::{Mutex, RwLock, mpsc};
 use tui_input::{Input, InputRequest, backend::crossterm::EventHandler};
+
+#[derive(PartialEq, Clone)]
+pub enum AppState {
+    MainMenu,
+    InGame,
+    LoadMenu,
+    CreateImage,
+    SettingsMenu,
+    InputApiKey,
+    InputSaveName,
+}
 
 pub enum AppCommand {
     LoadGame(PathBuf),

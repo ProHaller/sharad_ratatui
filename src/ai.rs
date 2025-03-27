@@ -1,29 +1,30 @@
-use crate::character::{
-    CharacterSheet, CharacterSheetBuilder, CharacterSheetUpdate, Contact, Item, MatrixAttributes,
-    Quality, Race, Skills, UpdateOperation,
+use crate::{
+    character::{
+        CharacterSheet, CharacterSheetBuilder, CharacterSheetUpdate, Contact, Item,
+        MatrixAttributes, Quality, Race, Skills, UpdateOperation,
+    },
+    dice::{DiceRollRequest, DiceRollResponse, perform_dice_roll},
+    error::{AIError, AppError, GameError, ShadowrunError},
+    game_state::GameState,
+    imager::generate_and_save_image,
+    message::{self, Message, MessageType},
 };
-use crate::dice::{DiceRollRequest, DiceRollResponse, perform_dice_roll};
-use crate::error::{AIError, AppError, GameError, ShadowrunError};
-use crate::game_state::GameState;
-use crate::imager::generate_and_save_image;
-use crate::message;
-use crate::message::{Message, MessageType};
-use async_openai::types::{RequiredAction, RunToolCallObject};
 use async_openai::{
     Client,
     config::OpenAIConfig,
     types::{
         CreateMessageRequestArgs, CreateRunRequestArgs, CreateThreadRequestArgs, MessageContent,
-        MessageRole, Model, RunObject, RunStatus, SubmitToolOutputsRunRequest, ToolsOutputs,
+        MessageRole, Model, RequiredAction, RunObject, RunStatus, RunToolCallObject,
+        SubmitToolOutputsRunRequest, ToolsOutputs,
     },
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::Arc;
-use tokio::sync::{Mutex, mpsc};
-use tokio::time::{Duration, Instant};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use tokio::{
+    sync::{Mutex, mpsc},
+    time::{Duration, Instant},
+};
 
 // TODO: Create a character_sheet_updater routine that verifies the character sheet is updated
 // based on in-game events.

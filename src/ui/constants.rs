@@ -19,6 +19,8 @@ pub const ART: &str = r#"
  Haller Family||  ||| |, ||.| | | ||| . ..| * ||| ||  .| | ..  ||||.|*| |||| 
 "#;
 
+// TODO: Try to make it into a BigText: https://github.com/joshka/tui-big-text
+// or even better a splash screen: https://github.com/orhun/ratatui-splash-screen?tab=readme-ov-file
 pub const TITLE: &str = r#"_____ _                         _
  / ____| |                       | |
 | (___ | |__   __ _ _ __ __ _  __| |

@@ -1,8 +1,7 @@
 use log::error;
 use once_cell::sync::Lazy;
 use serde_json;
-use std::sync::Arc;
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
 use thiserror::Error;
 use tokio::sync::{Mutex, mpsc};
 

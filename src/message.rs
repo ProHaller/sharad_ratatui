@@ -1,12 +1,12 @@
-use std::path::PathBuf;
-
 // Import the necessary modules and structs from other parts of the application or crates.
-use crate::character::CharacterSheet;
-use crate::error::AppError;
+use crate::{character::CharacterSheet, error::AppError};
 use async_openai::types::Voice;
 use serde::{Deserialize, Serialize};
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
+    path::PathBuf,
+};
 
 // Define an enumeration to categorize message types within the game.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

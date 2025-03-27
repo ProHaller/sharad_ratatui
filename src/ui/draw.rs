@@ -2,19 +2,18 @@
 
 use std::time::Duration;
 
-use crate::app_state::AppState;
-use crate::error::ShadowrunError;
-use crate::{app::App, error::ErrorMessage};
+use crate::{
+    app::{App, AppState},
+    error::{ErrorMessage, ShadowrunError},
+};
 
 use super::{api_key_input, create_image, game, load_game, main_menu, save_name_input, settings};
-use ratatui::layout::Flex;
-use ratatui::widgets::{BorderType, List, ListItem};
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Flex, Layout, Rect},
     style::{Color, Style},
     text::Span,
-    widgets::{Block, Borders, Clear},
+    widgets::{Block, BorderType, Borders, Clear, List, ListItem},
 };
 
 // Constants for minimum terminal size.

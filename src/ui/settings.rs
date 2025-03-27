@@ -1,9 +1,11 @@
 // ui/settings.rs
 
-use crate::app::App;
-use crate::ui::draw::center_rect;
-use crate::ui::main_menu::{
-    render_art, render_console, render_header, render_status, render_title,
+use crate::{
+    app::App,
+    ui::{
+        draw::center_rect,
+        main_menu::{render_art, render_console, render_header, render_status, render_title},
+    },
 };
 use ratatui::{
     Frame,

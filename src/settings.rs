@@ -1,10 +1,10 @@
-use async_openai::error::OpenAIError;
-// Import necessary libraries and modules for API interaction, file I/O, and serialization.
-use async_openai::{Client, config::OpenAIConfig};
+use async_openai::{Client, config::OpenAIConfig, error::OpenAIError};
 use serde::{Deserialize, Serialize};
-use std::fs;
-use std::io::{self, Write};
-use std::path::PathBuf;
+use std::{
+    fs,
+    io::{self, Write},
+    path::PathBuf,
+};
 
 use crate::error::send_global_error;
 

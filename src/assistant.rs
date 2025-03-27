@@ -1,9 +1,7 @@
 use async_openai::types::{ResponseFormat, ResponseFormatJsonSchema};
 use include_dir::{Dir, DirEntry, include_dir};
 use serde_json::Value;
-use std::fs::File;
-use std::io::Read;
-use std::{error::Error, path::PathBuf};
+use std::{error::Error, fs::File, io::Read, path::PathBuf};
 
 use async_openai::{
     Client,

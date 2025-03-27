@@ -8,15 +8,19 @@ use async_openai::{
     types::{CreateSpeechRequestArgs, CreateTranscriptionRequestArgs, SpeechModel, Voice},
 };
 use chrono::Local;
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{FromSample, Sample};
+use cpal::{
+    FromSample, Sample,
+    traits::{DeviceTrait, HostTrait, StreamTrait},
+};
 use rodio::{Decoder, OutputStream, Sink};
-use std::io::{BufReader, BufWriter};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
-use std::{fs::File, path::PathBuf};
 use std::{
-    fs::{self},
+    fs::{self, File},
+    io::{BufReader, BufWriter},
+    path::PathBuf,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     thread,
     time::Duration,
 };

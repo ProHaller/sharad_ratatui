@@ -4,8 +4,7 @@ use async_openai::{
     config::OpenAIConfig,
     types::{CreateImageRequestArgs, ImageModel, ImageResponseFormat, ImageSize},
 };
-use std::process::Command;
-use std::{error::Error, path::PathBuf};
+use std::{error::Error, path::PathBuf, process::Command};
 use tokio::time::{Duration, timeout};
 
 pub async fn generate_and_save_image(prompt: &str) -> Result<PathBuf, Box<dyn Error>> {

@@ -1,20 +1,20 @@
 use super::draw::{MIN_HEIGHT, MIN_WIDTH};
-use crate::app::{App, InputMode};
-use crate::character::{CharacterSheet, DerivedAttributes};
-use crate::descriptions::*;
-use crate::message::{GameMessage, MessageType, UserMessage};
-use crate::ui::spinner::spinner_frame;
-use ratatui::layout::Flex;
+use crate::{
+    app::{App, InputMode},
+    character::{CharacterSheet, DerivedAttributes},
+    descriptions::*,
+    message::{GameMessage, MessageType, UserMessage},
+    ui::spinner::spinner_frame,
+};
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, Layout, Position, Rect},
+    layout::{Alignment, Constraint, Direction, Flex, Layout, Position, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::*,
 };
 use ratatui_image::StatefulImage;
-use std::cell::RefCell;
-use std::cmp::min;
+use std::{cell::RefCell, cmp::min};
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 

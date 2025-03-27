@@ -2,11 +2,13 @@ use crate::game_state::GameState;
 
 use chrono::Local;
 use serde::{Deserialize, Serialize};
-use std::fs::{File, OpenOptions, create_dir_all, read_dir, remove_dir_all, remove_file, write};
-use std::io::Write;
+use std::{
+    fs::{File, OpenOptions, create_dir_all, read_dir, remove_dir_all, remove_file, write},
+    io::Write,
+    path::PathBuf,
+};
 
 use dir;
-use std::path::PathBuf;
 
 pub fn get_save_base_dir() -> PathBuf {
     let mut path = dir::home_dir().expect("Failed to get home directory");

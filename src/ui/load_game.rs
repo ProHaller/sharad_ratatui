@@ -1,12 +1,14 @@
 // ui/load_game.rs
 
-use super::draw::{MIN_HEIGHT, MIN_WIDTH, center_rect};
-use super::main_menu::{render_art, render_header, render_status, render_title};
+use super::{
+    draw::{MIN_HEIGHT, MIN_WIDTH, center_rect},
+    main_menu::{render_art, render_header, render_status, render_title},
+};
 use crate::app::App;
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
-    style::{Color, Modifier, Style},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style, Stylize},
     text::{Line, Span},
     widgets::*,
 };
@@ -86,46 +88,41 @@ fn render_load_game_menu(f: &mut Frame, app: &App, area: Rect) {
             .map(|(i, save)| {
                 let save_name = save.file_stem().unwrap().to_string_lossy().to_string();
                 if Some(i) == app.load_game_menu_state.selected() {
-                    Line::from(Span::styled(
-                        format!("{}. {}", (i + 1), save_name),
-                        Style::default()
-                            .fg(if !app.backspace_counter {
-                                Color::Yellow
+                    Line::from(
+                        Span::styled(
+                            format!("{}. {}", (i + 1), save_name),
+                            if !app.backspace_counter {
+                                Style::default().fg(Color::Yellow)
                             } else {
-                                Color::Red
-                            })
-                            .add_modifier(Modifier::BOLD),
-                    ))
+                                Style::default().fg(Color::Red).rapid_blink()
+                            },
+                        )
+                        .add_modifier(Modifier::BOLD),
+                    )
                 } else {
                     Line::from(Span::raw(format!("{}. {}", (i + 1), save_name)))
                 }
             })
             .collect()
     };
+    let max_width = text.iter().max_by_key(|line| line.width()).unwrap().width();
 
     let outer_block = Block::default()
         .border_type(BorderType::Rounded)
         .borders(Borders::NONE)
         .style(Style::default().fg(Color::DarkGray));
 
-    let menu_area = center_rect(area, Constraint::Percentage(90), Constraint::Percentage(90));
-    f.render_widget(outer_block, menu_area);
+    f.render_widget(outer_block, area);
 
-    let inner_area = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Fill(1),
-            Constraint::Length(1),
-        ])
-        .split(menu_area.inner(Margin {
-            vertical: 1,
-            horizontal: (area.width - text.iter().map(|t| t.width() as u16).max().unwrap()) / 2,
-        }))[1];
+    let centered_area = center_rect(
+        area,
+        Constraint::Length(max_width as u16),
+        Constraint::Length(app.save_manager.available_saves.len() as u16 + 2),
+    );
 
     let menu = Paragraph::new(text)
         .alignment(Alignment::Left)
         .style(Style::default().fg(Color::White));
 
-    f.render_widget(menu, inner_area);
+    f.render_widget(menu, centered_area);
 }
