@@ -47,8 +47,11 @@ fn test_character_sheet_creation_from_json() {
 }
 
 fn create_character_from_args(args: &serde_json::Value) -> CharacterSheet {
-    let name = args["name"].as_str().unwrap().to_string();
-    let race = match args["race"].as_str().unwrap() {
+    let name = args["name"]
+        .as_str()
+        .expect("Expected a valid String")
+        .to_string();
+    let race = match args["race"].as_str().expect("Expected a valid String") {
         "Human" => Race::Human,
         "Elf" => Race::Elf,
         "Troll" => Race::Troll,
@@ -56,26 +59,32 @@ fn create_character_from_args(args: &serde_json::Value) -> CharacterSheet {
         "Ork" => Race::Ork,
         _ => panic!("Unknown race"),
     };
-    let gender = args["gender"].as_str().unwrap().to_string();
-    let backstory = args["backstory"].as_str().unwrap().to_string();
-    let main = args["main"].as_bool().unwrap();
+    let gender = args["gender"]
+        .as_str()
+        .expect("Expected a valid String")
+        .to_string();
+    let backstory = args["backstory"]
+        .as_str()
+        .expect("Expected a valid String")
+        .to_string();
+    let main = args["main"].as_bool().expect("Expected an argument main");
 
     let mut builder = CharacterSheetBuilder::new(name, race, gender, backstory, main);
 
     // Set attributes
     let attributes = &args["attributes"];
     builder = builder
-        .body(attributes["body"].as_u64().unwrap() as u8)
-        .agility(attributes["agility"].as_u64().unwrap() as u8)
-        .reaction(attributes["reaction"].as_u64().unwrap() as u8)
-        .strength(attributes["strength"].as_u64().unwrap() as u8)
-        .willpower(attributes["willpower"].as_u64().unwrap() as u8)
-        .logic(attributes["logic"].as_u64().unwrap() as u8)
-        .intuition(attributes["intuition"].as_u64().unwrap() as u8)
-        .charisma(attributes["charisma"].as_u64().unwrap() as u8)
-        .edge(attributes["edge"].as_u64().unwrap() as u8)
-        .magic(attributes["magic"].as_u64().unwrap() as u8)
-        .resonance(attributes["resonance"].as_u64().unwrap() as u8);
+        .body(attributes["body"].as_u64().expect("Expected some u64") as u8)
+        .agility(attributes["agility"].as_u64().expect("Expected some u64") as u8)
+        .reaction(attributes["reaction"].as_u64().expect("Expected some u64") as u8)
+        .strength(attributes["strength"].as_u64().expect("Expected some u64") as u8)
+        .willpower(attributes["willpower"].as_u64().expect("Expected some u64") as u8)
+        .logic(attributes["logic"].as_u64().expect("Expected some u64") as u8)
+        .intuition(attributes["intuition"].as_u64().expect("Expected some u64") as u8)
+        .charisma(attributes["charisma"].as_u64().expect("Expected some u64") as u8)
+        .edge(attributes["edge"].as_u64().expect("Expected some u64") as u8)
+        .magic(attributes["magic"].as_u64().expect("Expected some u64") as u8)
+        .resonance(attributes["resonance"].as_u64().expect("Expected some u64") as u8);
 
     // Set skills
     let mut skills = Skills {
@@ -86,9 +95,15 @@ fn create_character_from_args(args: &serde_json::Value) -> CharacterSheet {
     };
     let skill_categories = ["combat", "physical", "social", "technical"];
     for category in &skill_categories {
-        for skill in args["skills"][category].as_array().unwrap() {
-            let skill_name = skill["name"].as_str().unwrap().to_string();
-            let skill_rating = skill["rating"].as_u64().unwrap() as u8;
+        for skill in args["skills"][category]
+            .as_array()
+            .expect("Expected some array")
+        {
+            let skill_name = skill["name"]
+                .as_str()
+                .expect("Expected some string")
+                .to_string();
+            let skill_rating = skill["rating"].as_u64().expect("Expected some u64") as u8;
             match *category {
                 "combat" => skills.combat.insert(skill_name, skill_rating),
                 "physical" => skills.physical.insert(skill_name, skill_rating),
@@ -102,9 +117,15 @@ fn create_character_from_args(args: &serde_json::Value) -> CharacterSheet {
 
     // Set knowledge skills
     let mut knowledge_skills = HashMap::new();
-    for skill in args["skills"]["knowledge"].as_array().unwrap() {
-        let skill_name = skill["name"].as_str().unwrap().to_string();
-        let skill_rating = skill["rating"].as_u64().unwrap() as u8;
+    for skill in args["skills"]["knowledge"]
+        .as_array()
+        .expect("Expected some array")
+    {
+        let skill_name = skill["name"]
+            .as_str()
+            .expect("Expected some String")
+            .to_string();
+        let skill_rating = skill["rating"].as_u64().expect("Expected some u64") as u8;
         knowledge_skills.insert(skill_name, skill_rating);
     }
     builder = builder.knowledge_skills(knowledge_skills);
@@ -112,29 +133,38 @@ fn create_character_from_args(args: &serde_json::Value) -> CharacterSheet {
     // Set qualities
     let qualities = args["qualities"]
         .as_array()
-        .unwrap()
+        .expect("Expected some array")
         .iter()
         .map(|q| Quality {
-            name: q["name"].as_str().unwrap().to_string(),
-            positive: q["positive"].as_bool().unwrap(),
+            name: q["name"]
+                .as_str()
+                .expect("Expected some String")
+                .to_string(),
+            positive: q["positive"].as_bool().expect("Expected some bool"),
         })
         .collect();
     builder = builder.qualities(qualities);
 
     // Set nuyen
-    builder = builder.nuyen(args["nuyen"].as_u64().unwrap() as u32);
+    builder = builder.nuyen(args["nuyen"].as_u64().expect("Expected some u64") as u32);
 
     // Set contacts
     let mut contacts = HashMap::new();
-    for contact in args["contacts"].as_array().unwrap() {
-        let name = contact["name"].as_str().unwrap().to_string();
+    for contact in args["contacts"].as_array().expect("Expected some array") {
+        let name = contact["name"]
+            .as_str()
+            .expect("Expected some String")
+            .to_string();
         contacts.insert(
             name.clone(),
             Contact {
                 name,
-                description: contact["description"].as_str().unwrap().to_string(),
-                loyalty: contact["loyalty"].as_u64().unwrap() as u8,
-                connection: contact["connection"].as_u64().unwrap() as u8,
+                description: contact["description"]
+                    .as_str()
+                    .expect("Expected some String")
+                    .to_string(),
+                loyalty: contact["loyalty"].as_u64().expect("Expected some u64") as u8,
+                connection: contact["connection"].as_u64().expect("Expected some u64") as u8,
             },
         );
     }
@@ -171,16 +201,25 @@ fn test_character_sheet_update_from_json() {
 
     // Step 5: Parse the update arguments
     let update = character::CharacterSheetUpdate::UpdateAttribute {
-        attribute: args["update"]["attribute"].as_str().unwrap().to_string(),
-        operation: match args["update"]["operation"].as_str().unwrap() {
+        attribute: args["update"]["attribute"]
+            .as_str()
+            .expect("Expected some String")
+            .to_string(),
+        operation: match args["update"]["operation"]
+            .as_str()
+            .expect("Expected some String")
+        {
             "Add" => character::UpdateOperation::Add(character::Value::VecQuality(
                 args["update"]["value"]
                     .as_array()
-                    .unwrap()
+                    .expect("Expected some array")
                     .iter()
                     .map(|quality| Quality {
-                        name: quality["name"].as_str().unwrap().to_string(),
-                        positive: quality["positive"].as_bool().unwrap(),
+                        name: quality["name"]
+                            .as_str()
+                            .expect("Expected some String")
+                            .to_string(),
+                        positive: quality["positive"].as_bool().expect("Expected some bool"),
                     })
                     .collect(),
             )),

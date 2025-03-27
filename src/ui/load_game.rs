@@ -59,7 +59,9 @@ fn render_console(f: &mut Frame, app: &App, area: Rect) {
     let console_text = if app.save_manager.available_saves.is_empty() {
         format!(
             "No save files found in {}/sharad/data/save/",
-            dir::home_dir().unwrap().display()
+            dir::home_dir()
+                .expect("Failed to get home directory")
+                .display()
         )
     } else {
         "Select a save file to load".to_string()
@@ -86,7 +88,11 @@ fn render_load_game_menu(f: &mut Frame, app: &App, area: Rect) {
             .iter()
             .enumerate()
             .map(|(i, save)| {
-                let save_name = save.file_stem().unwrap().to_string_lossy().to_string();
+                let save_name = save
+                    .file_stem()
+                    .expect("expected a valid file_stem")
+                    .to_string_lossy()
+                    .to_string();
                 if Some(i) == app.load_game_menu_state.selected() {
                     Line::from(
                         Span::styled(
@@ -105,7 +111,11 @@ fn render_load_game_menu(f: &mut Frame, app: &App, area: Rect) {
             })
             .collect()
     };
-    let max_width = text.iter().max_by_key(|line| line.width()).unwrap().width();
+    let max_width = text
+        .iter()
+        .max_by_key(|line| line.width())
+        .expect("Expected some Vec<Line>")
+        .width();
 
     let outer_block = Block::default()
         .border_type(BorderType::Rounded)
@@ -124,5 +134,6 @@ fn render_load_game_menu(f: &mut Frame, app: &App, area: Rect) {
         .alignment(Alignment::Left)
         .style(Style::default().fg(Color::White));
 
+    // HACK: This should be a stateful widget.
     f.render_widget(menu, centered_area);
 }

@@ -237,11 +237,11 @@ async fn run_app(
                 }
             }
             Some(image_path) = image_receiver.recv() => {
-                let image_name = image_path.file_name().unwrap();
+                let image_name = image_path.file_name().expect("Expected a Valid path");
                 let mut app = app.lock().await;
-                let current = app.current_game.clone().unwrap();
+                let current = app.current_game.clone().expect("Expected a Clone of current_game");
                 let mut game_state = current.lock().await;
-                let save_dir = game_state.save_path.clone().unwrap().parent().unwrap().to_path_buf();
+                let save_dir = game_state.save_path.clone().expect("Expected a valid path").parent().expect("Expected a parent path").to_path_buf();
                 let new_image_path = save_dir.join(image_name);
                 copy(image_path, &new_image_path).await?;
                 tokio::time::sleep(Duration::from_millis(100)).await;
@@ -304,7 +304,11 @@ fn check_for_updates() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     .target(self_update::get_target())
                     .show_download_progress(true)
                     .show_output(true)
-                    .bin_install_path(std::env::current_exe()?.parent().unwrap())
+                    .bin_install_path(
+                        std::env::current_exe()?
+                            .parent()
+                            .expect("Expected a parent Path"),
+                    )
                     .current_version(&current_version.to_string())
                     .target_version_tag(&release.version)
                     .build()?

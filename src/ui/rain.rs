@@ -11,7 +11,7 @@ use tokio::time;
 const FPS_SMOOTHING: f64 = 0.95;
 pub async fn render_rain(rain: Box<dyn Fn(time::Duration) -> Rain>) -> Result<(), Box<dyn Error>> {
     let mut terminal = ratatui::init();
-    terminal.clear().unwrap();
+    terminal.clear()?;
     let result = rain_loop(rain, terminal, 60.0).await;
     ratatui::restore();
     result
@@ -34,7 +34,9 @@ pub async fn rain_loop(
 
     // Initialize stuff to track smoothed FPS.
     let mut show_fps = false;
-    let mut last_tick = time::Instant::now().checked_sub(tick_duration).unwrap();
+    let mut last_tick = time::Instant::now()
+        .checked_sub(tick_duration)
+        .expect("Expected some Instant");
     let mut fps: f64 = framerate;
 
     loop {

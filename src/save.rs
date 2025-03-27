@@ -48,7 +48,7 @@ impl SaveManager {
     fn get_save_paths(last_dir: PathBuf) -> Vec<PathBuf> {
         let mut path_vec: Vec<PathBuf> = Vec::new();
         let reccursive_path_vec: Vec<PathBuf> = read_dir(last_dir)
-            .unwrap()
+            .expect("Expected a ReadDir directory content")
             .filter_map(|entry| {
                 let entry = entry.ok()?;
                 let path = entry.path();
@@ -97,7 +97,7 @@ impl SaveManager {
             "There is no game to save",
         ))?;
         if let Some(save_path) = current_save.save_path.clone() {
-            create_dir_all(save_path.parent().unwrap())?;
+            create_dir_all(save_path.parent().expect("Expected a parent path"))?;
             let serialized = serde_json::to_string_pretty(&current_save)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
             write(save_path, serialized)?;
@@ -110,7 +110,10 @@ impl SaveManager {
                 Some(game_save_dir.join(format!("{}.json", current_save.save_name)));
             let serialized = serde_json::to_string_pretty(&current_save)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
-            write(current_save.save_path.unwrap(), serialized)?;
+            write(
+                current_save.save_path.expect("Expected Valide save_path"),
+                serialized,
+            )?;
         }
 
         Ok(())

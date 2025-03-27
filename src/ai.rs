@@ -1,34 +1,34 @@
-use crate::{
-    character::{
-        CharacterSheet, CharacterSheetBuilder, CharacterSheetUpdate, Contact, Item,
-        MatrixAttributes, Quality, Race, Skills, UpdateOperation,
-    },
-    dice::{DiceRollRequest, DiceRollResponse, perform_dice_roll},
-    error::{AIError, AppError, GameError, ShadowrunError},
-    game_state::GameState,
-    imager::generate_and_save_image,
-    message::{self, Message, MessageType},
+use crate::character::{
+    CharacterSheet, CharacterSheetBuilder, CharacterSheetUpdate, Contact, Item, MatrixAttributes,
+    Quality, Race, Skills, UpdateOperation,
 };
+use crate::dice::{DiceRollRequest, DiceRollResponse, perform_dice_roll};
+use crate::error::{AIError, AppError, GameError, ShadowrunError};
+use crate::game_state::GameState;
+use crate::imager::generate_and_save_image;
+use crate::message;
+use crate::message::{Message, MessageType};
+use async_openai::types::{RequiredAction, RunToolCallObject};
 use async_openai::{
     Client,
     config::OpenAIConfig,
     types::{
         CreateMessageRequestArgs, CreateRunRequestArgs, CreateThreadRequestArgs, MessageContent,
-        MessageRole, Model, RequiredAction, RunObject, RunStatus, RunToolCallObject,
-        SubmitToolOutputsRunRequest, ToolsOutputs,
+        MessageRole, Model, RunObject, RunStatus, SubmitToolOutputsRunRequest, ToolsOutputs,
     },
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
-use tokio::{
-    sync::{Mutex, mpsc},
-    time::{Duration, Instant},
-};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::{Mutex, mpsc};
+use tokio::time::{Duration, Instant};
 
 // TODO: Create a character_sheet_updater routine that verifies the character sheet is updated
 // based on in-game events.
 // TODO: Create an error channel that will display all error/debug information throughout the app
+// TODO:
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameConversationState {
@@ -433,7 +433,7 @@ impl GameAI {
             .find(|c| c.name == character_name)
             .ok_or_else(|| GameError::CharacterNotFound(character_name.to_string()))?;
 
-        for (attr, value) in updates.as_object().unwrap() {
+        for (attr, value) in updates.as_object().expect("Value should be an object") {
             let update = CharacterSheetUpdate::UpdateAttribute {
                 attribute: attr.to_string(),
                 operation: UpdateOperation::Modify(self.parse_value(attr, value)?),
@@ -571,9 +571,14 @@ impl GameAI {
                     let item_names: Vec<String> = if items.is_array() {
                         serde_json::from_value(items.clone())?
                     } else if items.is_object() && items.get("name").is_some() {
-                        vec![items["name"].as_str().unwrap().to_string()]
+                        vec![items["name"].as_str().expect("Not a String").to_string()]
                     } else if items.is_object() && items.get("name").is_none() {
-                        items.as_object().unwrap().keys().cloned().collect()
+                        items
+                            .as_object()
+                            .expect("Value should be an object")
+                            .keys()
+                            .cloned()
+                            .collect()
                     } else {
                         return Err(ShadowrunError::Game(
                             "Invalid items format for removal".to_string(),
@@ -600,7 +605,9 @@ impl GameAI {
                             new_items.insert(item.name.clone(), item);
                         } else {
                             // Multiple items
-                            for (key, value) in items.as_object().unwrap() {
+                            for (key, value) in
+                                items.as_object().expect("Value should be an object")
+                            {
                                 let item = if value.is_object() {
                                     Item {
                                         name: key.clone(),
@@ -1242,7 +1249,6 @@ impl GameAI {
                     .collect::<HashMap<String, Item>>()
             })
             .unwrap_or_default();
-
         // Extract contacts
         let contacts = args
             .get("contacts")

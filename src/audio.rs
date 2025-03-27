@@ -56,7 +56,7 @@ pub async fn generate_audio(
     let file_name = format!("{}_{}.mp3", Local::now().format("%Y-%m-%d_%H:%M:%S"), uuid);
     let file_path = logs_dir.join(file_name);
     response
-        .save(file_path.to_str().unwrap())
+        .save(file_path.to_str().expect("Expected a String"))
         .await
         .map_err(AIError::OpenAI)?;
 

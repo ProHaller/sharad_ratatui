@@ -241,7 +241,8 @@ impl App {
 
     pub fn process_message(&mut self, message: String) {
         let user_message = create_user_message(&self.settings.language, &message);
-        let formatted_message = serde_json::to_string(&user_message).unwrap();
+        let formatted_message =
+            serde_json::to_string(&user_message).expect("The Value should have been serialized");
 
         self.start_spinner();
 
@@ -274,7 +275,8 @@ impl App {
                     game_message
                 ));
 
-                let game_message_json = serde_json::to_string(&game_message).unwrap();
+                let game_message_json = serde_json::to_string(&game_message)
+                    .expect("Value should have been serialized");
                 self.add_debug_message(format!("Game message: {:#?}", game_message_json.clone()));
                 self.add_message(Message::new(MessageType::Game, game_message_json.clone()));
 
@@ -970,7 +972,6 @@ impl App {
                     // let image_sender = self.image_sender.clone();
                     tokio::spawn(async move {
                         let _path = imager::generate_and_save_image(&prompt).await;
-                        // let _ = image_sender.send(path.unwrap());
                     });
                     self.add_message(Message::new(
                         MessageType::System,
@@ -1328,7 +1329,7 @@ impl App {
             self.initialize_ai_client().await?;
         }
 
-        let client = self.ai_client.clone().unwrap().client;
+        let client = self.ai_client.clone().expect("Expected a Client").client;
         let assistant = match create_assistant(&client, &self.settings.model, &save_name).await {
             Ok(assistant) => assistant,
             Err(err) => {
@@ -1535,7 +1536,11 @@ impl App {
         };
 
         // Clone the Arc to get a new reference to the AI client
-        let ai_client = self.ai_client.as_mut().unwrap().borrow_mut();
+        let ai_client = self
+            .ai_client
+            .as_mut()
+            .expect("Should have been a mutable ai_client")
+            .borrow_mut();
 
         // Use the cloned Arc to call load_conversation
         ai_client.load_conversation(conversation_state).await;

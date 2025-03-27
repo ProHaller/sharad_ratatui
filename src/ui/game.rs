@@ -52,7 +52,7 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
 
     let (_main_chunk, left_chunk, game_info_area) = CACHED_LAYOUTS.with(|cache: &Cache| {
         let mut cache = cache.borrow_mut();
-        if cache.is_none() || cache.as_ref().unwrap().0 != size {
+        if cache.is_none() || cache.as_ref().expect("Expected a valide cache").0 != size {
             let main_chunk = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
@@ -67,7 +67,7 @@ pub fn draw_in_game(f: &mut Frame, app: &mut App) {
             *cache = Some(new_cache);
         }
 
-        let (_, main_chunks, left_chunks) = cache.as_ref().unwrap();
+        let (_, main_chunks, left_chunks) = cache.as_ref().expect("Expected a valide cache");
         (main_chunks.clone(), left_chunks.clone(), main_chunks[1])
     });
     draw_game_content(f, app, left_chunk[0]);
@@ -563,12 +563,23 @@ fn draw_attributes(
 ) {
     let attributes = get_attributes(sheet);
     let max_area: usize = area.width as usize / 6;
-    let max_length =
-        if (attributes.iter().map(|(name, _)| name.len()).max().unwrap() + 1) > max_area {
-            3
-        } else {
-            attributes.iter().map(|(name, _)| name.len()).max().unwrap() + 1
-        };
+    let max_length = if (attributes
+        .iter()
+        .map(|(name, _)| name.len())
+        .max()
+        .expect("Expected a valid max len")
+        + 1)
+        > max_area
+    {
+        3
+    } else {
+        attributes
+            .iter()
+            .map(|(name, _)| name.len())
+            .max()
+            .expect("Expected a valid max len")
+            + 1
+    };
 
     let rows: Vec<Row> = attributes
         .chunks(4)
@@ -1116,7 +1127,10 @@ pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
         app.update_cached_content(max_width);
     }
 
-    let all_lines = app.cached_game_content.as_ref().unwrap();
+    let all_lines = app
+        .cached_game_content
+        .as_ref()
+        .expect("Expected a valid ref to a cached_game_content");
 
     app.total_lines = all_lines.len();
     *app.debug_info.borrow_mut() += &format!(", Total lines: {}", app.total_lines);

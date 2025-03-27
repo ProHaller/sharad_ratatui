@@ -70,7 +70,7 @@ fn define_schema() -> Result<ResponseFormat, Box<dyn Error>> {
         .expect("Failed to read assistant schema file");
 
     let json_schema: Value = serde_json::from_str(schema_file)?;
-    let name = json_schema["name"].as_str().unwrap();
+    let name = json_schema["name"].as_str().expect("Expected a String");
     let schema = json_schema["schema"].clone(); // This extracts the parameters part
     let strict = json_schema["strict"].as_bool().unwrap_or(true); // Defaults to true if not found
     let response_format = ResponseFormat::JsonSchema {
