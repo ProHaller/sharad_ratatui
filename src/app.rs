@@ -55,8 +55,7 @@ pub enum AppCommand {
     LoadGame(PathBuf),
     StartNewGame(String),
     ProcessMessage(String),
-    // TODO: Try to Box this to avoid the size difference warning
-    AIResponse(Result<GameMessage, AppError>),
+    AIResponse(Box<Result<GameMessage, AppError>>),
     ApiKeyValidationResult(bool),
     TranscriptionResult(String, TranscriptionTarget),
     TranscriptionError(String),
@@ -256,9 +255,11 @@ impl App {
                     .send_message(&formatted_message, &mut game_state)
                     .await
                     .map_err(AppError::Shadowrun);
-                let _ = sender.send(AppCommand::AIResponse(result));
+                let _ = sender.send(AppCommand::AIResponse(Box::new(result)));
             } else {
-                let _ = sender.send(AppCommand::AIResponse(Err(AppError::NoCurrentGame)));
+                let _ = sender.send(AppCommand::AIResponse(Box::new(Err(
+                    AppError::NoCurrentGame,
+                ))));
             }
         });
     }

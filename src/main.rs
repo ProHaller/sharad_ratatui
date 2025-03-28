@@ -172,7 +172,7 @@ async fn run_app(
                     },
                     AppCommand::AIResponse(result) => {
                         let mut app = app.lock().await;
-                        app.handle_ai_response(result).await;
+                        app.handle_ai_response(*result).await;
                         app.scroll_to_bottom();
                     },
                     AppCommand::LoadGame(save_path) => {
