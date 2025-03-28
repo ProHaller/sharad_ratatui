@@ -2,7 +2,7 @@
 use crate::{
     app::{App, AppCommand},
     cleanup::cleanup,
-    error::ShadowrunError,
+    error::{Result, ShadowrunError},
     message::{AIMessage, Message, MessageType},
 };
 
@@ -56,7 +56,7 @@ fn ensure_minimum_terminal_size() -> io::Result<()> {
 
 // Entry point for the Tokio runtime.
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> io::Result<()> {
     let update_result = tokio::task::spawn_blocking(check_for_updates).await?;
     if let Err(e) = update_result {
         println!("Failed to check for updates: {}", e);
@@ -123,7 +123,7 @@ async fn run_app(
     mut ai_receiver: mpsc::UnboundedReceiver<AIMessage>,
     mut error_receiver: mpsc::UnboundedReceiver<ShadowrunError>,
     mut image_receiver: mpsc::UnboundedReceiver<PathBuf>,
-) -> io::Result<()> {
+) -> Result<()> {
     let mut last_tick = Instant::now();
     let tick_rate = Duration::from_millis(16);
     let _ai_client = app.lock().await.initialize_ai_client().await;
@@ -248,7 +248,7 @@ async fn run_app(
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 game_state.image_path = Some(new_image_path.clone().to_path_buf());
                 app.current_game = Some(Arc::new(Mutex::new(game_state.clone())));
-                app.save_current_game().await.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                app.save_current_game().await?;
 
                 let _ = app.load_image_from_file(new_image_path);
             }
@@ -275,7 +275,7 @@ async fn run_app(
     }
 }
 
-fn check_for_updates() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+fn check_for_updates() -> core::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("Checking for updates...");
 
     let repo_owner = "ProHaller";

@@ -1,3 +1,4 @@
+use derive_more::{Display, From};
 use log::error;
 use once_cell::sync::Lazy;
 use serde_json;
@@ -6,7 +7,20 @@ use thiserror::Error;
 use tokio::sync::{Mutex, mpsc};
 
 // TODO: Add Jeremy Chone Error trick https://www.youtube.com/watch?v=j-VQCYP7wyw
-// pub type Result<T> = core::result::Result<T, Error>;
+pub type Result<T> = core::result::Result<T, Error>;
+
+#[derive(Error, Display, Debug, From)]
+pub enum Error {
+    ShadowrunError(ShadowrunError),
+    AppError(AppError),
+    GameError(GameError),
+    AIError(AIError),
+    SerializationError(serde_json::Error),
+    StringError(String),
+    BoxError(Box<dyn std::error::Error + Send + Sync>),
+    IOError(std::io::Error),
+    RatatuiImageError(ratatui_image::errors::Errors),
+}
 
 static GLOBAL_ERROR_HANDLER: Lazy<Arc<Mutex<Option<ErrorHandler>>>> =
     Lazy::new(|| Arc::new(Mutex::new(None)));

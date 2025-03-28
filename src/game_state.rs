@@ -1,7 +1,10 @@
 use std::path::PathBuf;
 
 // Import necessary modules from the local crate and external crates.
-use crate::character::{CharacterSheet, CharacterSheetUpdate};
+use crate::{
+    character::{CharacterSheet, CharacterSheetUpdate},
+    error::Result,
+};
 use serde::{Deserialize, Serialize};
 
 // Define a struct to manage the state of a game session, with serialization and deserialization.
@@ -33,7 +36,7 @@ impl std::fmt::Debug for GameState {
 impl GameState {
     // Function to load a game state from a specified JSON file.
 
-    pub fn update_character_sheet(&mut self, update: CharacterSheetUpdate) -> Result<(), String> {
+    pub fn update_character_sheet(&mut self, update: CharacterSheetUpdate) -> Result<()> {
         if let Some(ref mut sheet) = self.main_character_sheet {
             sheet.apply_update(update.clone())?;
         }

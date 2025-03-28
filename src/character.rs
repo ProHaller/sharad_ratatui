@@ -2,7 +2,10 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::ui::descriptions::*;
+use crate::{
+    error::{Error, Result},
+    ui::descriptions::*,
+};
 
 // TODO: Add descriptions everywhere
 
@@ -505,7 +508,7 @@ pub enum Value {
 }
 
 impl CharacterSheet {
-    pub fn apply_update(&mut self, update: CharacterSheetUpdate) -> Result<(), String> {
+    pub fn apply_update(&mut self, update: CharacterSheetUpdate) -> Result<()> {
         match update {
             CharacterSheetUpdate::UpdateAttribute {
                 attribute,
@@ -524,7 +527,7 @@ impl CharacterSheet {
         }
     }
 
-    fn modify_attribute(&mut self, attribute: &str, value: Value) -> Result<(), String> {
+    fn modify_attribute(&mut self, attribute: &str, value: Value) -> Result<()> {
         match (attribute, value.clone()) {
             ("name", Value::String(v)) => self.name = v,
             ("race", Value::Race(v)) => {
@@ -570,13 +573,14 @@ impl CharacterSheet {
                 return Err(format!(
                     "Invalid attribute-value pair for modification: {} {:#?}",
                     attribute, value
-                ));
+                ))
+                .map_err(|e| Error::from(e));
             }
         }
         Ok(())
     }
 
-    fn add_to_attribute(&mut self, attribute: &str, value: Value) -> Result<(), String> {
+    fn add_to_attribute(&mut self, attribute: &str, value: Value) -> Result<()> {
         match (attribute, value.clone()) {
             ("nuyen", Value::U32(v)) => self.nuyen = self.nuyen.saturating_add(v),
             ("contacts", Value::HashMapStringContact(v)) => self.contacts.extend(v),
@@ -596,13 +600,14 @@ impl CharacterSheet {
                 return Err(format!(
                     "Invalid attribute-value pair for addition: {} {:#?}",
                     attribute, value
-                ));
+                )
+                .into());
             }
         }
         Ok(())
     }
 
-    fn remove_from_attribute(&mut self, attribute: &str, value: Value) -> Result<(), String> {
+    fn remove_from_attribute(&mut self, attribute: &str, value: Value) -> Result<()> {
         match (attribute, value.clone()) {
             ("nuyen", Value::U32(v)) => self.nuyen = self.nuyen.saturating_sub(v),
             ("contacts", Value::HashMapStringContact(v)) => {
@@ -628,7 +633,8 @@ impl CharacterSheet {
                 return Err(format!(
                     "Invalid attribute-value pair for removal: {} {:#?}",
                     attribute, value
-                ));
+                )
+                .into());
             }
         }
         Ok(())

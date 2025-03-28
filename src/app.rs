@@ -5,7 +5,7 @@ use crate::{
     audio::{self, play_audio},
     character::CharacterSheet,
     cleanup::cleanup,
-    error::{AppError, ErrorMessage, ShadowrunError},
+    error::{AppError, Error, ErrorMessage, Result, ShadowrunError},
     game_state::GameState,
     imager,
     message::{self, AIMessage, GameMessage, Message, MessageType},
@@ -55,7 +55,7 @@ pub enum AppCommand {
     LoadGame(PathBuf),
     StartNewGame(String),
     ProcessMessage(String),
-    AIResponse(Box<Result<GameMessage, AppError>>),
+    AIResponse(Box<Result<GameMessage>>),
     ApiKeyValidationResult(bool),
     TranscriptionResult(String, TranscriptionTarget),
     TranscriptionError(String),
@@ -219,7 +219,7 @@ impl App {
         self.cached_content_len = self.game_content.borrow().len();
     }
 
-    pub async fn initialize_ai_client(&mut self) -> Result<(), AppError> {
+    pub async fn initialize_ai_client(&mut self) -> Result<()> {
         let api_key = self
             .settings
             .openai_api_key
@@ -251,20 +251,17 @@ impl App {
         tokio::spawn(async move {
             if let (Some(mut ai), Some(game_state)) = (ai_client, current_game) {
                 let mut game_state = game_state.lock().await;
-                let result = ai
-                    .send_message(&formatted_message, &mut game_state)
-                    .await
-                    .map_err(AppError::Shadowrun);
+                let result = ai.send_message(&formatted_message, &mut game_state).await;
                 let _ = sender.send(AppCommand::AIResponse(Box::new(result)));
             } else {
-                let _ = sender.send(AppCommand::AIResponse(Box::new(Err(
+                let _ = sender.send(AppCommand::AIResponse(Box::new(Err(Error::from(
                     AppError::NoCurrentGame,
-                ))));
+                )))));
             }
         });
     }
 
-    pub async fn handle_ai_response(&mut self, result: Result<GameMessage, AppError>) {
+    pub async fn handle_ai_response(&mut self, result: Result<GameMessage>) {
         self.stop_spinner();
         self.add_debug_message(format!("Spinner: {:#?}", self.spinner_active));
 
@@ -375,7 +372,7 @@ impl App {
         }
     }
 
-    fn handle_paste(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    fn handle_paste(&mut self) -> Result<()> {
         if let Ok(contents) = self.clipboard.get_contents() {
             match self.state {
                 AppState::InGame => {
@@ -1263,29 +1260,27 @@ impl App {
         self.game_content.borrow_mut().push(message);
     }
 
-    pub async fn send_message(&mut self, message: String) -> Result<(), AppError> {
+    pub async fn send_message(&mut self, message: String) -> Result<()> {
         let user_message = create_user_message(&self.settings.language, &message);
         let formatted_message = serde_json::to_string(&user_message)
             .map_err(|e| AppError::Shadowrun(ShadowrunError::Serialization(e.to_string())))?;
 
         self.start_spinner();
 
-        let result: Result<GameMessage, AppError> = {
+        let result: Result<GameMessage> = {
             if let (Some(ai), Some(game_state)) = (&mut self.ai_client, &self.current_game) {
                 let mut game_state = game_state.lock().await;
-                ai.send_message(&formatted_message, &mut game_state)
-                    .await
-                    .map_err(AppError::Shadowrun)
+                ai.send_message(&formatted_message, &mut game_state).await
             } else if self.ai_client.is_none() {
-                Err(AppError::AIClientNotInitialized)
+                Err(AppError::AIClientNotInitialized.into())
             } else {
-                Err(AppError::NoCurrentGame)
+                Err(AppError::NoCurrentGame.into())
             }
         };
 
         self.stop_spinner();
 
-        match &result {
+        match result {
             Ok(game_message) => {
                 if let Err(e) = self
                     .ai_sender
@@ -1295,22 +1290,14 @@ impl App {
                 }
                 self.add_message(Message::new(
                     MessageType::Game,
-                    serde_json::to_string(game_message).map_err(|e| {
-                        AppError::Shadowrun(ShadowrunError::Serialization(e.to_string()))
-                    })?,
+                    serde_json::to_string(&game_message)?,
                 ));
                 if let Some(character_sheet) = &game_message.character_sheet {
                     self.update_character_sheet(character_sheet.clone()).await;
                 }
                 Ok(())
             }
-            Err(e) => {
-                eprintln!("Failed to send AI error response {:?}", e);
-                if let Err(send_err) = self.ai_sender.send(AIMessage::Response(Err(e.clone()))) {
-                    eprintln!("Failed to send AI error through channel: {}", send_err);
-                }
-                Err(e.clone())
-            }
+            Err(e) => Err(e),
         }
     }
 
@@ -1320,10 +1307,7 @@ impl App {
         }
     }
 
-    pub async fn start_new_game(
-        &mut self,
-        save_name: String,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn start_new_game(&mut self, save_name: String) -> Result<()> {
         // Initialize AI client if not already initialized
         if self.ai_client.is_none() {
             self.initialize_ai_client().await?;
@@ -1332,9 +1316,9 @@ impl App {
         let client = self.ai_client.clone().unwrap().client;
         let assistant = match create_assistant(&client, &self.settings.model, &save_name).await {
             Ok(assistant) => assistant,
-            Err(err) => {
-                println!("{}", err);
-                return Err(err);
+            Err(e) => {
+                println!("{}", e);
+                return Err(e);
             }
         };
         let assistant_id = &assistant.id;
@@ -1357,7 +1341,7 @@ impl App {
                 .lock()
                 .await
                 .as_ref()
-                .ok_or("Conversation state not initialized")?
+                .ok_or("Conversation state not initialized".to_string())?
                 .thread_id
                 .clone();
 
@@ -1398,7 +1382,7 @@ impl App {
 
             Ok(())
         } else {
-            Err("AI client not initialized".into())
+            Err("AI client not initialized".to_string().into())
         }
     }
 
@@ -1418,7 +1402,7 @@ impl App {
         }
     }
 
-    pub fn load_image_from_file(&mut self, path: PathBuf) -> Result<(), ShadowrunError> {
+    pub fn load_image_from_file(&mut self, path: PathBuf) -> Result<()> {
         if let Some(current_game_state) = self.current_game.clone() {
             let path_clone = path.clone();
             tokio::spawn(async move {
@@ -1437,15 +1421,15 @@ impl App {
             }
             Err(err) => {
                 // Convert ImageError to ShadowrunError using the implemented From trait
-                Err(ShadowrunError::from(err))
+                Err(ShadowrunError::from(err).into())
             }
         }
     }
 
-    pub async fn save_current_game(&mut self) -> Result<(), AppError> {
+    pub async fn save_current_game(&mut self) -> Result<()> {
         let game_state = match &self.current_game {
             Some(arc_mutex) => arc_mutex,
-            None => return Err(AppError::NoCurrentGame),
+            None => return Err(AppError::NoCurrentGame.into()),
         };
 
         // Clone the Arc to get a new reference
@@ -1470,10 +1454,13 @@ impl App {
         Ok(())
     }
 
-    fn delete_selected_save(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    fn delete_selected_save(&mut self) -> Result<()> {
         if let Some(selected) = self.load_game_menu_state.selected() {
             let save_name = self.save_manager.available_saves[selected].clone();
-            let ai_client = self.ai_client.clone().ok_or("AI client not found")?;
+            let ai_client = self
+                .ai_client
+                .clone()
+                .ok_or(Error::from("AI client not found".to_string()))?;
             let save_2 = save_name.clone();
             let assistant_id = get_assistant_id(&save_name)?;
             tokio::spawn(async move {
@@ -1491,7 +1478,7 @@ impl App {
             self.load_game_menu_state.select(Some(new_selected));
             Ok(())
         } else {
-            Err("No save selected".into())
+            Err("No save selected".to_string().into())
         }
     }
 
@@ -1509,17 +1496,14 @@ impl App {
         self.load_game_menu_state.select(Some(next));
     }
 
-    pub async fn load_game(
-        &mut self,
-        save_path: &PathBuf,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn load_game(&mut self, save_path: &PathBuf) -> Result<()> {
         self.save_manager = self.save_manager.clone().load_from_file(save_path)?;
 
         let game_state = self
             .save_manager
             .current_save
             .clone()
-            .ok_or("No current game")?;
+            .ok_or(Error::from("No current game".to_string()))?;
         if let Some(image_path) = game_state.image_path.clone() {
             self.load_image_from_file(image_path)?;
         }

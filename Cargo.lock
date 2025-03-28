@@ -3259,6 +3259,7 @@ dependencies = [
 name = "sharad_ratatui"
 version = "0.2.0"
 dependencies = [
+ "anyhow",
  "async-openai",
  "chrono",
  "cleanup",

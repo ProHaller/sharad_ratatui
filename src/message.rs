@@ -1,5 +1,5 @@
 // Import the necessary modules and structs from other parts of the application or crates.
-use crate::{character::CharacterSheet, error::AppError};
+use crate::{character::CharacterSheet, error::Result};
 use async_openai::types::Voice;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -148,8 +148,7 @@ impl std::fmt::Debug for Message {
 // Enumeration for AI-generated messages with different purposes.
 pub enum AIMessage {
     Debug(String),
-    // TODO: Try Box this to avoid the size difference warning
-    Response(Result<GameMessage, AppError>),
+    Response(Result<GameMessage>),
 }
 
 // Implementation of Message struct, providing a method to create new messages.

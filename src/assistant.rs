@@ -1,6 +1,7 @@
+use crate::error::{AIError, Error, Result};
 use include_dir::{Dir, DirEntry, include_dir};
 use serde_json::Value;
-use std::{error::Error, fs::File, io::Read, path::PathBuf};
+use std::{fs::File, io::Read, path::PathBuf};
 
 use async_openai::{
     Client,
@@ -14,7 +15,7 @@ use async_openai::{
 // TODO: Make sure the model is formating properly the dialogue responses in French and english.
 static ASSETS_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets");
 
-fn load_function_objects() -> Result<Vec<FunctionObject>, Box<dyn Error>> {
+fn load_function_objects() -> Result<Vec<FunctionObject>> {
     let folder_dir = ASSETS_DIR
         .get_dir("assistant_functions")
         .expect("Failed to get assistant_functions directory");
@@ -32,7 +33,7 @@ fn load_function_objects() -> Result<Vec<FunctionObject>, Box<dyn Error>> {
                     // Read the file contents
                     let content = file
                         .contents_utf8()
-                        .ok_or("File content is not valid UTF-8")?;
+                        .ok_or("File content is not valid UTF-8".to_string())?;
 
                     // Parse the content as a JSON value
                     let function_data: Value = serde_json::from_str(content)?;
@@ -61,7 +62,7 @@ fn load_function_objects() -> Result<Vec<FunctionObject>, Box<dyn Error>> {
     Ok(function_objects)
 }
 
-fn define_schema() -> Result<ResponseFormat, Box<dyn Error>> {
+fn define_schema() -> Result<ResponseFormat> {
     let schema_file = ASSETS_DIR
         .get_file("assistant_instructions/schema.json")
         .expect("Failed to get assistant schema file")
@@ -88,7 +89,7 @@ pub async fn create_assistant(
     client: &Client<OpenAIConfig>,
     model: &str,
     name: &str,
-) -> Result<AssistantObject, Box<dyn Error>> {
+) -> Result<AssistantObject> {
     // Load all FunctionObjects from the specified folder
     let function_objects = load_function_objects()?;
     let instructions = ASSETS_DIR
@@ -115,14 +116,19 @@ pub async fn create_assistant(
         .model(model)
         .response_format(AssistantsApiResponseFormatOption::Format(response_format))
         .tools(assistant_tools) // Pass the vector of AssistantTools
-        .build()?;
+        .build()
+        .map_err(|e| AIError::OpenAI(e))?;
 
     // Create the assistant
-    let assistant = client.assistants().create(create_assistant_request).await?;
+    let assistant = client
+        .assistants()
+        .create(create_assistant_request)
+        .await
+        .map_err(|e| AIError::OpenAI(e))?;
     Ok(assistant)
 }
 
-pub fn get_assistant_id(save_name: &PathBuf) -> Result<String, Box<dyn Error>> {
+pub fn get_assistant_id(save_name: &PathBuf) -> Result<String> {
     let mut file = File::open(save_name)?;
 
     // Read the file content into a string
@@ -136,7 +142,7 @@ pub fn get_assistant_id(save_name: &PathBuf) -> Result<String, Box<dyn Error>> {
     if let Some(assistant_id) = json["assistant_id"].as_str() {
         Ok(assistant_id.to_string())
     } else {
-        Err(Box::new(std::io::Error::new(
+        Err(Error::from(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             "Couldn't find assistant_id in the file",
         )))

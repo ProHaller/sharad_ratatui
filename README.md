@@ -2,9 +2,7 @@
 
 Welcome to Sharad Ratatui, a text-based Shadowrun role-playing game built with Rust and the Ratatui library!
 
-https://github.com/user-attachments/assets/54ca4490-0df8-4e6d-a6fb-7d61336547f5
-
-
+<https://github.com/user-attachments/assets/54ca4490-0df8-4e6d-a6fb-7d61336547f5>
 
 ## 🌟 Join Our Adventure
 
@@ -27,7 +25,7 @@ In Sharad Ratatui, the role of the GM is handled by a mix of AI for the Narratio
 
 ### Requirements
 
-To play Sharad Ratatui, you will need an OpenAI API Key. This key is necessary to enable the game's narrative generation and other dynamic features. If you don't have an API key but still want to contribute, you can contact the maiintainer to get sponsored.
+To play Sharad Ratatui, you will need an OpenAI API Key. This key is necessary to enable the game's narrative generation and other dynamic features. If you don't have an API key but still want to contribute, you can contact the maintainer to get sponsored.
 
 ## 🛠️ Project Architecture Overview
 

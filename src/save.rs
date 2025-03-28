@@ -1,4 +1,4 @@
-use crate::game_state::GameState;
+use crate::{error::Result, game_state::GameState};
 
 use chrono::Local;
 use serde::{Deserialize, Serialize};
@@ -66,10 +66,7 @@ impl SaveManager {
         path_vec
     }
 
-    pub fn load_from_file(
-        mut self,
-        save_path: &PathBuf,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn load_from_file(mut self, save_path: &PathBuf) -> Result<Self> {
         let file = File::open(save_path).map_err(|e| {
             eprintln!("Failed to open file: {}", e);
             e
@@ -91,7 +88,7 @@ impl SaveManager {
         Ok(self)
     }
 
-    pub fn save(self) -> Result<(), std::io::Error> {
+    pub fn save(self) -> Result<()> {
         let current_save = self.current_save.ok_or(std::io::Error::new(
             std::io::ErrorKind::Other,
             "There is no game to save",
@@ -119,7 +116,7 @@ impl SaveManager {
         Ok(())
     }
 
-    pub fn delete_save(mut self, save_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn delete_save(mut self, save_path: &PathBuf) -> Result<()> {
         if let Some(save_dir) = save_path.parent() {
             if save_dir != get_save_base_dir() {
                 remove_dir_all(save_dir)?;
