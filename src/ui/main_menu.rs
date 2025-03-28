@@ -166,6 +166,8 @@ pub fn render_menu(f: &mut Frame, app: &App, area: Rect) {
     let menu = Paragraph::new(menu_lines)
         .alignment(Alignment::Left)
         .style(Style::default().fg(Color::White));
+
+    // HACK: This should be a stateful widget.
     f.render_widget(menu, centered_area);
 }
 

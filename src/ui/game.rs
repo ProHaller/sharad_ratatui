@@ -1,8 +1,10 @@
-use super::draw::{MIN_HEIGHT, MIN_WIDTH};
+use super::{
+    descriptions::*,
+    draw::{MIN_HEIGHT, MIN_WIDTH},
+};
 use crate::{
     app::{App, InputMode},
     character::{CharacterSheet, DerivedAttributes},
-    descriptions::*,
     message::{GameMessage, MessageType, UserMessage},
     ui::spinner::spinner_frame,
 };
@@ -342,148 +344,6 @@ pub fn draw_detailed_info(app: &mut App, f: &mut Frame, sheet: &CharacterSheet, 
     } else {
         f.render_widget(detail_paragraph, inner_area);
     }
-}
-
-fn chunk_attributes(attributes: Vec<(&str, u8)>, chunk_nb: u8) -> Vec<Line<'_>> {
-    let line_chunks = attributes
-        .chunks(4)
-        .map(|chunk| {
-            chunk
-                .iter()
-                .flat_map(|attr| {
-                    vec![
-                        Line::from(vec![Span::raw("")]),
-                        Line::from(vec![
-                            Span::styled(
-                                format!("{}: ", attr.0),
-                                Style::default().fg(Color::Yellow),
-                            ),
-                            Span::styled(
-                                format!("{}", attr.1),
-                                Style::default()
-                                    .fg(Color::White)
-                                    .add_modifier(Modifier::BOLD),
-                            ),
-                        ]),
-                        Line::from(vec![Span::raw(get_attribute_description(attr))]),
-                    ]
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
-    line_chunks[chunk_nb as usize].clone()
-}
-
-fn get_attributes(sheet: &CharacterSheet) -> Vec<(&str, u8)> {
-    vec![
-        ("BODY", sheet.attributes.body),
-        ("AGILITY", sheet.attributes.agility),
-        ("REACTION", sheet.attributes.reaction),
-        ("STRENGTH", sheet.attributes.strength),
-        ("WILLPOWER", sheet.attributes.willpower),
-        ("LOGIC", sheet.attributes.logic),
-        ("INTUITION", sheet.attributes.intuition),
-        ("CHARISMA", sheet.attributes.charisma),
-        ("EDGE", sheet.attributes.edge),
-        ("MAGIC", sheet.magic.magic.unwrap_or(0)),
-        ("RESONANCE", sheet.resonance.resonance.unwrap_or(0)),
-    ]
-}
-
-fn get_attribute_description(attributes: &(&str, u8)) -> &'static str {
-    match attributes.0 {
-        "STRENGTH" => STRENGTH,
-        "AGILITY" => AGILITY,
-        "BODY" => BODY,
-        "LOGIC" => LOGIC,
-        "INTUITION" => INTUITION,
-        "CHARISMA" => CHARISMA,
-        "WILLPOWER" => WILLPOWER,
-        "REACTION" => REACTION,
-        "EDGE" => EDGE,
-        "MAGIC" => MAGIC,
-        "RESONANCE" => RESONANCE,
-        _ => "This should not appear…",
-    }
-}
-
-macro_rules! styled_line {
-    ($label:expr, $value:expr) => {
-        Line::from(vec![
-            Span::styled(
-                $label,
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                format!("{}", $value),
-                Style::default()
-                    .fg(Color::White)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ])
-    };
-}
-
-fn get_derived(derived: &DerivedAttributes, nb: usize) -> Vec<Line<'_>> {
-    let derived_lines = [
-        vec![
-            styled_line!(
-                "Initiative: ",
-                format!("{}+{}d6", derived.initiative.0, derived.initiative.1)
-            ),
-            Line::from(vec![Span::raw(INITIATIVE)]),
-            styled_line!("Armor: ", derived.armor),
-            Line::from(vec![Span::raw(ARMOR)]),
-            styled_line!(
-                "Monitors: ",
-                format!(
-                    "PHY:{} STU:{}",
-                    derived.monitors.physical, derived.monitors.stun
-                )
-            ),
-            Line::from(vec![Span::styled(
-                "PHY: ",
-                Style::default().fg(Color::Yellow),
-            )]),
-            Line::from(vec![Span::raw(MONITOR_PHYSICAL)]),
-            Line::from(vec![Span::styled(
-                "STU: ",
-                Style::default().fg(Color::Yellow),
-            )]),
-            Line::from(vec![Span::raw(MONITOR_STUN)]),
-        ],
-        vec![
-            styled_line!(
-                "Limits: ",
-                format!(
-                    "PHY:{} MEN:{} SOC:{}",
-                    derived.limits.physical, derived.limits.mental, derived.limits.social
-                )
-            ),
-            Line::from(vec![Span::styled(
-                "PHY: ",
-                Style::default().fg(Color::Yellow),
-            )]),
-            Line::from(vec![Span::raw(LIMIT_PHYSICAL)]),
-            Line::from(vec![Span::styled(
-                "MEN: ",
-                Style::default().fg(Color::Yellow),
-            )]),
-            Line::from(vec![Span::raw(LIMIT_MENTAL)]),
-            Line::from(vec![Span::styled(
-                "SOC: ",
-                Style::default().fg(Color::Yellow),
-            )]),
-            Line::from(vec![Span::raw(LIMIT_SOCIAL)]),
-            styled_line!("Essence: ", format!("{:.2}", derived.essence.current)),
-            Line::from(vec![Span::raw(ESSENCE)]),
-            styled_line!("Edge Points: ", derived.edge_points),
-            Line::from(vec![Span::raw(EDGE_POINTS)]),
-        ],
-    ];
-    derived_lines[nb].clone()
 }
 
 // Display basic information like name, race, and gender.
@@ -1069,34 +929,6 @@ fn draw_inventory(
     f.render_widget(inventory_table, area);
 }
 
-// Helper function to create a styled table from given information.
-#[allow(unused)]
-fn create_table<'a>(info: &'a [String], title: &'a str) -> Table<'a> {
-    let rows: Vec<Row> = info
-        .iter()
-        .map(|item| {
-            Row::new(vec![Cell::from(Span::styled(
-                item.to_string(),
-                Style::default().fg(Color::White),
-            ))])
-        })
-        .collect();
-
-    let widths = vec![Constraint::Percentage(100)];
-
-    Table::new(rows, widths)
-        .block(
-            Block::default()
-                .border_type(BorderType::Rounded)
-                .borders(Borders::ALL)
-                .title(format!(" {} ", title)),
-        )
-        .style(Style::default().fg(Color::White))
-        .row_highlight_style(Style::default().add_modifier(Modifier::BOLD))
-        .highlight_symbol(">>")
-        .column_spacing(1)
-}
-
 pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
     let save_name = app
         .save_manager
@@ -1161,62 +993,6 @@ pub fn draw_game_content(f: &mut Frame, app: &mut App, area: Rect) {
     app.visible_lines = max_height;
     app.update_scroll();
     app.update_debug_info();
-}
-
-pub fn parse_game_content(app: &App, max_width: usize) -> Vec<(Line<'static>, Alignment)> {
-    let mut all_lines = Vec::new();
-
-    for message in app.game_content.borrow().iter() {
-        let (content, base_style, alignment) = match message.message_type {
-            MessageType::Game => {
-                if let Ok(game_message) = serde_json::from_str::<GameMessage>(&message.content) {
-                    (
-                        format!(
-                            "crunch:\n{}\n\nfluff:\n{}",
-                            game_message.crunch,
-                            game_message.fluff.render()
-                        ),
-                        Style::default().fg(Color::Green),
-                        Alignment::Left,
-                    )
-                } else {
-                    (
-                        message.content.clone(),
-                        Style::default().fg(Color::Green),
-                        Alignment::Left,
-                    )
-                }
-            }
-            MessageType::User => {
-                if let Ok(user_message) = serde_json::from_str::<UserMessage>(&message.content) {
-                    (
-                        format!("\nPlayer action:\n{}", user_message.player_action),
-                        Style::default().fg(Color::Cyan),
-                        Alignment::Right,
-                    )
-                } else {
-                    (
-                        message.content.clone(),
-                        Style::default().fg(Color::Cyan),
-                        Alignment::Right,
-                    )
-                }
-            }
-            MessageType::System => (
-                message.content.clone(),
-                Style::default().fg(Color::Yellow),
-                Alignment::Center,
-            ),
-        };
-
-        let wrapped_lines = textwrap::wrap(&content, max_width);
-        for line in wrapped_lines {
-            let parsed_line = parse_markdown(line.to_string(), base_style);
-            all_lines.push((parsed_line, alignment));
-        }
-    }
-
-    all_lines
 }
 
 pub fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
@@ -1312,6 +1088,62 @@ pub fn draw_user_input(f: &mut Frame, app: &App, area: Rect) {
     }
 }
 
+pub fn parse_game_content(app: &App, max_width: usize) -> Vec<(Line<'static>, Alignment)> {
+    let mut all_lines = Vec::new();
+
+    for message in app.game_content.borrow().iter() {
+        let (content, base_style, alignment) = match message.message_type {
+            MessageType::Game => {
+                if let Ok(game_message) = serde_json::from_str::<GameMessage>(&message.content) {
+                    (
+                        format!(
+                            "crunch:\n{}\n\nfluff:\n{}",
+                            game_message.crunch,
+                            game_message.fluff.render()
+                        ),
+                        Style::default().fg(Color::Green),
+                        Alignment::Left,
+                    )
+                } else {
+                    (
+                        message.content.clone(),
+                        Style::default().fg(Color::Green),
+                        Alignment::Left,
+                    )
+                }
+            }
+            MessageType::User => {
+                if let Ok(user_message) = serde_json::from_str::<UserMessage>(&message.content) {
+                    (
+                        format!("\nPlayer action:\n{}", user_message.player_action),
+                        Style::default().fg(Color::Cyan),
+                        Alignment::Right,
+                    )
+                } else {
+                    (
+                        message.content.clone(),
+                        Style::default().fg(Color::Cyan),
+                        Alignment::Right,
+                    )
+                }
+            }
+            MessageType::System => (
+                message.content.clone(),
+                Style::default().fg(Color::Yellow),
+                Alignment::Center,
+            ),
+        };
+
+        let wrapped_lines = textwrap::wrap(&content, max_width);
+        for line in wrapped_lines {
+            let parsed_line = parse_markdown(line.to_string(), base_style);
+            all_lines.push((parsed_line, alignment));
+        }
+    }
+
+    all_lines
+}
+
 // Function to parse markdown-like text to formatted spans.
 
 fn parse_markdown(line: String, base_style: Style) -> Line<'static> {
@@ -1403,4 +1235,146 @@ fn center_vertical(area: Rect, height: u16) -> Rect {
         .flex(Flex::Center)
         .areas(area);
     area
+}
+
+fn chunk_attributes(attributes: Vec<(&str, u8)>, chunk_nb: u8) -> Vec<Line<'_>> {
+    let line_chunks = attributes
+        .chunks(4)
+        .map(|chunk| {
+            chunk
+                .iter()
+                .flat_map(|attr| {
+                    vec![
+                        Line::from(vec![Span::raw("")]),
+                        Line::from(vec![
+                            Span::styled(
+                                format!("{}: ", attr.0),
+                                Style::default().fg(Color::Yellow),
+                            ),
+                            Span::styled(
+                                format!("{}", attr.1),
+                                Style::default()
+                                    .fg(Color::White)
+                                    .add_modifier(Modifier::BOLD),
+                            ),
+                        ]),
+                        Line::from(vec![Span::raw(get_attribute_description(attr))]),
+                    ]
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    line_chunks[chunk_nb as usize].clone()
+}
+
+fn get_attributes(sheet: &CharacterSheet) -> Vec<(&str, u8)> {
+    vec![
+        ("BODY", sheet.attributes.body),
+        ("AGILITY", sheet.attributes.agility),
+        ("REACTION", sheet.attributes.reaction),
+        ("STRENGTH", sheet.attributes.strength),
+        ("WILLPOWER", sheet.attributes.willpower),
+        ("LOGIC", sheet.attributes.logic),
+        ("INTUITION", sheet.attributes.intuition),
+        ("CHARISMA", sheet.attributes.charisma),
+        ("EDGE", sheet.attributes.edge),
+        ("MAGIC", sheet.magic.magic.unwrap_or(0)),
+        ("RESONANCE", sheet.resonance.resonance.unwrap_or(0)),
+    ]
+}
+
+fn get_attribute_description(attributes: &(&str, u8)) -> &'static str {
+    match attributes.0 {
+        "STRENGTH" => STRENGTH,
+        "AGILITY" => AGILITY,
+        "BODY" => BODY,
+        "LOGIC" => LOGIC,
+        "INTUITION" => INTUITION,
+        "CHARISMA" => CHARISMA,
+        "WILLPOWER" => WILLPOWER,
+        "REACTION" => REACTION,
+        "EDGE" => EDGE,
+        "MAGIC" => MAGIC,
+        "RESONANCE" => RESONANCE,
+        _ => "This should not appear…",
+    }
+}
+
+macro_rules! styled_line {
+    ($label:expr, $value:expr) => {
+        Line::from(vec![
+            Span::styled(
+                $label,
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("{}", $value),
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ])
+    };
+}
+
+fn get_derived(derived: &DerivedAttributes, nb: usize) -> Vec<Line<'_>> {
+    let derived_lines = [
+        vec![
+            styled_line!(
+                "Initiative: ",
+                format!("{}+{}d6", derived.initiative.0, derived.initiative.1)
+            ),
+            Line::from(vec![Span::raw(INITIATIVE)]),
+            styled_line!("Armor: ", derived.armor),
+            Line::from(vec![Span::raw(ARMOR)]),
+            styled_line!(
+                "Monitors: ",
+                format!(
+                    "PHY:{} STU:{}",
+                    derived.monitors.physical, derived.monitors.stun
+                )
+            ),
+            Line::from(vec![Span::styled(
+                "PHY: ",
+                Style::default().fg(Color::Yellow),
+            )]),
+            Line::from(vec![Span::raw(MONITOR_PHYSICAL)]),
+            Line::from(vec![Span::styled(
+                "STU: ",
+                Style::default().fg(Color::Yellow),
+            )]),
+            Line::from(vec![Span::raw(MONITOR_STUN)]),
+        ],
+        vec![
+            styled_line!(
+                "Limits: ",
+                format!(
+                    "PHY:{} MEN:{} SOC:{}",
+                    derived.limits.physical, derived.limits.mental, derived.limits.social
+                )
+            ),
+            Line::from(vec![Span::styled(
+                "PHY: ",
+                Style::default().fg(Color::Yellow),
+            )]),
+            Line::from(vec![Span::raw(LIMIT_PHYSICAL)]),
+            Line::from(vec![Span::styled(
+                "MEN: ",
+                Style::default().fg(Color::Yellow),
+            )]),
+            Line::from(vec![Span::raw(LIMIT_MENTAL)]),
+            Line::from(vec![Span::styled(
+                "SOC: ",
+                Style::default().fg(Color::Yellow),
+            )]),
+            Line::from(vec![Span::raw(LIMIT_SOCIAL)]),
+            styled_line!("Essence: ", format!("{:.2}", derived.essence.current)),
+            Line::from(vec![Span::raw(ESSENCE)]),
+            styled_line!("Edge Points: ", derived.edge_points),
+            Line::from(vec![Span::raw(EDGE_POINTS)]),
+        ],
+    ];
+    derived_lines[nb].clone()
 }

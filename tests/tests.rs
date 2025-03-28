@@ -190,7 +190,7 @@ fn test_character_sheet_update_from_json() {
     let mut character_sheet = create_character_from_args(args);
     // Step 1: Read the dummy JSON file
     let json_str = fs::read_to_string("tests/dummy_update_character_sheet.json")
-        .expect("Failed to read dummy update character JSON file");
+        .expect("Expected to read dummy update character JSON file");
 
     // Step 2: Parse the JSON into a serde_json::Value
     let json_value: serde_json::Value =

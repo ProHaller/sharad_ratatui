@@ -2,7 +2,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::descriptions::*;
+use crate::ui::descriptions::*;
 
 // TODO: Add descriptions everywhere
 

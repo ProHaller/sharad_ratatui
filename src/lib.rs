@@ -5,7 +5,6 @@ pub mod assistant;
 pub mod audio;
 pub mod character;
 pub mod cleanup;
-pub mod descriptions;
 pub mod dice;
 pub mod error;
 pub mod game_state;

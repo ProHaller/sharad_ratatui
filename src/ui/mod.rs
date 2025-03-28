@@ -3,6 +3,7 @@
 mod api_key_input;
 mod constants;
 mod create_image;
+pub mod descriptions;
 mod draw;
 pub mod game;
 mod load_game;
