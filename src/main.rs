@@ -1,8 +1,10 @@
 // Import necessary modules from the local crate and external crates.
-use crate::app::{App, AppCommand};
-use crate::cleanup::cleanup;
-use crate::error::ShadowrunError;
-use crate::message::{AIMessage, Message, MessageType};
+use crate::{
+    app::{App, AppCommand},
+    cleanup::cleanup,
+    error::ShadowrunError,
+    message::{AIMessage, Message, MessageType},
+};
 
 use core::cmp::Ordering;
 use crossterm::{

@@ -1,4 +1,3 @@
-use async_openai::types::{ResponseFormat, ResponseFormatJsonSchema};
 use include_dir::{Dir, DirEntry, include_dir};
 use serde_json::Value;
 use std::{error::Error, fs::File, io::Read, path::PathBuf};
@@ -8,7 +7,7 @@ use async_openai::{
     config::OpenAIConfig,
     types::{
         AssistantObject, AssistantTools, AssistantsApiResponseFormatOption,
-        CreateAssistantRequestArgs, FunctionObject,
+        CreateAssistantRequestArgs, FunctionObject, ResponseFormat, ResponseFormatJsonSchema,
     },
 };
 
