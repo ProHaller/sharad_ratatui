@@ -1,3 +1,4 @@
+// /main.rs
 // Import necessary modules from the local crate and external crates.
 use crate::{
     app::{App, AppCommand},
@@ -15,31 +16,30 @@ use crossterm::{
 use ratatui::{Terminal, backend::CrosstermBackend};
 use self_update::backends::github::{ReleaseList, Update};
 use semver::Version;
-use std::{io, panic, path::PathBuf, sync::Arc, time::Duration};
+use std::{io, panic, path::PathBuf, rc::Rc, sync::Arc, time::Duration};
 use tokio::{
     fs::copy,
     sync::{Mutex, mpsc},
     time::{Instant, sleep},
 };
-use ui::{MIN_HEIGHT, MIN_WIDTH};
+use ui::{MIN_HEIGHT, MIN_WIDTH, draw};
 
-// Modules are declared which should be assumed to be part of the application architecture.
-pub mod ai;
-pub mod ai_response;
-pub mod app;
-pub mod assistant;
-pub mod audio;
-pub mod character;
-pub mod cleanup;
-pub mod dice;
-pub mod error;
-pub mod game_state;
-pub mod imager;
-pub mod message;
-pub mod save;
-pub mod settings;
-pub mod settings_state;
-pub mod ui;
+mod ai;
+mod ai_response;
+mod app;
+mod assistant;
+mod audio;
+mod character;
+mod cleanup;
+mod dice;
+mod error;
+mod game_state;
+mod imager;
+mod message;
+mod save;
+mod settings;
+mod settings_state;
+mod ui;
 
 // Function to ensure the terminal size meets minimum requirements.
 fn ensure_minimum_terminal_size() -> io::Result<()> {
@@ -96,7 +96,7 @@ async fn main() -> io::Result<()> {
     // Initialize the application.
     let (app, command_receiver) = App::new(ai_sender, image_sender).await;
     let error_receiver = error::initialize_global_error_handler().await;
-    let app = Arc::new(Mutex::new(app));
+    let app = Rc::new(Mutex::new(app));
 
     // Run the application and handle errors.
     if let Err(err) = run_app(
@@ -118,7 +118,7 @@ async fn main() -> io::Result<()> {
 // Asynchronous function to continuously run and update the application.
 async fn run_app(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
-    app: Arc<Mutex<App>>,
+    app: Rc<Mutex<App>>,
     mut command_receiver: mpsc::UnboundedReceiver<AppCommand>,
     mut ai_receiver: mpsc::UnboundedReceiver<AIMessage>,
     mut error_receiver: mpsc::UnboundedReceiver<ShadowrunError>,
@@ -222,19 +222,11 @@ async fn run_app(
                 }
             },
             Some(ai_message) = ai_receiver.recv() => {
-                let mut app = app.lock().await;
+                let app = app.lock().await;
                 match ai_message {
                     AIMessage::Debug(debug_message) => {
                         app.add_debug_message(debug_message);
                     },
-                    AIMessage::Response(response) => {
-                        if let Some(last_message) = app.game_content.borrow().last() {
-                            if last_message.message_type == MessageType::System {
-                                app.game_content.borrow_mut().pop();
-                            }
-                        }
-                        app.handle_ai_response(response).await;
-                    }
                 }
             }
             Some(image_path) = image_receiver.recv() => {
@@ -259,7 +251,7 @@ async fn run_app(
 
         terminal.draw(|f| {
             let mut app = tokio::task::block_in_place(|| app.blocking_lock());
-            ui::draw(f, &mut app)
+            draw(f, &mut app)
         })?;
 
         if app.lock().await.should_quit {

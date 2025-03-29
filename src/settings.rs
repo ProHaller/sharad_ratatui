@@ -37,24 +37,11 @@ impl Default for Settings {
 
 // Additional implementation block for Settings.
 impl Settings {
-    // Constructor function to create new settings with default values.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     // Load settings from a default file path.
     pub fn load() -> io::Result<Self> {
         let home_dir = dir::home_dir().expect("Failed to get home directory");
         let path = home_dir.join("sharad").join("data").join("settings.json");
         Self::load_settings_from_file(path)
-    }
-
-    // Save current settings to a default file path.
-    pub fn save(&self) -> io::Result<()> {
-        let home_dir = dir::home_dir().expect("Failed to get home directory");
-        let path = home_dir.join("sharad").join("data").join("settings.json");
-        std::fs::create_dir_all(&path)?; // Ensure the data directory exists.
-        self.save_to_file(path)
     }
 
     // Load settings from a specified file path.

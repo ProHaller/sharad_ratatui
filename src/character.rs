@@ -1,3 +1,5 @@
+// /character.rs
+
 // Import necessary modules from external crates.
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -166,7 +168,7 @@ impl CharacterSheet {
     pub fn new(builder: CharacterSheetBuilder) -> Self {
         let mut sheet = CharacterSheet {
             name: builder.name,
-            race: builder.race.clone(),
+            race: builder.race,
             gender: builder.gender,
             backstory: builder.backstory,
             main: builder.main,
@@ -218,7 +220,7 @@ impl CharacterSheet {
         };
 
         // Apply race-specific attribute modifiers and update derived attributes.
-        sheet.apply_race_modifiers(sheet.race.clone());
+        sheet.apply_race_modifiers(sheet.race);
         sheet.update_derived_attributes();
         sheet
     }
@@ -532,7 +534,7 @@ impl CharacterSheet {
             ("name", Value::String(v)) => self.name = v,
             ("race", Value::Race(v)) => {
                 self.race = v;
-                self.apply_race_modifiers(self.race.clone());
+                self.apply_race_modifiers(self.race);
             }
             ("gender", Value::String(v)) => self.gender = v,
             ("backstory", Value::String(v)) => self.backstory = v,
@@ -574,7 +576,7 @@ impl CharacterSheet {
                     "Invalid attribute-value pair for modification: {} {:#?}",
                     attribute, value
                 ))
-                .map_err(|e| Error::from(e));
+                .map_err(Error::from);
             }
         }
         Ok(())

@@ -1,3 +1,5 @@
+// /lib.rs
+
 pub mod ai;
 pub mod ai_response;
 pub mod app;
@@ -13,12 +15,12 @@ pub mod message;
 pub mod save;
 pub mod settings;
 pub mod settings_state;
-mod ui;
+pub mod ui;
 
 // Re-export commonly used items for easier access
-pub use ai::GameAI;
-pub use character::{CharacterSheet, CharacterSheetBuilder, Contact, Quality, Race, Skills};
-pub use error::AIError;
-pub use game_state::GameState;
-pub use message::{GameMessage, Message, MessageType};
+pub use ai::*;
+pub use character::*;
+pub use error::*;
+pub use game_state::*;
+pub use message::*;
 pub use ui::*;

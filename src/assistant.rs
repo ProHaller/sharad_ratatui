@@ -1,3 +1,4 @@
+// /assistant.rs
 use crate::error::{AIError, Error, Result};
 use include_dir::{Dir, DirEntry, include_dir};
 use serde_json::Value;
@@ -117,14 +118,14 @@ pub async fn create_assistant(
         .response_format(AssistantsApiResponseFormatOption::Format(response_format))
         .tools(assistant_tools) // Pass the vector of AssistantTools
         .build()
-        .map_err(|e| AIError::OpenAI(e))?;
+        .map_err(AIError::OpenAI)?;
 
     // Create the assistant
     let assistant = client
         .assistants()
         .create(create_assistant_request)
         .await
-        .map_err(|e| AIError::OpenAI(e))?;
+        .map_err(AIError::OpenAI)?;
     Ok(assistant)
 }
 

@@ -1,6 +1,7 @@
+// /app.rs
 use crate::{
     ai::{GameAI, GameConversationState},
-    ai_response::{UserMessage, create_user_message},
+    ai_response::create_user_message,
     assistant::{create_assistant, delete_assistant, get_assistant_id},
     audio::{self, play_audio},
     character::CharacterSheet,
@@ -98,7 +99,6 @@ pub struct App {
     // Game state and AI interaction
     pub ai_client: Option<GameAI>,
     pub current_game: Option<Arc<Mutex<GameState>>>,
-    pub current_game_response: Option<GameMessage>,
 
     // User inputs and interaction handling
     pub user_input: Input,
@@ -108,14 +108,11 @@ pub struct App {
 
     // Game content management
     pub game_content: RefCell<Vec<message::Message>>,
-    pub visible_messages: usize,
     pub game_content_scroll: usize,
     pub cached_game_content: Option<Rc<Vec<(Line<'static>, Alignment)>>>,
     pub cached_content_len: usize,
     pub visible_lines: usize,
     pub total_lines: usize,
-    pub message_line_counts: Vec<usize>,
-    pub last_user_message: Option<UserMessage>,
 
     // Debugging and logging
     pub debug_info: RefCell<String>,
@@ -191,15 +188,11 @@ impl App {
             cached_game_content: None,
             cached_content_len: 0,
             debug_info: RefCell::new(String::new()),
-            visible_messages: 0,
             total_lines: 0,
             visible_lines: 0,
-            message_line_counts: Vec::new(),
             clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
             ai_sender,
             image_sender,
-            current_game_response: None,
-            last_user_message: None,
             backspace_counter: false,
             spinner: Spinner::new(),
             spinner_active: false,
@@ -1258,47 +1251,6 @@ impl App {
 
     pub fn add_message(&self, message: message::Message) {
         self.game_content.borrow_mut().push(message);
-    }
-
-    pub async fn send_message(&mut self, message: String) -> Result<()> {
-        let user_message = create_user_message(&self.settings.language, &message);
-        let formatted_message = serde_json::to_string(&user_message)
-            .map_err(|e| AppError::Shadowrun(ShadowrunError::Serialization(e.to_string())))?;
-
-        self.start_spinner();
-
-        let result: Result<GameMessage> = {
-            if let (Some(ai), Some(game_state)) = (&mut self.ai_client, &self.current_game) {
-                let mut game_state = game_state.lock().await;
-                ai.send_message(&formatted_message, &mut game_state).await
-            } else if self.ai_client.is_none() {
-                Err(AppError::AIClientNotInitialized.into())
-            } else {
-                Err(AppError::NoCurrentGame.into())
-            }
-        };
-
-        self.stop_spinner();
-
-        match result {
-            Ok(game_message) => {
-                if let Err(e) = self
-                    .ai_sender
-                    .send(AIMessage::Response(Ok(game_message.clone())))
-                {
-                    eprintln!("Failed to send AI response: {}", e);
-                }
-                self.add_message(Message::new(
-                    MessageType::Game,
-                    serde_json::to_string(&game_message)?,
-                ));
-                if let Some(character_sheet) = &game_message.character_sheet {
-                    self.update_character_sheet(character_sheet.clone()).await;
-                }
-                Ok(())
-            }
-            Err(e) => Err(e),
-        }
     }
 
     pub fn on_tick(&mut self) {

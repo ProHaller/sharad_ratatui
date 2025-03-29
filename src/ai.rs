@@ -14,7 +14,7 @@ use async_openai::{
     config::OpenAIConfig,
     types::{
         CreateMessageRequestArgs, CreateRunRequestArgs, CreateThreadRequestArgs, MessageContent,
-        MessageRole, Model, RequiredAction, RunObject, RunStatus, RunToolCallObject,
+        MessageRole, RequiredAction, RunObject, RunStatus, RunToolCallObject,
         SubmitToolOutputsRunRequest, ToolsOutputs,
     },
 };
@@ -87,10 +87,10 @@ impl GameAI {
             .create(
                 CreateThreadRequestArgs::default()
                     .build()
-                    .map_err(|e| AIError::OpenAI(e))?,
+                    .map_err(AIError::OpenAI)?,
             )
             .await
-            .map_err(|e| AIError::OpenAI(e))?;
+            .map_err(AIError::OpenAI)?;
 
         let mut state = self.conversation_state.lock().await;
         *state = Some(GameConversationState {
@@ -102,14 +102,14 @@ impl GameAI {
         let initial_message = CreateMessageRequestArgs::default()
             .role(MessageRole::User)
             .content("Start the game by assisting the player to create a character. Answer in valid json")
-            .build().map_err(|e| AIError::OpenAI(e))?;
+            .build().map_err(AIError::OpenAI)?;
 
         self.client
             .threads()
             .messages(&thread.id)
             .create(initial_message)
             .await
-            .map_err(|e| AIError::OpenAI(e))?;
+            .map_err(AIError::OpenAI)?;
 
         Ok(())
     }
@@ -164,7 +164,7 @@ impl GameAI {
                 .runs(thread_id)
                 .retrieve(run_id)
                 .await
-                .map_err(|e| AIError::OpenAI(e))?;
+                .map_err(AIError::OpenAI)?;
 
             self.add_debug_message(format!("Run status: {:#?}", run.status));
             match run.status {
@@ -236,22 +236,6 @@ impl GameAI {
         }
 
         Ok(())
-    }
-
-    pub async fn get_models(&self) -> Result<Vec<Model>> {
-        // Get models list
-        let list_model_response = self
-            .client
-            .models()
-            .list()
-            .await
-            .map_err(|e| ShadowrunError::OpenAI(e.to_string()))
-            .map_err(AppError::Shadowrun)?;
-
-        // Extract Data
-        let available_models = list_model_response.data;
-        self.add_debug_message(format!("Models available: {:#?}", available_models));
-        Ok(available_models)
     }
 
     pub async fn cancel_run(&self, thread_id: &str, run_id: &str) -> Result<()> {
@@ -402,7 +386,7 @@ impl GameAI {
 
     fn handle_generate_character_image(&mut self, tool_call: &RunToolCallObject) -> Result<String> {
         let args: Value = serde_json::from_str(&tool_call.function.arguments)
-            .map_err(|e| Error::ShadowrunError(ShadowrunError::Serialization(e.to_string())))?;
+            .map_err(|e| Error::Shadowrun(ShadowrunError::Serialization(e.to_string())))?;
 
         let image_sender = self.image_sender.clone();
         tokio::spawn(async move {
@@ -1041,13 +1025,13 @@ impl GameAI {
             .role(MessageRole::User)
             .content(message)
             .build()
-            .map_err(|e| AIError::OpenAI(e))?;
+            .map_err(AIError::OpenAI)?;
         self.client
             .threads()
             .messages(thread_id)
             .create(message_request)
             .await
-            .map_err(|e| AIError::OpenAI(e))?;
+            .map_err(AIError::OpenAI)?;
         Ok(())
     }
 
@@ -1056,14 +1040,14 @@ impl GameAI {
         let run_request = CreateRunRequestArgs::default()
             .assistant_id(assistant_id)
             .build()
-            .map_err(|e| AIError::OpenAI(e))?;
+            .map_err(AIError::OpenAI)?;
         Ok(self
             .client
             .threads()
             .runs(thread_id)
             .create(run_request)
             .await
-            .map_err(|e| AIError::OpenAI(e))?)
+            .map_err(AIError::OpenAI)?)
     }
 
     // Asynchronous method to submit output from a tool during a run.
@@ -1084,7 +1068,7 @@ impl GameAI {
             .runs(thread_id)
             .submit_tool_outputs(run_id, submit_request)
             .await
-            .map_err(|e| AIError::OpenAI(e))?;
+            .map_err(AIError::OpenAI)?;
 
         Ok(())
     }

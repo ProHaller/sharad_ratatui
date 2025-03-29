@@ -1,5 +1,5 @@
 // Import the necessary modules and structs from other parts of the application or crates.
-use crate::{character::CharacterSheet, error::Result};
+use crate::character::CharacterSheet;
 use async_openai::types::Voice;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -56,16 +56,6 @@ pub struct GameMessage {
     pub crunch: String,
     pub fluff: Fluff,
     pub character_sheet: Option<CharacterSheet>,
-}
-
-impl GameMessage {
-    pub fn new(crunch: String, fluff: Fluff, character_sheet: Option<CharacterSheet>) -> Self {
-        GameMessage {
-            crunch,
-            fluff,
-            character_sheet,
-        }
-    }
 }
 
 // General structure for all messages used in the system.
@@ -148,7 +138,6 @@ impl std::fmt::Debug for Message {
 // Enumeration for AI-generated messages with different purposes.
 pub enum AIMessage {
     Debug(String),
-    Response(Result<GameMessage>),
 }
 
 // Implementation of Message struct, providing a method to create new messages.

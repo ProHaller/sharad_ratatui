@@ -7,7 +7,7 @@ use crate::{
     error::{ErrorMessage, ShadowrunError},
 };
 
-use super::{api_key_input, create_image, game, load_game, main_menu, save_name_input, settings};
+use super::*;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Flex, Layout, Rect},
@@ -99,10 +99,6 @@ fn draw_error_messages(f: &mut Frame, app: &App, area: Rect) {
                     ),
                     ShadowrunError::Game(msg) => Span::styled(
                         format!("Game Error: {}", msg),
-                        Style::default().fg(Color::Red),
-                    ),
-                    ShadowrunError::UI(msg) => Span::styled(
-                        format!("UI Error: {}", msg),
                         Style::default().fg(Color::Red),
                     ),
                     ShadowrunError::AI(msg) => Span::styled(

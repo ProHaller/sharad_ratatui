@@ -1,3 +1,4 @@
+// ../tests/tests.rs
 use sharad_ratatui::*;
 use std::collections::HashMap;
 use std::fs;
@@ -200,7 +201,7 @@ fn test_character_sheet_update_from_json() {
     let args = &json_value["function"]["arguments"];
 
     // Step 5: Parse the update arguments
-    let update = character::CharacterSheetUpdate::UpdateAttribute {
+    let update = CharacterSheetUpdate::UpdateAttribute {
         attribute: args["update"]["attribute"]
             .as_str()
             .expect("Expected some String")
@@ -209,7 +210,7 @@ fn test_character_sheet_update_from_json() {
             .as_str()
             .expect("Expected some String")
         {
-            "Add" => character::UpdateOperation::Add(character::Value::VecQuality(
+            "Add" => UpdateOperation::Add(Value::VecQuality(
                 args["update"]["value"]
                     .as_array()
                     .expect("Expected some array")

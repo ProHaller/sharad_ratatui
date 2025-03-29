@@ -1,3 +1,4 @@
+// /ui/descriptions.rs
 pub const TODO: &str = r#"
 NOT YET WRITTEN!
 "#;
@@ -107,10 +108,14 @@ Protection against damage. Rated numerically (e.g., Armor Jacket is 12). Added t
 // ENDREGION:  --- DERIVED ATTRIBUTES
 // REGION:   --- RACES
 
-pub const HUMAN_DESC: &str = TODO;
-pub const ELF_DESC: &str = TODO;
-pub const DWARF_DESC: &str = TODO;
-pub const TROLL_DESC: &str = TODO;
-pub const ORK_DESC: &str = TODO;
+pub const HUMAN_DESC: &str = "Adaptable and numerous, humans dominate the Sixth World with versatility and ambition. Unremarkable yet resilient, they thrive in any role, from corp suits to shadowrunners, relying on wits and luck over innate gifts.";
+
+pub const ELF_DESC: &str = "Graceful and charismatic, elves boast long lives, sharp senses, and an air of superiority. Favored in high society and the arts, their agility and charm make them deadly faces or spellcasters, though some scorn their fragility.";
+
+pub const DWARF_DESC: &str = "Stout and enduring, dwarves blend resilience with a knack for tech. Short in stature but big in grit, their natural toughness and thermal vision suit them for riggers or grunts, despite a stubborn streak.";
+
+pub const TROLL_DESC: &str = "Massive and imposing, trolls tower over others with raw strength and armored skin. Built for combat, their size and reach intimidate, but prejudice and high living costs push many into the shadows as muscle or tanks.";
+
+pub const ORK_DESC: &str = "Tough and fierce, orks combine brawn with a defiant spirit. Fast-breeding and short-lived, they face bigotry yet excel as warriors or laborers, their low-light vision and grit carving a place in the sprawl’s underbelly.";
 
 // ENDREGION:  --- RACES

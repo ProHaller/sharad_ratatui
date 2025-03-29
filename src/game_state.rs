@@ -1,10 +1,7 @@
 use std::path::PathBuf;
 
 // Import necessary modules from the local crate and external crates.
-use crate::{
-    character::{CharacterSheet, CharacterSheetUpdate},
-    error::Result,
-};
+use crate::character::CharacterSheet;
 use serde::{Deserialize, Serialize};
 
 // Define a struct to manage the state of a game session, with serialization and deserialization.
@@ -32,26 +29,26 @@ impl std::fmt::Debug for GameState {
     }
 }
 
-// Additional implementation for GameState to handle file operations.
-impl GameState {
-    // Function to load a game state from a specified JSON file.
-
-    pub fn update_character_sheet(&mut self, update: CharacterSheetUpdate) -> Result<()> {
-        if let Some(ref mut sheet) = self.main_character_sheet {
-            sheet.apply_update(update.clone())?;
-        }
-
-        if let Some(character) = self.characters.iter_mut().find(|c| {
-            c.name
-                == self
-                    .main_character_sheet
-                    .as_ref()
-                    .map(|cs| cs.name.clone())
-                    .unwrap_or_default()
-        }) {
-            character.apply_update(update)?;
-        }
-
-        Ok(())
-    }
-}
+// // Additional implementation for GameState to handle file operations.
+// impl GameState {
+//     // Function to load a game state from a specified JSON file.
+//
+//     pub fn update_character_sheet(&mut self, update: CharacterSheetUpdate) -> Result<()> {
+//         if let Some(ref mut sheet) = self.main_character_sheet {
+//             sheet.apply_update(update.clone())?;
+//         }
+//
+//         if let Some(character) = self.characters.iter_mut().find(|c| {
+//             c.name
+//                 == self
+//                     .main_character_sheet
+//                     .as_ref()
+//                     .map(|cs| cs.name.clone())
+//                     .unwrap_or_default()
+//         }) {
+//             character.apply_update(update)?;
+//         }
+//
+//         Ok(())
+//     }
+// }

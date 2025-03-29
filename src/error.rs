@@ -1,7 +1,7 @@
+// /error.rs
 use derive_more::{Display, From};
 use log::error;
 use once_cell::sync::Lazy;
-use serde_json;
 use std::{sync::Arc, time::Instant};
 use thiserror::Error;
 use tokio::sync::{Mutex, mpsc};
@@ -11,15 +11,15 @@ pub type Result<T> = core::result::Result<T, Error>;
 
 #[derive(Error, Display, Debug, From)]
 pub enum Error {
-    ShadowrunError(ShadowrunError),
-    AppError(AppError),
-    GameError(GameError),
-    AIError(AIError),
-    SerializationError(serde_json::Error),
-    StringError(String),
-    BoxError(Box<dyn std::error::Error + Send + Sync>),
-    IOError(std::io::Error),
-    RatatuiImageError(ratatui_image::errors::Errors),
+    Shadowrun(ShadowrunError),
+    App(AppError),
+    Game(GameError),
+    AI(AIError),
+    Serialization(serde_json::Error),
+    String(String),
+    Box(Box<dyn std::error::Error + Send + Sync>),
+    IO(std::io::Error),
+    RatatuiImage(ratatui_image::errors::Errors),
 }
 
 static GLOBAL_ERROR_HANDLER: Lazy<Arc<Mutex<Option<ErrorHandler>>>> =
@@ -48,8 +48,6 @@ pub enum ShadowrunError {
     Game(String),
     #[error("Network error: {0}")]
     Network(String),
-    #[error("UI error: {0}")]
-    UI(String),
     #[error("Audio error: {0}")]
     Audio(String),
     #[error("Serialization error: {0}")]
@@ -96,7 +94,6 @@ impl ErrorHandler {
         match &error {
             ShadowrunError::Network(msg) => error!("Network Error: {}", msg),
             ShadowrunError::Game(msg) => error!("Game Logic Error: {}", msg),
-            ShadowrunError::UI(msg) => error!("UI Error: {}", msg),
             ShadowrunError::AI(msg) => error!("AI Error: {}", msg),
             ShadowrunError::Audio(msg) => error!("Audio Error: {}", msg),
             ShadowrunError::Serialization(msg) => error!("Serialization Error: {}", msg),
@@ -124,9 +121,6 @@ pub enum AppError {
 
     #[error("Timeout occurred")]
     Timeout,
-
-    #[error("Max Attempts Reached")]
-    MaxAttemptsReached,
 }
 
 impl From<String> for ShadowrunError {
@@ -147,9 +141,6 @@ impl From<AppError> for ShadowrunError {
                 ShadowrunError::AI("Conversation not initialized".to_string())
             }
             AppError::Timeout => ShadowrunError::Unknown("Timeout occurred".to_string()),
-            AppError::MaxAttemptsReached => {
-                ShadowrunError::Unknown("Max attempts reached".to_string())
-            }
         }
     }
 }
@@ -200,9 +191,6 @@ impl From<async_openai::error::OpenAIError> for ShadowrunError {
 // Enum for game-specific errors.
 #[derive(Debug, Error)]
 pub enum GameError {
-    #[error("Invalid game state: {:#}", 0)]
-    InvalidGameState(String), // Error for invalid game state conditions.
-
     #[error("Character not found: {:#}", 0)]
     CharacterNotFound(String), // Error when a specified character cannot be found.
                                // Potential additional game-specific errors could be defined here.
@@ -214,23 +202,11 @@ pub enum AIError {
     #[error("OpenAI API error: {:#}", 0)]
     OpenAI(#[from] async_openai::error::OpenAIError), // Errors from the OpenAI API.
 
-    #[error("Conversation not initialized")]
-    ConversationNotInitialized, // Error for uninitialized conversation state.
-
-    #[error("Timeout occurred")]
-    Timeout, // Error when an AI operation exceeds its time limit.
-
     #[error("No message found")]
     NoMessageFound, // Error when expected message content is not found.
 
     #[error("Failed to parse game state: {:#}", 0)]
     GameStateParseError(String), // Error during parsing of game state.
-
-    #[error("Audio recording error: {:#}", 0)]
-    AudioRecordingError(String),
-
-    #[error("Audio playback error: {:#}", 0)]
-    AudioPlaybackError(String),
 
     #[error("Error handling IO: {:#}", 0)]
     Io(std::io::Error),
@@ -241,9 +217,6 @@ pub enum AIError {
 
 #[derive(Debug, Error)]
 pub enum AudioError {
-    #[error("Failed to load audio file: {:#}", 0)]
-    LoadError(String),
-
     #[error("hound audio error: {:#}", 0)]
     Hound(#[from] hound::Error),
 
@@ -260,7 +233,7 @@ pub enum AudioError {
     CpalPauseStream(#[from] cpal::PauseStreamError),
 
     #[error("Audio from string error: {:#}", 0)]
-    FromStringAudioError(String),
+    FromStringAudio(String),
 
     #[error("std io AudioError: {:#}", 0)]
     IO(#[from] std::io::Error),
@@ -271,7 +244,7 @@ pub enum AudioError {
 
 impl From<String> for AudioError {
     fn from(error: String) -> Self {
-        AudioError::FromStringAudioError(error)
+        AudioError::FromStringAudio(error)
     }
 }
 

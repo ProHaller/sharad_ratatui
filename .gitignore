@@ -14,3 +14,4 @@ todo.rs
 hello.py
 pyproject.toml
 uv.lock
+.bacon-locations
