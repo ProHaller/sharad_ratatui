@@ -1,6 +1,6 @@
 use crate::{
     character::{
-        CharacterSheet, CharacterSheetBuilder, CharacterSheetUpdate, Contact, Item,
+        CharacterSheet, CharacterSheetBuilder, CharacterSheetUpdate, CharacterValue, Contact, Item,
         MatrixAttributes, Quality, Race, Skills, UpdateOperation,
     },
     dice::{DiceRollRequest, DiceRollResponse, perform_dice_roll},
@@ -483,7 +483,9 @@ impl GameAI {
 
         let skills_update = CharacterSheetUpdate::UpdateAttribute {
             attribute: "skills".to_string(),
-            operation: UpdateOperation::Modify(crate::character::Value::Skills(updated_skills)),
+            operation: UpdateOperation::Modify(crate::character::CharacterValue::Skills(
+                updated_skills,
+            )),
         };
         character.apply_update(skills_update)?;
 
@@ -504,9 +506,9 @@ impl GameAI {
 
             let knowledge_update = CharacterSheetUpdate::UpdateAttribute {
                 attribute: "knowledge_skills".to_string(),
-                operation: UpdateOperation::Modify(crate::character::Value::HashMapStringU8(
-                    updated_knowledge_skills,
-                )),
+                operation: UpdateOperation::Modify(
+                    crate::character::CharacterValue::HashMapStringU8(updated_knowledge_skills),
+                ),
             };
             character.apply_update(knowledge_update)?;
         }
@@ -531,96 +533,92 @@ impl GameAI {
         let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)?;
         let character_name = args["character_name"]
             .as_str()
-            .ok_or_else(|| ShadowrunError::Game("Missing character_name".to_string()))?;
+            .ok_or(ShadowrunError::Game("Missing character_name".to_string()))?;
         let operation = args["operation"]
             .as_str()
-            .ok_or_else(|| ShadowrunError::Game("Missing operation".to_string()))?;
-        let items = args.get("items").or_else(|| args.get("item"));
+            .ok_or(ShadowrunError::Game("Missing operation".to_string()))?;
+        let items = args
+            .get("items")
+            .or_else(|| args.get("item"))
+            .ok_or(ShadowrunError::Game(
+                "No items or item for add/modify".to_string(),
+            ))?;
 
         let character = game_state
             .characters
             .iter_mut()
             .find(|c| c.name == character_name)
-            .ok_or_else(|| GameError::CharacterNotFound(character_name.to_string()))?;
+            .ok_or(GameError::CharacterNotFound(character_name.to_string()))?;
 
-        let mut new_items: HashMap<String, Item> = HashMap::new();
+        let mut changed_items: HashMap<String, Item> = HashMap::new();
 
         match operation {
             "Remove" => {
                 // For removal, we only need the item names
-                if let Some(items) = items {
-                    let item_names: Vec<String> = if items.is_array() {
-                        serde_json::from_value(items.clone())?
-                    } else if items.is_object() && items.get("name").is_some() {
+                let item_names: Vec<String> = match items {
+                    items if items.is_array() => serde_json::from_value(items.clone())?,
+                    items if items.is_object() && items.get("name").is_some() => {
                         vec![items["name"].as_str().expect("Not a String").to_string()]
-                    } else if items.is_object() && items.get("name").is_none() {
-                        items
-                            .as_object()
-                            .expect("Value should be an object")
-                            .keys()
-                            .cloned()
-                            .collect()
-                    } else {
+                    }
+                    items if items.is_object() && items.get("name").is_none() => items
+                        .as_object()
+                        .expect("Value should be an object")
+                        .keys()
+                        .cloned()
+                        .collect(),
+                    _ => {
                         return Err(ShadowrunError::Game(
                             "Invalid items format for removal".to_string(),
                         )
                         .into());
-                    };
-                    for name in item_names {
-                        new_items.insert(
-                            name.clone(),
-                            Item {
-                                name: name.clone(),
-                                quantity: 1,
-                                description: String::new(),
-                            },
-                        );
                     }
-                }
+                };
+                item_names.iter().for_each(|name| {
+                    changed_items.insert(
+                        name.clone(),
+                        Item {
+                            name: name.clone(),
+                            quantity: 1,
+                            description: String::new(),
+                        },
+                    );
+                });
             }
             "Add" | "Modify" => {
-                if let Some(items) = items {
-                    if items.is_object() {
-                        if items.get("name").is_some() {
-                            // Single item
-                            let item: Item = serde_json::from_value(items.clone())?;
-                            new_items.insert(item.name.clone(), item);
-                        } else {
-                            // Multiple items
-                            for (key, value) in
-                                items.as_object().expect("Value should be an object")
-                            {
-                                let item = if value.is_object() {
-                                    Item {
-                                        name: key.clone(),
-                                        quantity: value["quantity"].as_u64().unwrap_or(1) as u32,
-                                        description: value["description"]
-                                            .as_str()
-                                            .unwrap_or("")
-                                            .to_string(),
-                                    }
-                                } else {
-                                    return Err(ShadowrunError::Game(format!(
-                                        "Invalid item format for {}",
-                                        key
-                                    ))
-                                    .into());
+                match items {
+                    items if items.is_object() && items.get("name").is_some() => {
+                        // Single item
+                        let item: Item = serde_json::from_value(items.clone())?;
+                        changed_items.insert(item.name.clone(), item);
+                    }
+                    items if items.is_object() && items.get("name").is_none() => {
+                        // Multiple items
+                        for (key, value) in items.as_object().expect("Value should be an object") {
+                            if !value.is_object() {
+                                return Err(ShadowrunError::Game(
+                                    "Invalid item format".to_string(),
+                                )
+                                .into());
+                            } else {
+                                let item = Item {
+                                    name: key.clone(),
+                                    quantity: value["quantity"].as_u64().unwrap_or(1) as u32,
+                                    description: value["description"]
+                                        .as_str()
+                                        .unwrap_or("")
+                                        .to_string(),
                                 };
-                                new_items.insert(key.clone(), item);
+                                changed_items.insert(key.clone(), item);
                             }
                         }
-                    } else {
+                    }
+                    _ => {
                         return Err(ShadowrunError::Game(
-                            "Invalid items format for add/modify".to_string(),
+                            "Invalid inventory operation".to_string(),
                         )
                         .into());
                     }
-                } else {
-                    return Err(ShadowrunError::Game(
-                        "Missing items or item for add/modify".to_string(),
-                    )
-                    .into());
-                }
+                };
             }
             _ => {
                 return Err(ShadowrunError::Game("Invalid inventory operation".to_string()).into());
@@ -630,14 +628,12 @@ impl GameAI {
         let update = CharacterSheetUpdate::UpdateAttribute {
             attribute: "inventory".to_string(),
             operation: match operation {
-                "Add" => {
-                    UpdateOperation::Add(crate::character::Value::HashMapStringItem(new_items))
-                }
                 "Remove" => {
-                    UpdateOperation::Remove(crate::character::Value::HashMapStringItem(new_items))
+                    UpdateOperation::Remove(CharacterValue::HashMapStringItem(changed_items))
                 }
+                "Add" => UpdateOperation::Add(CharacterValue::HashMapStringItem(changed_items)),
                 "Modify" => {
-                    UpdateOperation::Modify(crate::character::Value::HashMapStringItem(new_items))
+                    UpdateOperation::Modify(CharacterValue::HashMapStringItem(changed_items))
                 }
                 _ => unreachable!(),
             },
@@ -684,10 +680,12 @@ impl GameAI {
         let update = CharacterSheetUpdate::UpdateAttribute {
             attribute: "qualities".to_string(),
             operation: match operation {
-                "Add" => UpdateOperation::Add(crate::character::Value::VecQuality(new_qualities)),
-                "Remove" => {
-                    UpdateOperation::Remove(crate::character::Value::VecQuality(new_qualities))
-                }
+                "Add" => UpdateOperation::Add(crate::character::CharacterValue::VecQuality(
+                    new_qualities,
+                )),
+                "Remove" => UpdateOperation::Remove(crate::character::CharacterValue::VecQuality(
+                    new_qualities,
+                )),
                 _ => {
                     return Err(
                         ShadowrunError::Game("Invalid qualities operation".to_string()).into(),
@@ -733,9 +731,11 @@ impl GameAI {
 
         let update = CharacterSheetUpdate::UpdateAttribute {
             attribute: "matrix_attributes".to_string(),
-            operation: UpdateOperation::Modify(crate::character::Value::OptionMatrixAttributes(
-                Some(new_matrix_attributes),
-            )),
+            operation: UpdateOperation::Modify(
+                crate::character::CharacterValue::OptionMatrixAttributes(Some(
+                    new_matrix_attributes,
+                )),
+            ),
         };
         character.apply_update(update)?;
 
@@ -785,15 +785,15 @@ impl GameAI {
         let update = CharacterSheetUpdate::UpdateAttribute {
             attribute: "contacts".to_string(),
             operation: match operation {
-                "Add" => UpdateOperation::Add(crate::character::Value::HashMapStringContact(
-                    new_contacts,
-                )),
-                "Remove" => UpdateOperation::Remove(crate::character::Value::HashMapStringContact(
-                    new_contacts,
-                )),
-                "Modify" => UpdateOperation::Modify(crate::character::Value::HashMapStringContact(
-                    new_contacts,
-                )),
+                "Add" => UpdateOperation::Add(
+                    crate::character::CharacterValue::HashMapStringContact(new_contacts),
+                ),
+                "Remove" => UpdateOperation::Remove(
+                    crate::character::CharacterValue::HashMapStringContact(new_contacts),
+                ),
+                "Modify" => UpdateOperation::Modify(
+                    crate::character::CharacterValue::HashMapStringContact(new_contacts),
+                ),
                 _ => {
                     return Err(
                         ShadowrunError::Game("Invalid contacts operation".to_string()).into(),
@@ -845,12 +845,12 @@ impl GameAI {
         let update = CharacterSheetUpdate::UpdateAttribute {
             attribute: augmentation_type.to_string(),
             operation: match operation {
-                "Add" => {
-                    UpdateOperation::Add(crate::character::Value::VecString(new_augmentations))
-                }
-                "Remove" => {
-                    UpdateOperation::Remove(crate::character::Value::VecString(new_augmentations))
-                }
+                "Add" => UpdateOperation::Add(crate::character::CharacterValue::VecString(
+                    new_augmentations,
+                )),
+                "Remove" => UpdateOperation::Remove(crate::character::CharacterValue::VecString(
+                    new_augmentations,
+                )),
                 _ => {
                     return Err(ShadowrunError::Game(
                         "Invalid augmentations operation".to_string(),
@@ -877,16 +877,22 @@ impl GameAI {
     }
 
     // Helper method to parse values based on attribute type
-    fn parse_value(&self, attribute: &str, value: &Value) -> Result<crate::character::Value> {
+    fn parse_value(
+        &self,
+        attribute: &str,
+        value: &Value,
+    ) -> Result<crate::character::CharacterValue> {
         self.add_debug_message(format!("Parsing value for attribute: {:#?}", attribute));
         match attribute {
-            "name" | "gender" | "backstory" | "lifestyle" => Ok(crate::character::Value::String(
-                value
-                    .as_str()
-                    .ok_or_else(|| ShadowrunError::Game("Invalid string value".to_string()))?
-                    .to_string(),
-            )),
-            "race" => Ok(crate::character::Value::Race(
+            "name" | "gender" | "backstory" | "lifestyle" => {
+                Ok(crate::character::CharacterValue::String(
+                    value
+                        .as_str()
+                        .ok_or_else(|| ShadowrunError::Game("Invalid string value".to_string()))?
+                        .to_string(),
+                ))
+            }
+            "race" => Ok(crate::character::CharacterValue::Race(
                 match value
                     .as_str()
                     .ok_or_else(|| ShadowrunError::Game("Invalid race value".to_string()))?
@@ -900,45 +906,45 @@ impl GameAI {
                 },
             )),
             "body" | "agility" | "reaction" | "strength" | "willpower" | "logic" | "intuition"
-            | "charisma" | "edge" => Ok(crate::character::Value::U8(
+            | "charisma" | "edge" => Ok(crate::character::CharacterValue::U8(
                 value
                     .as_u64()
                     .ok_or_else(|| ShadowrunError::Game("Invalid u8 value".to_string()))?
                     as u8,
             )),
-            "magic" | "resonance" => Ok(crate::character::Value::OptionU8(
+            "magic" | "resonance" => Ok(crate::character::CharacterValue::OptionU8(
                 value.as_u64().map(|v| v as u8),
             )),
-            "nuyen" => {
-                Ok(crate::character::Value::U32(value.as_u64().ok_or_else(|| {
+            "nuyen" => Ok(crate::character::CharacterValue::U32(
+                value.as_u64().ok_or_else(|| {
                     ShadowrunError::Game("Invalid u32 value for nuyen".to_string())
-                })? as u32))
-            }
-            "skills" => Ok(crate::character::Value::Skills(
+                })? as u32,
+            )),
+            "skills" => Ok(crate::character::CharacterValue::Skills(
                 serde_json::from_value(value.clone())
                     .map_err(|e| ShadowrunError::Serialization(e.to_string()))?,
             )),
-            "knowledge_skills" => Ok(crate::character::Value::HashMapStringU8(
+            "knowledge_skills" => Ok(crate::character::CharacterValue::HashMapStringU8(
                 serde_json::from_value(value.clone())
                     .map_err(|e| ShadowrunError::Serialization(e.to_string()))?,
             )),
-            "contacts" => Ok(crate::character::Value::HashMapStringContact(
+            "contacts" => Ok(crate::character::CharacterValue::HashMapStringContact(
                 serde_json::from_value(value.clone())
                     .map_err(|e| ShadowrunError::Serialization(e.to_string()))?,
             )),
-            "qualities" => Ok(crate::character::Value::VecQuality(
+            "qualities" => Ok(crate::character::CharacterValue::VecQuality(
                 serde_json::from_value(value.clone())
                     .map_err(|e| ShadowrunError::Serialization(e.to_string()))?,
             )),
-            "cyberware" | "bioware" => Ok(crate::character::Value::VecString(
+            "cyberware" | "bioware" => Ok(crate::character::CharacterValue::VecString(
                 serde_json::from_value(value.clone())
                     .map_err(|e| ShadowrunError::Serialization(e.to_string()))?,
             )),
-            "inventory" => Ok(crate::character::Value::HashMapStringItem(
+            "inventory" => Ok(crate::character::CharacterValue::HashMapStringItem(
                 serde_json::from_value(value.clone())
                     .map_err(|e| ShadowrunError::Serialization(e.to_string()))?,
             )),
-            "matrix_attributes" => Ok(crate::character::Value::OptionMatrixAttributes(
+            "matrix_attributes" => Ok(crate::character::CharacterValue::OptionMatrixAttributes(
                 serde_json::from_value(value.clone())
                     .map_err(|e| ShadowrunError::Serialization(e.to_string()))?,
             )),

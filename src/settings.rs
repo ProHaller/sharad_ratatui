@@ -5,39 +5,47 @@ use std::{
     io::{self, Write},
     path::PathBuf,
 };
+use strum_macros::Display;
 
 use crate::error::send_global_error;
 
-// Define a structure to hold application settings with serialization and deserialization capabilities.
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Settings {
-    pub language: String, // Preferred language setting for the application.
-    pub openai_api_key: Option<String>, // Optional API key for OpenAI services.
+    // TODO: Make the language an Enum
+    pub language: Language,
+    pub openai_api_key: Option<String>,
     pub model: String,
-    pub audio_output_enabled: bool, // Flag to enable or disable audio output.
-    pub audio_input_enabled: bool,  // Flag to enable or disable audio input.
-    pub debug_mode: bool,           // Flag to enable or disable debug mode.
+    pub audio_output_enabled: bool,
+    pub audio_input_enabled: bool,
+    pub debug_mode: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, Display)]
+pub enum Language {
+    #[default]
+    English,
+    French,
+    Japanese,
+    Turkish,
+    Custom(String),
 }
 
 // TODO:  Add a model parameter to change the AI model
 
-// Implement the Default trait for Settings to provide a method to create default settings.
 impl Default for Settings {
     fn default() -> Self {
         Settings {
-            language: "English".to_string(), // Default language setting.
-            openai_api_key: None,            // No API key by default.
+            language: Language::English,
+            openai_api_key: None,
             model: "gpt-4o-mini".to_string(),
-            audio_output_enabled: true, // Audio output enabled by default.
-            audio_input_enabled: true,  // Audio input enabled by default.
-            debug_mode: false,          // Debug mode disabled by default.
+            audio_output_enabled: true,
+            audio_input_enabled: true,
+            debug_mode: false,
         }
     }
 }
 
-// Additional implementation block for Settings.
 impl Settings {
-    // Load settings from a default file path.
     pub fn load() -> io::Result<Self> {
         let home_dir = dir::home_dir().expect("Failed to get home directory");
         let path = home_dir.join("sharad").join("data").join("settings.json");

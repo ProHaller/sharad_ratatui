@@ -3,11 +3,10 @@
 use std::time::Duration;
 
 use crate::{
-    app::{App, AppState},
+    app::App,
     error::{ErrorMessage, ShadowrunError},
 };
 
-use super::*;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Flex, Layout, Rect},
@@ -30,33 +29,33 @@ pub fn center_rect(original_area: Rect, horizontal: Constraint, vertical: Constr
     vertical_area
 }
 
-pub fn draw(f: &mut Frame, app: &mut App) {
-    match app.state {
-        AppState::MainMenu => main_menu::draw_main_menu(f, app),
-        AppState::InGame => game::draw_in_game(f, app),
-        AppState::LoadMenu => load_game::draw_load_game(f, app),
-        AppState::CreateImage => create_image::draw_create_image(f, app),
-        AppState::SettingsMenu => settings::draw_settings(f, app),
-        AppState::InputApiKey => api_key_input::draw_api_key_input(f, app),
-        AppState::InputSaveName => save_name_input::draw_save_name_input(f, app),
-    }
-    let area = f.area();
-
-    // Create a layout with space for error messages at the top
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(
-            [
-                Constraint::Length((app.error_messages.len() + 2) as u16),
-                Constraint::Min(0),
-            ]
-            .as_ref(),
-        )
-        .split(area);
-
-    // Draw error messages
-    draw_error_messages(f, app, chunks[0]);
-}
+// pub fn draw(f: &mut Frame, app: &mut App) {
+//     match app.state {
+//         AppState::MainMenu => main_menu::draw_main_menu(f, app),
+//         AppState::InGame => game::draw_in_game(f, app),
+//         AppState::LoadMenu => load_menu::draw_load_game(f, app),
+//         AppState::CreateImage => image_menu::draw_create_image(f, app),
+//         AppState::SettingsMenu => settings_menu::draw_settings(f, app),
+//         AppState::InputApiKey => api_key_input::draw_api_key_input(f, app),
+//         AppState::InputSaveName => save_name_input::draw_save_name_input(f, app),
+//     }
+//     let area = f.area();
+//
+//     // Create a layout with space for error messages at the top
+//     let chunks = Layout::default()
+//         .direction(Direction::Vertical)
+//         .constraints(
+//             [
+//                 Constraint::Length((app.error_messages.len() + 2) as u16),
+//                 Constraint::Min(0),
+//             ]
+//             .as_ref(),
+//         )
+//         .split(area);
+//
+//     // Draw error messages
+//     draw_error_messages(f, app, chunks[0]);
+// }
 
 fn draw_error_messages(f: &mut Frame, app: &App, area: Rect) {
     let max_age = Duration::from_secs(5);

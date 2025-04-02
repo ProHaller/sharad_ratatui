@@ -1,80 +1,133 @@
 // /ui/save_name_input.rs
-use crate::app::{App, InputMode};
+use crate::{
+    app::{Action, App, InputMode},
+    context::Context,
+};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Position},
+    buffer::Buffer,
+    layout::{Constraint, Direction, Layout, Position, Rect},
     prelude::Alignment,
     style::{Color, Style},
     widgets::*,
 };
+use tui_input::Input;
 
-pub fn draw_save_name_input(f: &mut Frame, app: &App) {
-    let size = f.area();
+use super::{Component, main_menu::MainMenu};
 
-    if size.width < 20 || size.height < 10 {
-        let warning = Paragraph::new("Terminal too small. Please resize.")
-            .style(Style::default().fg(Color::Red))
-            .alignment(Alignment::Center);
-        f.render_widget(warning, size);
-        return;
+#[derive(Default, Debug)]
+pub struct SaveName {
+    input: Input,
+}
+
+impl Component for SaveName {
+    fn on_key(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
+        match context.input_mode {
+            InputMode::Normal => match key.code {
+                KeyCode::Char('e') => Some(Action::SwitchInputMode(InputMode::Editing)),
+                KeyCode::Char('r') => Some(Action::SwitchInputMode(InputMode::Recording)),
+                KeyCode::Esc => Some(Action::SwitchComponent(Box::new(MainMenu::default()))),
+                KeyCode::Enter => {
+                    if !self.input.value().is_empty() {
+                        Some(Action::StartNewGame(self.input.value().into()))
+                    } else {
+                        Some(Action::SwitchInputMode(InputMode::Editing))
+                    }
+                }
+                _ => None,
+            },
+            InputMode::Editing => match key.code {
+                KeyCode::Esc => Some(Action::SwitchInputMode(InputMode::Normal)),
+                KeyCode::Char('v') => {
+                    todo!("Centralize the text input handling for paste.")
+                }
+                _ => {
+                    todo!("Centralize the text input handling.")
+
+                    // fn handle_save_name_editing(&mut self, key: KeyEvent) {
+                    //     match key.code {
+                    //         KeyCode::Enter => {
+                    //             // Handle save name submission
+                    //             self.input_mode = InputMode::Normal;
+                    //         }
+                    //         KeyCode::Esc => {
+                    //             self.input_mode = InputMode::Normal;
+                    //         }
+                    //         KeyCode::Char('v') => {
+                    //             if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    //                 if let Err(e) = self.handle_paste() {
+                    //                     self.add_debug_message(format!("Failed to paste: {:#?}", e));
+                    //                 }
+                    //             } else {
+                    //                 self.save_name_input.handle_event(&Event::Key(key));
+                    //             }
+                    //         }
+                    //         _ => {
+                    //             self.save_name_input.handle_event(&Event::Key(key));
+                    //         }
+                    //     }
+                    // }
+                }
+            },
+            InputMode::Recording if key.code == KeyCode::Esc => {
+                // TODO: Stop recording if not in InputMode::Recording
+                Some(Action::SwitchInputMode(InputMode::Normal))
+            }
+            _ => None,
+        }
     }
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(f.area().height / 3)
-        .constraints(
-            [
-                Constraint::Length(3),
-                Constraint::Length(3),
-                Constraint::Length(3),
-                Constraint::Min(1),
-            ]
-            .as_ref(),
-        )
-        .split(f.area());
+    fn render(&self, area: Rect, buffer: &mut Buffer, context: &Context) {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .flex(ratatui::layout::Flex::Center)
+            .constraints(
+                [
+                    Constraint::Length(3),
+                    Constraint::Length(3),
+                    Constraint::Length(3),
+                    Constraint::Min(1),
+                ]
+                .as_ref(),
+            )
+            .split(area);
 
-    let title = Paragraph::new(" Enter Save Name ")
-        .style(Style::default().fg(Color::Cyan))
+        let title = Paragraph::new(" Enter Save Name ")
+            .style(Style::default().fg(Color::Cyan))
+            .alignment(Alignment::Center);
+        title.render(chunks[0], buffer);
+
+        let input = Paragraph::new(self.input.value())
+            .style(Style::default().fg(Color::White))
+            .block(
+                Block::default()
+                    .border_type(BorderType::Rounded)
+                    .borders(Borders::ALL)
+                    .title(match context.input_mode {
+                        // TODO: Make the key description dynamic based on a Config File.
+                        InputMode::Normal => " Press 'e' to edit or 'r' to record ",
+                        InputMode::Editing => " Editing ",
+                        InputMode::Recording => " Recording… Press 'Esc' to stop ",
+                    })
+                    .border_style(Style::default().fg(match context.input_mode {
+                        InputMode::Normal => Color::DarkGray,
+                        InputMode::Editing => Color::Yellow,
+                        InputMode::Recording => Color::Red,
+                    })),
+            );
+        input.render(chunks[1], buffer);
+
+        let mode_indicator = match context.input_mode {
+            InputMode::Normal => " NORMAL ",
+            InputMode::Editing => " EDITING ",
+            InputMode::Recording => " RECORDING ",
+        };
+        let instructions = Paragraph::new(format!(
+            "Mode:{} | Enter: confirm | Esc: cancel",
+            mode_indicator
+        ))
+        .style(Style::default().fg(Color::Gray))
         .alignment(Alignment::Center);
-    f.render_widget(title, chunks[0]);
-
-    let input = Paragraph::new(app.save_name_input.value())
-        .style(Style::default().fg(Color::White))
-        .block(
-            Block::default()
-                .border_type(BorderType::Rounded)
-                .borders(Borders::ALL)
-                .title(match app.input_mode {
-                    // TODO: Make the key description dynamic based on a Config File.
-                    InputMode::Normal => " Press 'e' to edit or 'r' to record ",
-                    InputMode::Editing => " Editing ",
-                    InputMode::Recording => " Recording… Press 'Esc' to stop ",
-                })
-                .border_style(Style::default().fg(match app.input_mode {
-                    InputMode::Normal => Color::DarkGray,
-                    InputMode::Editing => Color::Yellow,
-                    InputMode::Recording => Color::Red,
-                })),
-        );
-    f.render_widget(input, chunks[1]);
-
-    let mode_indicator = match app.input_mode {
-        InputMode::Normal => " NORMAL ",
-        InputMode::Editing => " EDITING ",
-        InputMode::Recording => " RECORDING ",
-    };
-    let instructions = Paragraph::new(format!(
-        "Mode:{} | Enter: confirm | Esc: cancel",
-        mode_indicator
-    ))
-    .style(Style::default().fg(Color::Gray))
-    .alignment(Alignment::Center);
-    f.render_widget(instructions, chunks[2]);
-
-    // Only show the cursor when in Editing mode
-    if let InputMode::Editing = app.input_mode {
-        f.set_cursor_position(Position::new(
-            chunks[1].x + app.save_name_input.visual_cursor() as u16 + 1,
-            chunks[1].y + 1,
-        ));
+        instructions.render(chunks[2], buffer);
     }
 }

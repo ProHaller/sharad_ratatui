@@ -2,17 +2,25 @@
 
 mod api_key_input;
 pub mod character_sheet;
+pub mod component;
 mod constants;
-mod create_image;
 pub mod descriptions;
 pub mod draw;
 pub mod game;
-mod load_game;
-mod main_menu;
+mod image_menu;
+mod load_menu;
+pub mod main_menu;
+mod main_menu_fix;
 mod rain;
 mod save_name_input;
-mod settings;
+mod settings_menu;
 pub mod spinner;
 
 pub use self::character_sheet::*;
+pub use self::component::*;
 pub use self::draw::*;
+pub use image_menu::*;
+pub use load_menu::*;
+pub use main_menu::*;
+pub use save_name_input::*;
+pub use settings_menu::*;

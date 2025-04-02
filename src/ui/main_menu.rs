@@ -2,194 +2,268 @@
 
 // Import required modules and structs from other parts of the application or external crates.
 use super::{
+    Component,
+    api_key_input::ApiKeyInput,
     constants::{ART, TITLE},
-    draw::{MIN_HEIGHT, MIN_WIDTH, center_rect},
+    draw::center_rect,
+    image_menu::ImageMenu,
+    load_menu::LoadMenu,
+    main_menu_fix::*,
+    save_name_input::SaveName,
+    settings_menu::SettingsMenu,
 };
-use crate::{
-    app::{App, AppState},
-    message::MessageType,
-};
+
+use crate::{app::Action, context::Context, message::MessageType};
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
-    Frame,
+    buffer::Buffer,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::*,
 };
 
-// Function to draw the main menu interface.
-pub fn draw_main_menu(f: &mut Frame, app: &App) {
-    let size = f.area();
-
-    if size.width < MIN_WIDTH || size.height < MIN_HEIGHT {
-        let warning = Paragraph::new("Terminal too small. Please resize.")
-            .style(Style::default().fg(Color::Red))
-            .alignment(Alignment::Center);
-        f.render_widget(warning, size);
-        return;
-    }
-    // Define layout constraints for different sections of the main menu.
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(
-            [
-                Constraint::Max(1),
-                Constraint::Min(if size.height - 20 > 20 { 20 } else { 0 }),
-                Constraint::Min(if size.height - 7 > 7 { 7 } else { 0 }),
-                Constraint::Max(1),
-                Constraint::Min(10),
-                Constraint::Max(1),
-            ]
-            .as_ref(),
-        )
-        .split(f.area());
-
-    // Render individual parts of the main menu using the layout defined above.
-    render_header(f, chunks[0]);
-    if (size.height - 20) > 20 {
-        render_art(f, chunks[1]);
-    }
-    render_title(f, chunks[2]);
-    render_console(f, app, chunks[3]);
-    render_menu(f, app, chunks[4]);
-    render_status(f, app, chunks[5]);
+#[derive(Default, Debug)]
+pub struct MainMenu {
+    state: ListState,
 }
 
-// Function to render the header section of the menu.
-pub fn render_header(f: &mut Frame, area: Rect) {
-    let header = Paragraph::new(format!("Sharad Ratatui v{}", env!("CARGO_PKG_VERSION")))
-        .style(Style::default().fg(Color::DarkGray))
-        .block(Block::default().border_type(BorderType::Rounded))
-        .alignment(Alignment::Center);
-    f.render_widget(header, area);
-}
-
-// Function to render the art section of the menu.
-pub fn render_art(f: &mut Frame, area: Rect) {
-    let outer_block = Block::default()
-        .border_type(BorderType::Rounded)
-        .style(Style::default().fg(Color::DarkGray));
-    f.render_widget(outer_block, area);
-
-    let inner_rect = center_rect(area, Constraint::Length(80), Constraint::Length(18));
-
-    let inner_block = Block::default()
-        .border_type(BorderType::Rounded)
-        .borders(Borders::ALL)
-        .style(Style::default().fg(Color::Green));
-    f.render_widget(inner_block, inner_rect);
-
-    let art = Paragraph::new(ART)
-        .alignment(Alignment::Center)
-        .style(Style::default().fg(Color::Green));
-    f.render_widget(art, inner_rect);
-}
-
-// Function to render the title section of the menu.
-pub fn render_title(f: &mut Frame, area: Rect) {
-    let outer_block = Block::default()
-        .border_type(BorderType::Rounded)
-        .style(Style::default().fg(Color::DarkGray));
-    let title_area = center_rect(area, Constraint::Length(38), Constraint::Length(8));
-    f.render_widget(&outer_block, title_area);
-
-    let title = Paragraph::new(TITLE)
-        .alignment(Alignment::Center)
-        .style(Style::default().fg(Color::Green));
-    f.render_widget(title, title_area);
-}
-
-// Function to render the console section of the menu.
-pub fn render_console(f: &mut Frame, app: &App, area: Rect) {
-    let outer_block = Block::default()
-        .border_type(BorderType::Rounded)
-        .style(Style::default().fg(Color::DarkGray));
-    let console_area = center_rect(area, Constraint::Percentage(90), Constraint::Length(2));
-    f.render_widget(&outer_block, console_area);
-
-    let console_message = app
-        .game_content
-        .borrow()
-        .last()
-        .filter(|content| content.message_type == MessageType::System)
-        .map(|content| {
-            Paragraph::new(content.content.to_string())
-                .alignment(Alignment::Center)
-                .style(Style::default().fg(Color::Yellow))
-        });
-
-    if let Some(message) = console_message {
-        f.render_widget(message, console_area);
-    }
-}
-
-// Function to render the interactive menu section of the main menu.
-pub fn render_menu(f: &mut Frame, app: &App, area: Rect) {
-    // Define menu items to be displayed.
-    let menu_items = [
-        "Start a new game",
-        "Load a game",
-        "Create an image",
-        "Settings",
-    ];
-
-    // Map menu items to text lines, applying different styles to the selected item.
-    let menu_lines: Vec<Line> = menu_items
-        .iter()
-        .enumerate()
-        .map(|(i, &item)| {
-            let number = format!("{}. ", i + 1);
-            let content = item;
-            if i == app.main_menu_state.selected().unwrap_or(0) {
-                Line::from(vec![
-                    Span::styled(number, Style::default().fg(Color::Yellow)),
-                    Span::styled(
-                        content,
-                        Style::default()
-                            .fg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ])
-            } else {
-                Line::from(vec![Span::raw(number), Span::raw(content)])
+impl Component for MainMenu {
+    fn on_key(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
+        match key.code {
+            KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
+                match self.state.selected() {
+                    Some(0) => Some(Action::SwitchComponent(Box::new(SaveName::default()))),
+                    Some(1) => {
+                        // Load Game
+                        Some(Action::SwitchComponent(Box::new(LoadMenu::default())))
+                    }
+                    Some(2) => {
+                        if context.openai_api_key_valid {
+                            Some(Action::SwitchComponent(Box::new(ImageMenu::default())))
+                        } else {
+                            Some(Action::SwitchComponent(Box::new(ApiKeyInput::default())))
+                        }
+                    }
+                    Some(3) => Some(Action::SwitchComponent(Box::new(SettingsMenu::default()))),
+                    _ => None,
+                }
             }
-        })
-        .collect();
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.navigate_main_menu(-1);
+                None
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.navigate_main_menu(1);
+                None
+            }
+            KeyCode::Char(c) if ('1'..='4').contains(&c) => {
+                self.select_main_menu_by_char(c);
+                None
+            }
+            KeyCode::Char('q') => {
+                crate::cleanup::cleanup();
+                std::process::exit(0);
+            }
+            _ => None,
+        }
+    }
+    fn render(&self, area: Rect, buffer: &mut Buffer, context: &Context) {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .flex(ratatui::layout::Flex::Center)
+            .constraints(
+                [
+                    Constraint::Max(1),
+                    // TODO: extract the logic in separate functions
+                    Constraint::Length(if area.height - 20 > 20 { 20 } else { 0 }),
+                    Constraint::Length(if area.height - 7 > 7 { 7 } else { 0 }),
+                    Constraint::Max(1),
+                    Constraint::Min(10),
+                ]
+                .as_ref(),
+            )
+            .split(area);
 
-    let max_width = menu_lines.iter().map(|l| l.width()).max().unwrap_or(0) as u16;
-    let centered_area = center_rect(
-        area,
-        Constraint::Length(max_width),
-        Constraint::Length(app.save_manager.available_saves.len() as u16 + 2),
-    );
+        // Render individual parts of the main menu using the layout defined above.
+        self.render_header(buffer, chunks[0]);
+        self.render_art(buffer, chunks[1]);
+        self.render_title(buffer, chunks[2]);
+        self.render_console(buffer, context, chunks[3]);
+        self.render_menu(buffer, context, chunks[4]);
+    }
+}
 
-    let menu = Paragraph::new(menu_lines)
-        .alignment(Alignment::Left)
-        .style(Style::default().fg(Color::White));
+impl MainMenu {
+    fn navigate_main_menu(&mut self, direction: isize) {
+        let i = self.state.selected().unwrap_or(0) as isize;
+        let new_i = (i + direction).rem_euclid(4) as usize;
+        self.state.select(Some(new_i));
+    }
+    fn select_main_menu_by_char(&mut self, c: char) {
+        let index = (c as usize - 1) % 4;
+        self.state.select(Some(index));
+    }
+    pub fn draw_main_menu(self, buffer: &mut Buffer, area: Rect, context: &Context) {
+        // Define layout constraints for different sections of the main menu.
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .flex(ratatui::layout::Flex::Center)
+            .constraints(
+                [
+                    Constraint::Max(1),
+                    Constraint::Length(if area.height - 20 > 20 { 20 } else { 0 }),
+                    Constraint::Length(if area.height - 7 > 7 { 7 } else { 0 }),
+                    Constraint::Max(1),
+                    Constraint::Min(10),
+                ]
+                .as_ref(),
+            )
+            .split(area);
 
-    // HACK: This should be a stateful widget.
-    f.render_widget(menu, centered_area);
+        // Render individual parts of the main menu using the layout defined above.
+        render_header(buffer, chunks[0]);
+        render_art(buffer, chunks[1]);
+        render_title(buffer, chunks[2]);
+        self.render_console(buffer, context, chunks[3]);
+        self.render_menu(buffer, context, chunks[4]);
+    }
+
+    // Function to render the header section of the menu.
+    pub fn render_header(&self, buffer: &mut Buffer, area: Rect) {
+        let header = Paragraph::new(format!("Sharad Ratatui v{}", env!("CARGO_PKG_VERSION")))
+            .style(Style::default().fg(Color::DarkGray))
+            .block(Block::default().border_type(BorderType::Rounded))
+            .alignment(Alignment::Center);
+        header.render(area, buffer);
+    }
+
+    // Function to render the art section of the menu.
+    pub fn render_art(&self, buffer: &mut Buffer, area: Rect) {
+        let outer_block = Block::default()
+            .border_type(BorderType::Rounded)
+            .style(Style::default().fg(Color::DarkGray));
+        outer_block.render(area, buffer);
+
+        let inner_rect = center_rect(area, Constraint::Length(80), Constraint::Length(18));
+
+        let inner_block = Block::default()
+            .border_type(BorderType::Rounded)
+            .borders(Borders::ALL)
+            .style(Style::default().fg(Color::Green));
+        inner_block.render(inner_rect, buffer);
+
+        let art = Paragraph::new(ART)
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(Color::Green));
+        art.render(inner_rect, buffer);
+    }
+
+    // Function to render the title section of the menu.
+    pub fn render_title(&self, buffer: &mut Buffer, area: Rect) {
+        let outer_block = Block::default()
+            .border_type(BorderType::Rounded)
+            .style(Style::default().fg(Color::DarkGray));
+        let title_area = center_rect(area, Constraint::Length(38), Constraint::Length(8));
+        outer_block.render(title_area, buffer);
+
+        let title = Paragraph::new(TITLE)
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(Color::Green));
+        title.render(title_area, buffer);
+    }
+
+    // Function to render the console section of the menu.
+    pub fn render_console(&self, buffer: &mut Buffer, context: &Context, area: Rect) {
+        let outer_block = Block::default()
+            .border_type(BorderType::Rounded)
+            .style(Style::default().fg(Color::DarkGray));
+        let console_area = center_rect(area, Constraint::Percentage(90), Constraint::Length(2));
+        outer_block.render(console_area, buffer);
+
+        let console_message: Option<Paragraph> = context
+            .console_messages
+            .borrow()
+            .last()
+            .filter(|content| content.message_type == MessageType::System)
+            .map(|content| {
+                Paragraph::new(content.content.to_string())
+                    .alignment(Alignment::Center)
+                    .style(Style::default().fg(Color::Yellow))
+            });
+
+        if let Some(message) = console_message {
+            message.render(console_area, buffer);
+        }
+    }
+
+    // Function to render the interactive menu section of the main menu.
+    pub fn render_menu(&self, buffer: &mut Buffer, context: &Context, area: Rect) {
+        // Define menu items to be displayed.
+        let menu_items = [
+            "Start a new game",
+            "Load a game",
+            "Create an image",
+            "Settings",
+        ];
+
+        // Map menu items to text lines, applying different styles to the selected item.
+        // TODO: Make it into a constant
+        let menu_lines: Vec<Line> = menu_items
+            .iter()
+            .enumerate()
+            .map(|(i, &item)| {
+                let number = format!("{}. ", i + 1);
+                let content = item;
+                if i == self.state.selected().unwrap_or(0) {
+                    Line::from(vec![
+                        Span::styled(number, Style::default().fg(Color::Yellow)),
+                        Span::styled(
+                            content,
+                            Style::default()
+                                .fg(Color::Yellow)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                    ])
+                } else {
+                    Line::from(vec![Span::raw(number), Span::raw(content)])
+                }
+            })
+            .collect();
+
+        let max_width = menu_lines.iter().map(|l| l.width()).max().unwrap_or(0) as u16;
+        let centered_area = center_rect(
+            area,
+            Constraint::Length(max_width),
+            Constraint::Length(context.save_manager.available_saves.len() as u16 + 2),
+        );
+
+        let menu = Paragraph::new(menu_lines)
+            .alignment(Alignment::Left)
+            .style(Style::default().fg(Color::White));
+
+        menu.render(centered_area, buffer);
+    }
 }
 
 // Function to render the status bar at the bottom of the menu.
-pub fn render_status(f: &mut Frame, app: &App, area: Rect) {
-    // Define the status message based on the current application state.
-    let status_message = match app.state {
-        AppState::MainMenu => "Press q to quit",
-        AppState::LoadMenu => {
-            "Press Enter or number to load save, Backspace twice to delete save, Esc to go back"
-        }
-        _ => "Press Esc to go back",
-    };
-    let status = Paragraph::new(status_message)
-        .style(Style::default().fg(Color::DarkGray))
-        .block(
-            Block::default()
-                .border_type(BorderType::Rounded)
-                .borders(Borders::NONE),
-        )
-        .alignment(Alignment::Center);
-    f.render_widget(status, area);
-}
-
-// Note: The proposed update to pass the 'app' to 'render_status' is already implemented in 'draw_main_menu'.
+// TODO: Should make this into key_hint implementation.
+// pub fn render_status(buffer: &mut Buffer, context: &Context, area: Rect) {
+//     // Define the status message based on the current application state.
+//     let status_message = match context.state {
+//         AppState::MainMenu => "Press q to quit",
+//         AppState::LoadMenu => {
+//             "Press Enter or number to load save, Backspace twice to delete save, Esc to go back"
+//         }
+//         _ => "Press Esc to go back",
+//     };
+//     let status = Paragraph::new(status_message)
+//         .style(Style::default().fg(Color::DarkGray))
+//         .block(
+//             Block::default()
+//                 .border_type(BorderType::Rounded)
+//                 .borders(Borders::NONE),
+//         )
+//         .alignment(Alignment::Center);
+//     status.render(area, buffer);
+// }

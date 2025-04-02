@@ -488,13 +488,13 @@ pub enum UpdateOperation<T> {
 pub enum CharacterSheetUpdate {
     UpdateAttribute {
         attribute: String,
-        operation: UpdateOperation<Value>,
+        operation: UpdateOperation<CharacterValue>,
     },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum Value {
+pub enum CharacterValue {
     U8(u8),
     U32(u32),
     String(String),
@@ -529,36 +529,36 @@ impl CharacterSheet {
         }
     }
 
-    fn modify_attribute(&mut self, attribute: &str, value: Value) -> Result<()> {
+    fn modify_attribute(&mut self, attribute: &str, value: CharacterValue) -> Result<()> {
         match (attribute, value.clone()) {
-            ("name", Value::String(v)) => self.name = v,
-            ("race", Value::Race(v)) => {
+            ("name", CharacterValue::String(v)) => self.name = v,
+            ("race", CharacterValue::Race(v)) => {
                 self.race = v;
                 self.apply_race_modifiers(self.race);
             }
-            ("gender", Value::String(v)) => self.gender = v,
-            ("backstory", Value::String(v)) => self.backstory = v,
-            ("main", Value::U8(v)) => self.main = v != 0,
-            ("body", Value::U8(v)) => self.attributes.body = v,
-            ("agility", Value::U8(v)) => self.attributes.agility = v,
-            ("reaction", Value::U8(v)) => self.attributes.reaction = v,
-            ("strength", Value::U8(v)) => self.attributes.strength = v,
-            ("willpower", Value::U8(v)) => self.attributes.willpower = v,
-            ("logic", Value::U8(v)) => self.attributes.logic = v,
-            ("intuition", Value::U8(v)) => self.attributes.intuition = v,
-            ("charisma", Value::U8(v)) => self.attributes.charisma = v,
-            ("edge", Value::U8(v)) => self.attributes.edge = v,
-            ("magic", Value::OptionU8(v)) => self.magic.magic = v,
-            ("resonance", Value::OptionU8(v)) => self.resonance.resonance = v,
-            ("skills", Value::Skills(v)) => self.skills = v,
-            ("knowledge_skills", Value::HashMapStringU8(v)) => self.knowledge_skills = v,
-            ("nuyen", Value::U32(v)) => self.nuyen = v,
-            ("lifestyle", Value::String(v)) => self.lifestyle = v,
-            ("contacts", Value::HashMapStringContact(v)) => self.contacts = v,
-            ("qualities", Value::VecQuality(v)) => self.qualities = v,
-            ("cyberware", Value::VecString(v)) => self.cyberware = v,
-            ("bioware", Value::VecString(v)) => self.bioware = v,
-            ("inventory", Value::HashMapStringItem(v)) => {
+            ("gender", CharacterValue::String(v)) => self.gender = v,
+            ("backstory", CharacterValue::String(v)) => self.backstory = v,
+            ("main", CharacterValue::U8(v)) => self.main = v != 0,
+            ("body", CharacterValue::U8(v)) => self.attributes.body = v,
+            ("agility", CharacterValue::U8(v)) => self.attributes.agility = v,
+            ("reaction", CharacterValue::U8(v)) => self.attributes.reaction = v,
+            ("strength", CharacterValue::U8(v)) => self.attributes.strength = v,
+            ("willpower", CharacterValue::U8(v)) => self.attributes.willpower = v,
+            ("logic", CharacterValue::U8(v)) => self.attributes.logic = v,
+            ("intuition", CharacterValue::U8(v)) => self.attributes.intuition = v,
+            ("charisma", CharacterValue::U8(v)) => self.attributes.charisma = v,
+            ("edge", CharacterValue::U8(v)) => self.attributes.edge = v,
+            ("magic", CharacterValue::OptionU8(v)) => self.magic.magic = v,
+            ("resonance", CharacterValue::OptionU8(v)) => self.resonance.resonance = v,
+            ("skills", CharacterValue::Skills(v)) => self.skills = v,
+            ("knowledge_skills", CharacterValue::HashMapStringU8(v)) => self.knowledge_skills = v,
+            ("nuyen", CharacterValue::U32(v)) => self.nuyen = v,
+            ("lifestyle", CharacterValue::String(v)) => self.lifestyle = v,
+            ("contacts", CharacterValue::HashMapStringContact(v)) => self.contacts = v,
+            ("qualities", CharacterValue::VecQuality(v)) => self.qualities = v,
+            ("cyberware", CharacterValue::VecString(v)) => self.cyberware = v,
+            ("bioware", CharacterValue::VecString(v)) => self.bioware = v,
+            ("inventory", CharacterValue::HashMapStringItem(v)) => {
                 for (key, new_item) in v {
                     if let Some(existing_item) = self.inventory.get_mut(&key) {
                         // Update existing item
@@ -570,7 +570,9 @@ impl CharacterSheet {
                     }
                 }
             }
-            ("matrix_attributes", Value::OptionMatrixAttributes(v)) => self.matrix_attributes = v,
+            ("matrix_attributes", CharacterValue::OptionMatrixAttributes(v)) => {
+                self.matrix_attributes = v
+            }
             _ => {
                 return Err(format!(
                     "Invalid attribute-value pair for modification: {} {:#?}",
@@ -582,14 +584,14 @@ impl CharacterSheet {
         Ok(())
     }
 
-    fn add_to_attribute(&mut self, attribute: &str, value: Value) -> Result<()> {
+    fn add_to_attribute(&mut self, attribute: &str, value: CharacterValue) -> Result<()> {
         match (attribute, value.clone()) {
-            ("nuyen", Value::U32(v)) => self.nuyen = self.nuyen.saturating_add(v),
-            ("contacts", Value::HashMapStringContact(v)) => self.contacts.extend(v),
-            ("qualities", Value::VecQuality(v)) => self.qualities.extend(v),
-            ("cyberware", Value::VecString(v)) => self.cyberware.extend(v),
-            ("bioware", Value::VecString(v)) => self.bioware.extend(v),
-            ("inventory", Value::HashMapStringItem(v)) => {
+            ("nuyen", CharacterValue::U32(v)) => self.nuyen = self.nuyen.saturating_add(v),
+            ("contacts", CharacterValue::HashMapStringContact(v)) => self.contacts.extend(v),
+            ("qualities", CharacterValue::VecQuality(v)) => self.qualities.extend(v),
+            ("cyberware", CharacterValue::VecString(v)) => self.cyberware.extend(v),
+            ("bioware", CharacterValue::VecString(v)) => self.bioware.extend(v),
+            ("inventory", CharacterValue::HashMapStringItem(v)) => {
                 for (key, item) in v {
                     if let Some(existing_item) = self.inventory.get_mut(&key) {
                         existing_item.quantity += item.quantity;
@@ -609,18 +611,24 @@ impl CharacterSheet {
         Ok(())
     }
 
-    fn remove_from_attribute(&mut self, attribute: &str, value: Value) -> Result<()> {
+    fn remove_from_attribute(&mut self, attribute: &str, value: CharacterValue) -> Result<()> {
         match (attribute, value.clone()) {
-            ("nuyen", Value::U32(v)) => self.nuyen = self.nuyen.saturating_sub(v),
-            ("contacts", Value::HashMapStringContact(v)) => {
+            ("nuyen", CharacterValue::U32(v)) => self.nuyen = self.nuyen.saturating_sub(v),
+            ("contacts", CharacterValue::HashMapStringContact(v)) => {
                 for key in v.keys() {
                     self.contacts.remove(key);
                 }
             }
-            ("qualities", Value::VecQuality(v)) => self.qualities.retain(|q| !v.contains(q)),
-            ("cyberware", Value::VecString(v)) => self.cyberware.retain(|item| !v.contains(item)),
-            ("bioware", Value::VecString(v)) => self.bioware.retain(|item| !v.contains(item)),
-            ("inventory", Value::HashMapStringItem(v)) => {
+            ("qualities", CharacterValue::VecQuality(v)) => {
+                self.qualities.retain(|q| !v.contains(q))
+            }
+            ("cyberware", CharacterValue::VecString(v)) => {
+                self.cyberware.retain(|item| !v.contains(item))
+            }
+            ("bioware", CharacterValue::VecString(v)) => {
+                self.bioware.retain(|item| !v.contains(item))
+            }
+            ("inventory", CharacterValue::HashMapStringItem(v)) => {
                 for (key, item) in v {
                     if let Some(existing_item) = self.inventory.get_mut(&key) {
                         if existing_item.quantity <= item.quantity {

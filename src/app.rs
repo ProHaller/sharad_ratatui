@@ -1,11 +1,14 @@
+use crate::error;
 // /app.rs
+use crate::context::Context;
+use crate::ui::Component;
+use crate::ui::main_menu::MainMenu;
 use crate::{
     ai::{GameAI, GameConversationState},
     ai_response::create_user_message,
     assistant::{create_assistant, delete_assistant, get_assistant_id},
     audio::{self, play_audio},
     character::CharacterSheet,
-    cleanup::cleanup,
     error::{AppError, Error, ErrorMessage, Result, ShadowrunError},
     game_state::GameState,
     imager,
@@ -21,8 +24,9 @@ use crate::{
 
 use chrono::Local;
 use copypasta::{ClipboardContext, ClipboardProvider};
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use futures::stream::{FuturesOrdered, StreamExt};
+use ratatui::DefaultTerminal;
 use ratatui::{layout::Alignment, text::Line, widgets::ListState};
 use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
 use std::{
@@ -38,21 +42,12 @@ use std::{
     },
     time::{Duration, Instant},
 };
+use tokio::fs::copy;
 use tokio::sync::{Mutex, RwLock, mpsc};
+use tokio::time::sleep;
 use tui_input::{Input, InputRequest, backend::crossterm::EventHandler};
 
-#[derive(PartialEq, Clone)]
-pub enum AppState {
-    MainMenu,
-    InGame,
-    LoadMenu,
-    CreateImage,
-    SettingsMenu,
-    InputApiKey,
-    InputSaveName,
-}
-
-pub enum AppCommand {
+pub enum Action {
     LoadGame(PathBuf),
     StartNewGame(String),
     ProcessMessage(String),
@@ -60,6 +55,8 @@ pub enum AppCommand {
     ApiKeyValidationResult(bool),
     TranscriptionResult(String, TranscriptionTarget),
     TranscriptionError(String),
+    SwitchComponent(Box<dyn Component>),
+    SwitchInputMode(InputMode),
 }
 
 pub enum TranscriptionTarget {
@@ -68,8 +65,9 @@ pub enum TranscriptionTarget {
     ImagePrompt,
 }
 
-#[derive(PartialEq, Eq, Clone)]
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub enum InputMode {
+    #[default]
     Normal,
     Editing,
     Recording,
@@ -77,34 +75,27 @@ pub enum InputMode {
 
 // TODO: Verify that there is a valid connection internet, else request the user to take action
 // after conneecting.
-pub struct App {
+pub struct App<'a> {
     // Application state and control flow
     pub should_quit: bool,
-    pub state: AppState,
-    pub highlighted_section: HighlightedSection,
-    pub input_mode: InputMode,
-    pub openai_api_key_valid: bool,
+    pub terminal: DefaultTerminal,
+    pub component: Box<dyn Component>,
     pub error_messages: Vec<ErrorMessage>,
+
+    pub openai_api_key_valid: bool,
+    pub input_mode: InputMode, // TODO: Move it into Input struct
+    pub user_input: Input,
+    pub image_prompt: Input,
+    pub is_recording: Arc<AtomicBool>,
+    pub highlighted_section: HighlightedSection, // TODO: Move it into game
 
     // Saves and loads
     pub save_manager: SaveManager,
-    pub save_name_input: Input,
     pub current_save_name: Arc<RwLock<String>>,
-
-    // Menu states
-    pub main_menu_state: ListState,
-    pub load_game_menu_state: ListState,
-    pub settings_state: SettingsState,
 
     // Game state and AI interaction
     pub ai_client: Option<GameAI>,
     pub current_game: Option<Arc<Mutex<GameState>>>,
-
-    // User inputs and interaction handling
-    pub user_input: Input,
-    pub api_key_input: Input,
-    pub image_prompt: Input,
-    pub is_recording: Arc<AtomicBool>,
 
     // Game content management
     pub game_content: RefCell<Vec<message::Message>>,
@@ -125,10 +116,15 @@ pub struct App {
 
     // Asynchronous message handling
     ai_sender: mpsc::UnboundedSender<AIMessage>,
+    ai_receiver: mpsc::UnboundedReceiver<AIMessage>,
     image_sender: mpsc::UnboundedSender<PathBuf>,
-    pub command_sender: mpsc::UnboundedSender<AppCommand>,
+    image_receiver: mpsc::UnboundedReceiver<PathBuf>,
+    error_receiver: mpsc::UnboundedReceiver<ShadowrunError>,
+    pub command_sender: mpsc::UnboundedSender<Action>,
+    pub command_receiver: mpsc::UnboundedReceiver<Action>,
 
     // UI components and helpers
+    // TODO: move to save_menu
     pub backspace_counter: bool,
     pub spinner: Spinner,
     pub spinner_active: bool,
@@ -138,14 +134,18 @@ pub struct App {
     pub last_known_character_sheet: Option<CharacterSheet>,
     // Image state
     pub image: Option<StatefulProtocol>,
+    pub context: Option<Context<'a>>,
 }
 
-impl App {
-    pub async fn new(
-        ai_sender: mpsc::UnboundedSender<AIMessage>,
-        image_sender: mpsc::UnboundedSender<PathBuf>,
-    ) -> (Self, mpsc::UnboundedReceiver<AppCommand>) {
+impl<'a> App<'a> {
+    pub async fn new(terminal: DefaultTerminal) -> Self {
         let (command_sender, command_receiver) = mpsc::unbounded_channel();
+        // Set up unbounded channel for AI messages.
+        let (ai_sender, ai_receiver) = mpsc::unbounded_channel::<AIMessage>();
+        // Set up unbounded channel for images.
+        let (image_sender, image_receiver) = mpsc::unbounded_channel::<PathBuf>();
+        // Set up unbounded channel for errors.
+        let error_receiver = error::initialize_global_error_handler().await;
 
         let mut main_menu_state = ListState::default();
         main_menu_state.select(Some(0));
@@ -164,23 +164,25 @@ impl App {
             false
         };
 
-        let app = Self {
+        let mut app = Self {
+            component: Box::new(MainMenu::default()),
             should_quit: false,
-            state: AppState::MainMenu,
+            terminal,
             highlighted_section: HighlightedSection::None,
-            main_menu_state,
             ai_client: None,
             current_game: None,
             command_sender,
+            command_receiver,
+            ai_sender,
+            ai_receiver,
+            image_sender,
+            image_receiver,
+            error_receiver,
             settings,
             user_input: Input::default(),
-            api_key_input: Input::default(),
-            save_name_input: Input::default(),
             image_prompt: Input::default(),
             input_mode: InputMode::Normal,
-            settings_state,
             save_manager: SaveManager::new(),
-            load_game_menu_state,
             openai_api_key_valid,
             error_messages: Vec::new(),
             game_content: RefCell::new(Vec::new()),
@@ -191,8 +193,7 @@ impl App {
             total_lines: 0,
             visible_lines: 0,
             clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
-            ai_sender,
-            image_sender,
+
             backspace_counter: false,
             spinner: Spinner::new(),
             spinner_active: false,
@@ -201,9 +202,175 @@ impl App {
             last_known_character_sheet: None,
             is_recording: Arc::new(AtomicBool::new(false)),
             image: None,
+            context: None,
         };
+        app
+    }
+    // Asynchronous function to continuously run and update the application.
+    pub async fn run(&mut self) -> Result<()> {
+        let mut last_tick = Instant::now();
+        let tick_rate = Duration::from_millis(16);
+        let ai_client = self.initialize_ai_client().await?;
 
-        (app, command_receiver)
+        loop {
+            let timeout = tick_rate
+                .checked_sub(last_tick.elapsed())
+                .unwrap_or_else(|| Duration::from_secs(0));
+
+            tokio::select! {
+                _ = sleep(timeout) => {
+                self.on_tick();
+                self.clean_old_errors(Duration::from_secs(5));
+            }
+                event_result = tokio::task::spawn_blocking(|| crossterm::event::poll(Duration::from_millis(1))) => {
+                match event_result {
+                    Ok(Ok(true)) => {
+                        match crossterm::event::read() {
+                            Ok(Event::Key(key)) if key.kind == KeyEventKind::Press => {
+                                self.handle_crossterm_events()?
+                            }
+                            Ok(_) => {}, // Ignore non-key events and non-press key events
+                            Err(e) => {
+                                eprintln!("Error reading event: {:#?}", e);
+                            }
+                        }
+                    }
+                    Ok(Ok(false)) => {}, // No event available
+                    Ok(Err(e)) => {
+                        eprintln!("Error polling for event: {:#?}", e);
+                    }
+                    Err(e) => {
+                        eprintln!("Task join error: {:#?}", e);
+                    }
+                }
+            }
+                Some(command) = self.command_receiver.recv() => {
+                    match command {
+                        Action::ProcessMessage(message) => {
+                            self.scroll_to_bottom();
+                        },
+                        Action::AIResponse(result) => {
+                            // self.handle_ai_response(*result).await;
+                            self.scroll_to_bottom();
+                        },
+                        Action::LoadGame(save_path) => {
+                            // if let Err(e) = self.load_game(&save_path).await {
+                                // self.add_message(Message::new( MessageType::System, format!("Failed to load game: {:#?}", e)));
+                            // }
+                        },
+                        Action::StartNewGame(save_name) => {
+                            // if let Err(e) = app.lock().await.start_new_game(save_name).await {
+                            //     app.lock().await.add_message(Message::new( MessageType::System, format!("Failed to start new game: {:#?}", e)));
+                            // };
+                        },
+                        Action::ApiKeyValidationResult(is_valid) => {
+                            self.handle_api_key_validation_result(is_valid);
+                        }
+                        Action::TranscriptionResult(transcription, target) => {
+                            match target {
+                                self::TranscriptionTarget::UserInput => {
+                                    // for ch in transcription.chars() {
+                                    //     self.user_input.handle(tui_input::InputRequest::InsertChar(ch));
+                                    // }
+                                }
+                                self::TranscriptionTarget::SaveNameInput => {
+                                    // for ch in transcription.chars() {
+                                    //     self.save_name_input.handle(tui_input::InputRequest::InsertChar(ch));
+                                    // }
+                                }
+                                self::TranscriptionTarget::ImagePrompt => {
+                                    // for ch in transcription.chars() {
+                                    //     self.image_prompt.handle(tui_input::InputRequest::InsertChar(ch));
+                                    // }
+                                }
+                            }
+                            self.add_debug_message(format!("Transcription successful: {}", transcription));
+                        }
+                        Action::TranscriptionError(error) => {
+                            self.add_message(Message::new(
+                                MessageType::System,
+                                format!("Failed to transcribe audio: {}", error),
+                            ));
+                            self.add_debug_message(format!("Transcription error: {}", error));
+                        }
+                        Action::SwitchComponent(component) => {self.component = component},
+                        Action::SwitchInputMode(input_mode) => {self.input_mode = input_mode},
+                    }
+                },
+                    Some(ai_message) = self.ai_receiver.recv() => {
+                match ai_message {
+                    AIMessage::Debug(debug_message) => {
+                        self.add_debug_message(debug_message);
+                    },
+                }
+            }
+                Some(image_path) = self.image_receiver.recv() => {
+                    let image_name = image_path.file_name().expect("Expected a Valid path");
+                    let current = self.current_game.clone().expect("Expected a Clone of current_game");
+                    let mut game_state = current.lock().await;
+                    let save_dir = game_state.save_path.clone().expect("Expected a valid path").parent().expect("Expected a parent path").to_path_buf();
+                    let new_image_path = save_dir.join(image_name);
+                    copy(image_path, &new_image_path).await?;
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    game_state.image_path = Some(new_image_path.clone().to_path_buf());
+                    self.current_game = Some(Arc::new(Mutex::new(game_state.clone())));
+                    // self.save_current_game().await?;
+
+                    let _ = self.load_image_from_file(new_image_path);
+                }
+                    Some(error) =self.error_receiver.recv() => {
+                        self.add_error(error);
+                    }
+                }
+
+            self.terminal.draw(|frame| {
+                let context = Context {
+                    openai_api_key_valid: self.openai_api_key_valid,
+                    save_manager: &self.save_manager,
+                    save_name: "",
+                    ai_client: &self.ai_client,
+                    settings: &self.settings,
+                    clipboard: &self.clipboard,
+                    console_messages: &self.game_content,
+                    error_messages: &self.error_messages,
+                    input_mode: &self.input_mode,
+                };
+                self.component
+                    .render(frame.area(), frame.buffer_mut(), &context)
+            })?;
+
+            // if app.lock().await.should_quit {
+            //     return Ok(());
+            // }
+
+            // Ensure consistent tick rate
+            let elapsed = last_tick.elapsed();
+            if elapsed < tick_rate {
+                tokio::time::sleep(tick_rate - elapsed).await;
+            }
+            last_tick = Instant::now();
+        }
+    }
+
+    fn handle_crossterm_events(&mut self) -> Result<()> {
+        if let Event::Key(key) = event::read()? {
+            if key.kind == KeyEventKind::Press {
+                self.on_key(key)?
+            }
+        }
+        Ok(())
+    }
+
+    fn on_key(&mut self, key_event: KeyEvent) -> Result<()> {
+        if let KeyCode::Char('q') = key_event.code {
+            self.quit()
+        } else {
+            Ok(())
+        }
+    }
+    fn quit(&mut self) -> Result<()> {
+        self.should_quit = true;
+        Ok(())
     }
 
     pub fn update_cached_content(&mut self, max_width: usize) {
@@ -231,501 +398,341 @@ impl App {
         Ok(())
     }
 
-    pub fn process_message(&mut self, message: String) {
-        let user_message = create_user_message(&self.settings.language, &message);
-        let formatted_message = serde_json::to_string(&user_message).unwrap();
+    // TODO: should probably go to game, or ai sections
 
-        self.start_spinner();
+    // pub fn process_message(&mut self, message: String) {
+    //     let user_message = create_user_message(&self.settings.language.to_string(), &message);
+    //     let formatted_message = serde_json::to_string(&user_message).unwrap();
+    //
+    //     self.start_spinner();
+    //
+    //     let ai_client = self.ai_client.clone();
+    //     let current_game = self.current_game.clone();
+    //     let sender = self.command_sender.clone();
+    //     todo!();
+    //
+    //     tokio::spawn(async move {
+    //         if let (Some(mut ai), Some(game_state)) = (ai_client, current_game) {
+    //             let mut game_state = game_state.lock().await;
+    //             let result = ai.send_message(&formatted_message, &mut game_state).await;
+    //             let _ = sender.send(Action::AIResponse(Box::new(result)));
+    //         } else {
+    //             let _ = sender.send(Action::AIResponse(Box::new(Err(Error::from(
+    //                 AppError::NoCurrentGame,
+    //             )))));
+    //         }
+    //     });
+    // }
+    // pub async fn handle_ai_response(&mut self, result: Result<GameMessage>) {
+    //     self.stop_spinner();
+    //     self.add_debug_message(format!("Spinner: {:#?}", self.spinner_active));
+    //
+    //     match result {
+    //         Ok(game_message) => {
+    //             self.add_debug_message(format!(
+    //                 "Received game message from AI: {:#?}",
+    //                 game_message
+    //             ));
+    //
+    //             let game_message_json = serde_json::to_string(&game_message).unwrap();
+    //             self.add_debug_message(format!("Game message: {:#?}", game_message_json.clone()));
+    //             self.add_message(Message::new(MessageType::Game, game_message_json.clone()));
+    //
+    //             if self.settings.audio_output_enabled {
+    //                 self.add_debug_message(format!(
+    //                     "generating audio from {:#?}",
+    //                     game_message.fluff.clone()
+    //                 ));
+    //                 if let Some(ai_client) = self.ai_client.clone() {
+    //                     let mut game_message_clone = game_message.clone();
+    //                     let save_name = match self.save_manager.current_save.clone() {
+    //                         Some(game_state) => game_state.save_name,
+    //                         None => "unknown".to_string(),
+    //                     };
+    //                     tokio::spawn(async move {
+    //                         game_message_clone
+    //                             .fluff
+    //                             .speakers
+    //                             .iter_mut()
+    //                             .for_each(|speaker| speaker.assign_voice());
+    //
+    //                         let mut audio_futures = FuturesOrdered::new();
+    //
+    //                         for (index, fluff_line) in
+    //                             game_message_clone.fluff.dialogue.iter_mut().enumerate()
+    //                         {
+    //                             let voice = game_message_clone
+    //                                 .fluff
+    //                                 .speakers
+    //                                 .iter()
+    //                                 .find(|s| s.index == fluff_line.speaker_index)
+    //                                 .and_then(|s| s.voice.clone())
+    //                                 .expect("Voice not found for speaker");
+    //
+    //                             let ai_client = ai_client.clone();
+    //                             let text = fluff_line.text.clone();
+    //                             let save_name = save_name.clone();
+    //
+    //                             // Generate the audio in parallel, keeping track of the index
+    //                             audio_futures.push_back(async move {
+    //                                 let result = audio::generate_audio(
+    //                                     &ai_client.client,
+    //                                     &save_name,
+    //                                     &text,
+    //                                     voice,
+    //                                 )
+    //                                 .await;
+    //                                 (result, index)
+    //                             });
+    //                         }
+    //
+    //                         // Process the results in order
+    //                         while let Some((result, index)) = audio_futures.next().await {
+    //                             if let Ok(path) = result {
+    //                                 game_message_clone.fluff.dialogue[index].audio = Some(path);
+    //                             }
+    //                         }
+    //
+    //                         // Play audio sequentially
+    //                         // TODO: Make sure two messages audio are not played at the same time.
+    //                         for file in game_message_clone.fluff.dialogue.iter() {
+    //                             if let Some(audio_path) = &file.audio {
+    //                                 let _status = play_audio(audio_path.clone());
+    //                             }
+    //                         }
+    //                     });
+    //                 }
+    //             }
+    //
+    //             // Update the UI
+    //             self.cached_game_content = None; // Force recalculation of cached content
+    //             self.cached_content_len = 0;
+    //             self.scroll_to_bottom();
+    //
+    //             if let Some(character_sheet) = game_message.character_sheet {
+    //                 self.add_debug_message("Updating character sheet".to_string());
+    //                 self.update_character_sheet(character_sheet).await;
+    //             }
+    //             self.add_debug_message("Updated character sheet".to_string());
+    //
+    //             if let Err(e) = self.save_current_game().await {
+    //                 self.add_debug_message(format!("Failed to save game: {:#?}", e));
+    //                 self.add_message(Message::new(
+    //                     MessageType::System,
+    //                     format!("Failed to save game after AI response: {:#?}", e),
+    //                 ));
+    //             }
+    //             self.add_debug_message("saved game".to_string());
+    //         }
+    //         Err(e) => {
+    //             self.add_debug_message(format!("Error: {:#?}", e));
+    //             self.add_message(Message::new(
+    //                 MessageType::System,
+    //                 format!("AI Error: {:#?}", e),
+    //             ));
+    //         }
+    //     }
+    // }
 
-        let ai_client = self.ai_client.clone();
-        let current_game = self.current_game.clone();
-        let sender = self.command_sender.clone();
+    // TODO: put this into the Input component
 
-        tokio::spawn(async move {
-            if let (Some(mut ai), Some(game_state)) = (ai_client, current_game) {
-                let mut game_state = game_state.lock().await;
-                let result = ai.send_message(&formatted_message, &mut game_state).await;
-                let _ = sender.send(AppCommand::AIResponse(Box::new(result)));
-            } else {
-                let _ = sender.send(AppCommand::AIResponse(Box::new(Err(Error::from(
-                    AppError::NoCurrentGame,
-                )))));
-            }
-        });
-    }
+    // fn handle_paste(&mut self) -> Result<()> {
+    //     if let Ok(contents) = self.clipboard.get_contents() {
+    //         match self.state {
+    //             AppState::InGame => {
+    //                 for c in contents.chars() {
+    //                     self.user_input.handle(InputRequest::InsertChar(c));
+    //                 }
+    //             }
+    //             AppState::InputSaveName => {
+    //                 for c in contents.chars() {
+    //                     self.save_name_input.handle(InputRequest::InsertChar(c));
+    //                 }
+    //             }
+    //             AppState::InputApiKey => {
+    //                 for c in contents.chars() {
+    //                     self.api_key_input.handle(InputRequest::InsertChar(c));
+    //                 }
+    //             }
+    //             _ => {} // Other states don't have editable inputs
+    //         }
+    //     }
+    //     Ok(())
+    // }
 
-    pub async fn handle_ai_response(&mut self, result: Result<GameMessage>) {
-        self.stop_spinner();
-        self.add_debug_message(format!("Spinner: {:#?}", self.spinner_active));
+    // TODO: Make this go to recording component maybe inside an Input component
 
-        match result {
-            Ok(game_message) => {
-                self.add_debug_message(format!(
-                    "Received game message from AI: {:#?}",
-                    game_message
-                ));
-
-                let game_message_json = serde_json::to_string(&game_message).unwrap();
-                self.add_debug_message(format!("Game message: {:#?}", game_message_json.clone()));
-                self.add_message(Message::new(MessageType::Game, game_message_json.clone()));
-
-                if self.settings.audio_output_enabled {
-                    self.add_debug_message(format!(
-                        "generating audio from {:#?}",
-                        game_message.fluff.clone()
-                    ));
-                    if let Some(ai_client) = self.ai_client.clone() {
-                        let mut game_message_clone = game_message.clone();
-                        let save_name = match self.save_manager.current_save.clone() {
-                            Some(game_state) => game_state.save_name,
-                            None => "unknown".to_string(),
-                        };
-                        tokio::spawn(async move {
-                            game_message_clone
-                                .fluff
-                                .speakers
-                                .iter_mut()
-                                .for_each(|speaker| speaker.assign_voice());
-
-                            let mut audio_futures = FuturesOrdered::new();
-
-                            for (index, fluff_line) in
-                                game_message_clone.fluff.dialogue.iter_mut().enumerate()
-                            {
-                                let voice = game_message_clone
-                                    .fluff
-                                    .speakers
-                                    .iter()
-                                    .find(|s| s.index == fluff_line.speaker_index)
-                                    .and_then(|s| s.voice.clone())
-                                    .expect("Voice not found for speaker");
-
-                                let ai_client = ai_client.clone();
-                                let text = fluff_line.text.clone();
-                                let save_name = save_name.clone();
-
-                                // Generate the audio in parallel, keeping track of the index
-                                audio_futures.push_back(async move {
-                                    let result = audio::generate_audio(
-                                        &ai_client.client,
-                                        &save_name,
-                                        &text,
-                                        voice,
-                                    )
-                                    .await;
-                                    (result, index)
-                                });
-                            }
-
-                            // Process the results in order
-                            while let Some((result, index)) = audio_futures.next().await {
-                                if let Ok(path) = result {
-                                    game_message_clone.fluff.dialogue[index].audio = Some(path);
-                                }
-                            }
-
-                            // Play audio sequentially
-                            // TODO: Make sure two messages audio are not played at the same time.
-                            for file in game_message_clone.fluff.dialogue.iter() {
-                                if let Some(audio_path) = &file.audio {
-                                    let _status = play_audio(audio_path.clone());
-                                }
-                            }
-                        });
-                    }
-                }
-
-                // Update the UI
-                self.cached_game_content = None; // Force recalculation of cached content
-                self.cached_content_len = 0;
-                self.scroll_to_bottom();
-
-                if let Some(character_sheet) = game_message.character_sheet {
-                    self.add_debug_message("Updating character sheet".to_string());
-                    self.update_character_sheet(character_sheet).await;
-                }
-                self.add_debug_message("Updated character sheet".to_string());
-
-                if let Err(e) = self.save_current_game().await {
-                    self.add_debug_message(format!("Failed to save game: {:#?}", e));
-                    self.add_message(Message::new(
-                        MessageType::System,
-                        format!("Failed to save game after AI response: {:#?}", e),
-                    ));
-                }
-                self.add_debug_message("saved game".to_string());
-            }
-            Err(e) => {
-                self.add_debug_message(format!("Error: {:#?}", e));
-                self.add_message(Message::new(
-                    MessageType::System,
-                    format!("AI Error: {:#?}", e),
-                ));
-            }
-        }
-    }
-
-    fn handle_paste(&mut self) -> Result<()> {
-        if let Ok(contents) = self.clipboard.get_contents() {
-            match self.state {
-                AppState::InGame => {
-                    for c in contents.chars() {
-                        self.user_input.handle(InputRequest::InsertChar(c));
-                    }
-                }
-                AppState::InputSaveName => {
-                    for c in contents.chars() {
-                        self.save_name_input.handle(InputRequest::InsertChar(c));
-                    }
-                }
-                AppState::InputApiKey => {
-                    for c in contents.chars() {
-                        self.api_key_input.handle(InputRequest::InsertChar(c));
-                    }
-                }
-                _ => {} // Other states don't have editable inputs
-            }
-        }
-        Ok(())
-    }
-
-    pub fn handle_input(&mut self, key: KeyEvent) {
-        match self.input_mode {
-            InputMode::Normal => match self.state {
-                AppState::MainMenu => self.handle_main_menu_input(key),
-                AppState::InGame => self.handle_in_game_input(key),
-                AppState::LoadMenu => self.handle_load_game_input(key),
-                AppState::CreateImage => self.handle_create_image_input(key),
-                AppState::SettingsMenu => self.handle_settings_input(key),
-                AppState::InputApiKey => self.handle_api_key_input(key),
-                AppState::InputSaveName => self.handle_save_name_input(key),
-            },
-            InputMode::Editing => match self.state {
-                AppState::InGame => self.handle_in_game_editing(key),
-                AppState::InputSaveName => self.handle_save_name_editing(key),
-                AppState::InputApiKey => self.handle_api_key_editing(key),
-                AppState::CreateImage => self.handle_create_image_editing(key),
-                _ => {} // Other states don't have editing mode
-            },
-            InputMode::Recording => {
-                match key.code {
-                    KeyCode::Esc => {
-                        self.stop_recording();
-                    }
-                    _ => {
-                        // Ignore other keys during recording
-                    }
-                }
-            }
-        }
-    }
-
-    pub fn start_recording(&mut self) {
-        self.is_recording.store(true, Ordering::SeqCst);
-        audio::start_recording(&self.is_recording);
-        self.input_mode = InputMode::Recording;
-    }
-
-    pub fn stop_recording(&mut self) {
-        self.is_recording.store(false, Ordering::SeqCst);
-
-        // Wait a bit to ensure the recording has stopped
-        std::thread::sleep(Duration::from_millis(100));
-
-        self.input_mode = InputMode::Normal;
-
-        if self.ai_client.is_none() {
-            self.add_message(Message::new(
-                MessageType::System,
-                "AI client not initialized. Cannot transcribe audio.".to_string(),
-            ));
-            self.add_debug_message("Transcription failed: AI client not initialized".to_string());
-            return;
-        }
-
-        let ai_client = self.ai_client.clone();
-        let state = self.state.clone();
-        let sender = self.command_sender.clone();
-
-        tokio::spawn(async move {
-            if let Some(ai_client) = ai_client {
-                match audio::transcribe_audio(&ai_client.client).await {
-                    Ok(transcription) => {
-                        let command = match state {
-                            AppState::InGame => AppCommand::TranscriptionResult(
-                                transcription,
-                                TranscriptionTarget::UserInput,
-                            ),
-                            AppState::InputSaveName => AppCommand::TranscriptionResult(
-                                transcription,
-                                TranscriptionTarget::SaveNameInput,
-                            ),
-                            AppState::CreateImage => AppCommand::TranscriptionResult(
-                                transcription,
-                                TranscriptionTarget::ImagePrompt,
-                            ),
-                            _ => return,
-                        };
-                        let _ = sender.send(command);
-                    }
-                    Err(e) => {
-                        let _ = sender.send(AppCommand::TranscriptionError(format!("{}", e)));
-                    }
-                }
-            }
-        });
-    }
+    // pub fn start_recording(&mut self) {
+    //     self.is_recording.store(true, Ordering::SeqCst);
+    //     audio::start_recording(&self.is_recording);
+    //     self.input_mode = InputMode::Recording;
+    // }
+    //
+    // pub fn stop_recording(&mut self) {
+    //     self.is_recording.store(false, Ordering::SeqCst);
+    //
+    //     // Wait a bit to ensure the recording has stopped
+    //     std::thread::sleep(Duration::from_millis(100));
+    //
+    //     self.input_mode = InputMode::Normal;
+    //
+    //     if self.ai_client.is_none() {
+    //         self.add_message(Message::new(
+    //             MessageType::System,
+    //             "AI client not initialized. Cannot transcribe audio.".to_string(),
+    //         ));
+    //         self.add_debug_message("Transcription failed: AI client not initialized".to_string());
+    //         return;
+    //     }
+    //
+    //     let ai_client = self.ai_client.clone();
+    //     let state = self.state.clone();
+    //     let sender = self.command_sender.clone();
+    //
+    //     tokio::spawn(async move {
+    //         if let Some(ai_client) = ai_client {
+    //             match audio::transcribe_audio(&ai_client.client).await {
+    //                 Ok(transcription) => {
+    //                     let command = match state {
+    //                         AppState::InGame => Action::TranscriptionResult(
+    //                             transcription,
+    //                             TranscriptionTarget::UserInput,
+    //                         ),
+    //                         AppState::InputSaveName => Action::TranscriptionResult(
+    //                             transcription,
+    //                             TranscriptionTarget::SaveNameInput,
+    //                         ),
+    //                         AppState::CreateImage => Action::TranscriptionResult(
+    //                             transcription,
+    //                             TranscriptionTarget::ImagePrompt,
+    //                         ),
+    //                         _ => return,
+    //                     };
+    //                     let _ = sender.send(command);
+    //                 }
+    //                 Err(e) => {
+    //                     let _ = sender.send(Action::TranscriptionError(format!("{}", e)));
+    //                 }
+    //             }
+    //         }
+    //     });
+    // }
 
     pub async fn update_save_name(&self, new_name: String) {
         let mut save_name = self.current_save_name.write().await;
         *save_name = new_name;
     }
 
-    fn handle_save_name_editing(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Enter => {
-                // Handle save name submission
-                self.input_mode = InputMode::Normal;
-            }
-            KeyCode::Esc => {
-                self.input_mode = InputMode::Normal;
-            }
-            KeyCode::Char('v') => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    if let Err(e) = self.handle_paste() {
-                        self.add_debug_message(format!("Failed to paste: {:#?}", e));
-                    }
-                } else {
-                    self.save_name_input.handle_event(&Event::Key(key));
-                }
-            }
-            _ => {
-                self.save_name_input.handle_event(&Event::Key(key));
-            }
-        }
-    }
+    // TODO: Make the Game Component and adapt this to its on_key
 
-    fn handle_save_name_input(&mut self, key: KeyEvent) {
-        match self.input_mode {
-            InputMode::Normal => match key.code {
-                KeyCode::Char('e') => {
-                    self.input_mode = InputMode::Editing;
-                }
-                KeyCode::Char('r') => {
-                    self.start_recording();
-                }
-                KeyCode::Esc => {
-                    self.state = AppState::MainMenu;
-                    self.save_name_input.reset();
-                }
-                KeyCode::Enter => {
-                    if !self.save_name_input.value().is_empty() {
-                        self.game_content.borrow_mut().clear();
-                        self.current_game = None;
-                        if let Err(e) = self.command_sender.send(AppCommand::StartNewGame(
-                            self.save_name_input.value().to_string(),
-                        )) {
-                            self.add_message(Message::new(
-                                MessageType::System,
-                                format!("Failed to send start new game command: {:#?}", e),
-                            ));
-                        }
-                        self.save_name_input.reset();
-                        self.state = AppState::InGame;
-                    }
-                }
-                _ => {}
-            },
-            InputMode::Editing => match key.code {
-                KeyCode::Esc => {
-                    self.input_mode = InputMode::Normal;
-                }
-                KeyCode::Char('v') => {
-                    if key.modifiers.contains(KeyModifiers::CONTROL) {
-                        if let Err(e) = self.handle_paste() {
-                            self.add_debug_message(format!("Failed to paste: {:#?}", e));
-                        }
-                    } else {
-                        self.save_name_input.handle_event(&Event::Key(key));
-                    }
-                }
-                _ => {
-                    self.save_name_input.handle_event(&Event::Key(key));
-                }
-            },
-            InputMode::Recording if key.code == KeyCode::Esc => {
-                self.stop_recording();
-            }
-            _ => {}
-        }
-    }
+    // fn handle_in_game_editing(&mut self, key: KeyEvent) {
+    //     match key.code {
+    //         KeyCode::Enter => {
+    //             self.input_mode = InputMode::Normal;
+    //         }
+    //         KeyCode::Esc => {
+    //             self.input_mode = InputMode::Normal;
+    //         }
+    //         KeyCode::Char('v') => {
+    //             if key.modifiers.contains(KeyModifiers::CONTROL) {
+    //                 if let Err(e) = self.handle_paste() {
+    //                     self.add_debug_message(format!("Failed to paste: {:#?}", e));
+    //                 }
+    //             } else {
+    //                 self.user_input.handle_event(&Event::Key(key));
+    //             }
+    //         }
+    //         _ => {
+    //             // Let tui_input handle all other key events
+    //             self.user_input.handle_event(&Event::Key(key));
+    //         }
+    //     }
+    // }
 
-    fn handle_api_key_editing(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Enter => {
-                // Handle API key submission
-                self.input_mode = InputMode::Normal;
-            }
-            KeyCode::Esc => {
-                self.input_mode = InputMode::Normal;
-            }
-            KeyCode::Char('v') => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    if let Err(e) = self.handle_paste() {
-                        self.add_debug_message(format!("Failed to paste: {:#?}", e));
-                    }
-                } else {
-                    self.api_key_input.handle_event(&Event::Key(key));
-                }
-            }
-            _ => {
-                self.api_key_input.handle_event(&Event::Key(key));
-            }
-        }
-    }
-
-    fn handle_api_key_input(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Enter => {
-                if !self.api_key_input.value().is_empty() {
-                    let api_key = self.api_key_input.value().to_string();
-                    self.settings.openai_api_key = Some(api_key.clone());
-
-                    let sender = self.command_sender.clone();
-                    tokio::spawn(async move {
-                        let is_valid = Settings::validate_api_key(&api_key).await;
-                        let _ = sender.send(AppCommand::ApiKeyValidationResult(is_valid));
-                    });
-
-                    self.state = AppState::SettingsMenu;
-                }
-            }
-            KeyCode::Esc => {
-                self.state = AppState::SettingsMenu;
-            }
-            KeyCode::Char('v') => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    if let Err(e) = self.handle_paste() {
-                        self.add_debug_message(format!("Failed to paste: {:#?}", e));
-                    }
-                } else {
-                    self.api_key_input.handle_event(&Event::Key(key));
-                }
-            }
-            _ => {
-                self.api_key_input.handle_event(&Event::Key(key));
-            }
-        }
-    }
-
-    fn handle_in_game_editing(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Enter => {
-                self.input_mode = InputMode::Normal;
-            }
-            KeyCode::Esc => {
-                self.input_mode = InputMode::Normal;
-            }
-            KeyCode::Char('v') => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    if let Err(e) = self.handle_paste() {
-                        self.add_debug_message(format!("Failed to paste: {:#?}", e));
-                    }
-                } else {
-                    self.user_input.handle_event(&Event::Key(key));
-                }
-            }
-            _ => {
-                // Let tui_input handle all other key events
-                self.user_input.handle_event(&Event::Key(key));
-            }
-        }
-    }
-
-    fn handle_in_game_input(&mut self, key: KeyEvent) {
-        match self.input_mode {
-            InputMode::Normal => match key.code {
-                KeyCode::Char('e') => {
-                    self.input_mode = InputMode::Editing;
-                }
-                KeyCode::Char('r') => {
-                    self.start_recording();
-                }
-                KeyCode::Esc if (self.highlighted_section != HighlightedSection::None) => {
-                    self.highlighted_section = HighlightedSection::None;
-                }
-                KeyCode::Esc => {
-                    self.game_content.borrow_mut().clear();
-                    self.current_game = None;
-                    self.last_known_character_sheet = None;
-                    self.user_input.reset();
-                    self.state = AppState::MainMenu;
-                    self.save_manager.available_saves = SaveManager::scan_save_files();
-                    self.add_message(Message::new(
-                        MessageType::System,
-                        "Game paused. Returned to main menu.".to_string(),
-                    ))
-                }
-                KeyCode::Enter => {
-                    if !self.user_input.value().is_empty() {
-                        self.submit_user_input();
-                    }
-                }
-                KeyCode::PageUp => {
-                    for _ in 0..self.visible_lines {
-                        self.scroll_up();
-                    }
-                }
-                KeyCode::PageDown => {
-                    for _ in 0..self.visible_lines {
-                        self.scroll_down();
-                    }
-                }
-                KeyCode::Up | KeyCode::Char('k') => self.scroll_up(),
-                KeyCode::Down | KeyCode::Char('j') => self.scroll_down(),
-
-                KeyCode::Tab => self.cycle_highlighted_section(),
-
-                KeyCode::Home => {
-                    self.game_content_scroll = 0;
-                }
-                KeyCode::End => {
-                    self.game_content_scroll = self.total_lines.saturating_sub(self.visible_lines);
-                }
-                _ => {}
-            },
-            InputMode::Editing => match key.code {
-                KeyCode::Esc => {
-                    self.input_mode = InputMode::Normal;
-                }
-                KeyCode::Enter => {
-                    self.input_mode = InputMode::Normal;
-                }
-                KeyCode::Char('v') => {
-                    if key.modifiers.contains(KeyModifiers::CONTROL) {
-                        if let Err(e) = self.handle_paste() {
-                            self.add_debug_message(format!("Failed to paste: {:#?}", e));
-                        }
-                    } else {
-                        self.user_input.handle_event(&Event::Key(key));
-                    }
-                }
-                _ => {
-                    self.user_input.handle_event(&Event::Key(key));
-                }
-            },
-            InputMode::Recording => {
-                match key.code {
-                    KeyCode::Esc => {
-                        self.stop_recording();
-                    }
-                    _ => {
-                        // Ignore other keys during recording
-                    }
-                }
-            }
-        }
-    }
+    // fn handle_in_game_input(&mut self, key: KeyEvent) {
+    //     match self.input_mode {
+    //         InputMode::Normal => match key.code {
+    //             KeyCode::Char('e') => {
+    //                 self.input_mode = InputMode::Editing;
+    //             }
+    //             KeyCode::Char('r') => {
+    //                 self.start_recording();
+    //             }
+    //             KeyCode::Esc if (self.highlighted_section != HighlightedSection::None) => {
+    //                 self.highlighted_section = HighlightedSection::None;
+    //             }
+    //             KeyCode::Esc => {
+    //                 self.game_content.borrow_mut().clear();
+    //                 self.current_game = None;
+    //                 self.last_known_character_sheet = None;
+    //                 self.user_input.reset();
+    //                 self.state = AppState::MainMenu;
+    //                 self.save_manager.available_saves = SaveManager::scan_save_files();
+    //                 self.add_message(Message::new(
+    //                     MessageType::System,
+    //                     "Game paused. Returned to main menu.".to_string(),
+    //                 ))
+    //             }
+    //             KeyCode::Enter => {
+    //                 if !self.user_input.value().is_empty() {
+    //                     self.submit_user_input();
+    //                 }
+    //             }
+    //             KeyCode::PageUp => {
+    //                 for _ in 0..self.visible_lines {
+    //                     self.scroll_up();
+    //                 }
+    //             }
+    //             KeyCode::PageDown => {
+    //                 for _ in 0..self.visible_lines {
+    //                     self.scroll_down();
+    //                 }
+    //             }
+    //             KeyCode::Up | KeyCode::Char('k') => self.scroll_up(),
+    //             KeyCode::Down | KeyCode::Char('j') => self.scroll_down(),
+    //
+    //             KeyCode::Tab => self.cycle_highlighted_section(),
+    //
+    //             KeyCode::Home => {
+    //                 self.game_content_scroll = 0;
+    //             }
+    //             KeyCode::End => {
+    //                 self.game_content_scroll = self.total_lines.saturating_sub(self.visible_lines);
+    //             }
+    //             _ => {}
+    //         },
+    //         InputMode::Editing => match key.code {
+    //             KeyCode::Esc => {
+    //                 self.input_mode = InputMode::Normal;
+    //             }
+    //             KeyCode::Enter => {
+    //                 self.input_mode = InputMode::Normal;
+    //             }
+    //             KeyCode::Char('v') => {
+    //                 if key.modifiers.contains(KeyModifiers::CONTROL) {
+    //                     if let Err(e) = self.handle_paste() {
+    //                         self.add_debug_message(format!("Failed to paste: {:#?}", e));
+    //                     }
+    //                 } else {
+    //                     self.user_input.handle_event(&Event::Key(key));
+    //                 }
+    //             }
+    //             _ => {
+    //                 self.user_input.handle_event(&Event::Key(key));
+    //             }
+    //         },
+    //         InputMode::Recording => {
+    //             match key.code {
+    //                 KeyCode::Esc => {
+    //                     self.stop_recording();
+    //                 }
+    //                 _ => {
+    //                     // Ignore other keys during recording
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
 
     pub fn handle_api_key_validation_result(&mut self, is_valid: bool) {
         if !is_valid {
@@ -749,320 +756,51 @@ impl App {
         }
     }
 
-    fn handle_settings_input(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Up | KeyCode::Char('k') => {
-                self.settings_state.selected_setting =
-                    (self.settings_state.selected_setting + 5) % 6; // Wrap around 6 settings
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
-                self.settings_state.selected_setting =
-                    (self.settings_state.selected_setting + 1) % 6; // TODO: Make this into a stateful list
-            }
-            KeyCode::Left | KeyCode::Char('h') => {
-                let current_setting = self.settings_state.selected_setting;
-                if current_setting == 0 {
-                    // Language setting
-                    let current_language = self.settings_state.selected_options[current_setting];
-                    self.settings_state.selected_options[current_setting] =
-                        (current_language + 3) % 4;
-                } else if current_setting == 2 {
-                    // Model setting
-                    let current_model = self.settings_state.selected_options[current_setting];
-                    self.settings_state.selected_options[current_setting] = (current_model + 2) % 3;
-                } else if current_setting != 1 {
-                    // Not API Key setting
-                    self.settings_state.selected_options[current_setting] =
-                        1 - self.settings_state.selected_options[current_setting];
-                }
-                self.apply_settings();
-            }
-            KeyCode::Right | KeyCode::Char('l') => {
-                let current_setting = self.settings_state.selected_setting;
-                if current_setting == 0 {
-                    // Language setting
-                    let current_option = self.settings_state.selected_options[current_setting];
-                    self.settings_state.selected_options[current_setting] =
-                        (current_option + 1) % 4;
-                } else if current_setting == 1 {
-                    // API Key setting
-                    self.state = AppState::InputApiKey;
-                } else if current_setting == 2 {
-                    // Model setting
-                    let current_option = self.settings_state.selected_options[current_setting];
-                    self.settings_state.selected_options[current_setting] =
-                        (current_option + 1) % 3;
-                } else if current_setting != 1 {
-                    // Not API Key setting
-                    self.settings_state.selected_options[current_setting] =
-                        1 - self.settings_state.selected_options[current_setting];
-                }
-                self.apply_settings();
-            }
-            KeyCode::Enter => {
-                let current_setting = self.settings_state.selected_setting;
-                if current_setting == 1 {
-                    // API Key setting
-                    self.state = AppState::InputApiKey;
-                } else {
-                    self.state = AppState::MainMenu;
-                    self.apply_settings();
-                }
-            }
-            KeyCode::Esc => {
-                self.state = AppState::MainMenu;
-            }
-            KeyCode::Char(c) => {
-                if let Some(digit) = c.to_digit(10) {
-                    if digit <= 6 {
-                        self.settings_state.selected_setting = (digit - 1) as usize;
-                        let current_setting = self.settings_state.selected_setting;
-                        if current_setting == 1 {
-                            // API Key setting
-                            self.state = AppState::InputApiKey;
-                        } else {
-                            let current_option =
-                                self.settings_state.selected_options[current_setting];
-                            let new_option = match current_setting {
-                                0 => (current_option + 1) % 4, // Language (3 options)
-                                2..=6 => 1 - current_option,   // Toggle settings (2 options)
-                                _ => current_option,
-                            };
-                            self.settings_state.selected_options[current_setting] = new_option;
-                        }
-                        self.apply_settings();
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
+    // TODO: add this to the game component
 
-    fn handle_load_game_input(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Enter | KeyCode::Char('l') => {
-                if let Some(selected) = self.load_game_menu_state.selected() {
-                    if selected < self.save_manager.available_saves.len() {
-                        if let Err(e) = self.command_sender.send(AppCommand::LoadGame(
-                            self.save_manager.available_saves[selected].clone(),
-                        )) {
-                            self.add_message(Message::new(
-                                MessageType::System,
-                                format!("Failed to send load game command: {:#?}", e),
-                            ));
-                        } else {
-                            // Add a message to indicate that the game is being loaded
-                            self.add_message(Message::new(
-                                MessageType::System,
-                                "Loading game...".to_string(),
-                            ));
-                        }
-                    }
-                }
-            }
-            KeyCode::Esc | KeyCode::Char('h') => {
-                self.state = AppState::MainMenu;
-            }
-            KeyCode::Up | KeyCode::Char('k') => {
-                self.backspace_counter = false;
-                self.navigate_load_game_menu(-1)
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
-                self.backspace_counter = false;
-                self.navigate_load_game_menu(1)
-            }
-            KeyCode::Backspace => {
-                if self.backspace_counter {
-                    if !self.save_manager.available_saves.is_empty() {
-                        let _ = self.delete_selected_save();
-                    }
-                    self.backspace_counter = false;
-                } else {
-                    self.backspace_counter = true;
-                }
-            }
-
-            KeyCode::Char(c) => {
-                if let Some(digit) = c.to_digit(10) {
-                    let selected = ((digit as usize).saturating_sub(1))
-                        % self.save_manager.available_saves.len();
-                    self.load_game_menu_state.select(Some(selected));
-                    let save_name = self.save_manager.available_saves[selected].clone();
-                    if let Err(e) = self.command_sender.send(AppCommand::LoadGame(save_name)) {
-                        self.add_message(Message::new(
-                            MessageType::System,
-                            format!("Failed to send load game command: {:#?}", e),
-                        ));
-                    } else {
-                        self.add_message(Message::new(
-                            MessageType::System,
-                            "Loading game...".to_string(),
-                        ));
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn handle_main_menu_input(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
-                match self.main_menu_state.selected() {
-                    Some(0) => {
-                        // Start New Game
-                        self.state = AppState::InputSaveName;
-                        self.input_mode = InputMode::Editing;
-                        self.save_name_input.reset(); // Clear any previous input
-                    }
-                    Some(1) => {
-                        // Load Game
-                        self.state = AppState::LoadMenu;
-                        self.save_manager.available_saves = SaveManager::scan_save_files();
-                        self.load_game_menu_state.select(Some(0));
-                    }
-                    Some(2) => {
-                        if self.openai_api_key_valid {
-                            self.state = AppState::CreateImage;
-                        } else {
-                            self.state = AppState::InputApiKey;
-                        }
-                    }
-                    Some(3) => {
-                        self.state = AppState::SettingsMenu;
-                    }
-                    _ => {}
-                }
-            }
-            KeyCode::Up | KeyCode::Char('k') => self.navigate_main_menu(-1),
-            KeyCode::Down | KeyCode::Char('j') => self.navigate_main_menu(1),
-            KeyCode::Char(c) if ('1'..='4').contains(&c) => self.select_main_menu_by_char(c),
-            KeyCode::Char('q') => {
-                cleanup();
-                std::process::exit(0);
-            }
-            _ => {}
-        }
-    }
-
-    fn handle_create_image_input(&mut self, key: KeyEvent) {
-        match self.input_mode {
-            InputMode::Normal => match key.code {
-                KeyCode::Char('e') => {
-                    self.input_mode = InputMode::Editing;
-                }
-                KeyCode::Char('r') => {
-                    self.start_recording();
-                }
-                KeyCode::Esc => self.state = AppState::MainMenu,
-                KeyCode::Enter => {
-                    let prompt = self.image_prompt.value().to_owned();
-
-                    // let image_sender = self.image_sender.clone();
-                    tokio::spawn(async move {
-                        let _path = imager::generate_and_save_image(&prompt).await;
-                        // let _ = image_sender.send(path.unwrap());
-                    });
-                    self.add_message(Message::new(
-                        MessageType::System,
-                        "Generating image...".to_string(),
-                    ));
-                    self.image_prompt.reset();
-                    self.state = AppState::MainMenu;
-                }
-                _ => {}
-            },
-            InputMode::Editing => match key.code {
-                KeyCode::Esc => {
-                    self.input_mode = InputMode::Normal;
-                }
-                KeyCode::Char('v') => {
-                    if key.modifiers.contains(KeyModifiers::CONTROL) {
-                        if let Err(e) = self.handle_paste() {
-                            self.add_debug_message(format!("Failed to paste: {:#?}", e));
-                        }
-                    } else {
-                        self.image_prompt.handle_event(&Event::Key(key));
-                    }
-                }
-                _ => {
-                    self.image_prompt.handle_event(&Event::Key(key));
-                }
-            },
-            InputMode::Recording if key.code == KeyCode::Esc => {
-                self.stop_recording();
-            }
-            _ => {}
-        }
-    }
-
-    fn handle_create_image_editing(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Enter => {
-                // Handle save name submission
-                self.input_mode = InputMode::Normal;
-            }
-            KeyCode::Esc => {
-                self.input_mode = InputMode::Normal;
-            }
-            KeyCode::Char('v') => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    if let Err(e) = self.handle_paste() {
-                        self.add_debug_message(format!("Failed to paste: {:#?}", e));
-                    }
-                } else {
-                    self.image_prompt.handle_event(&Event::Key(key));
-                }
-            }
-            _ => {
-                self.image_prompt.handle_event(&Event::Key(key));
-            }
-        }
-    }
-
-    fn cycle_highlighted_section(&mut self) {
-        let Some(character_sheet) = self.last_known_character_sheet.as_ref() else {
-            return;
-        };
-
-        let available_sections = [
-            Some(HighlightedSection::Backstory),
-            Some(HighlightedSection::Attributes(0)),
-            Some(HighlightedSection::Attributes(1)),
-            Some(HighlightedSection::Attributes(2)),
-            Some(HighlightedSection::Derived(0)),
-            Some(HighlightedSection::Derived(1)),
-            Some(HighlightedSection::Skills),
-            Some(HighlightedSection::Qualities),
-            (!character_sheet.cyberware.is_empty()).then_some(HighlightedSection::Cyberware),
-            (!character_sheet.bioware.is_empty()).then_some(HighlightedSection::Bioware),
-            Some(HighlightedSection::Resources),
-            (!character_sheet.inventory.is_empty()).then_some(HighlightedSection::Inventory),
-            (!character_sheet.contacts.is_empty()).then_some(HighlightedSection::Contact),
-        ]
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
-
-        if available_sections.is_empty() {
-            self.highlighted_section = HighlightedSection::None;
-            return;
-        }
-
-        let current_index = available_sections
-            .iter()
-            .position(|s| s == &self.highlighted_section)
-            .unwrap_or(usize::MAX);
-
-        let next_index =
-            (current_index.wrapping_add(1)) % (available_sections.len().wrapping_add(1));
-
-        self.highlighted_section = if next_index < available_sections.len() {
-            available_sections[next_index].clone()
-        } else {
-            HighlightedSection::None
-        };
-    }
+    // fn cycle_highlighted_section(&mut self) {
+    //     let Some(character_sheet) = self.last_known_character_sheet.as_ref() else {
+    //         return;
+    //     };
+    //
+    //     let available_sections = [
+    //         Some(HighlightedSection::Backstory),
+    //         Some(HighlightedSection::Attributes(0)),
+    //         Some(HighlightedSection::Attributes(1)),
+    //         Some(HighlightedSection::Attributes(2)),
+    //         Some(HighlightedSection::Derived(0)),
+    //         Some(HighlightedSection::Derived(1)),
+    //         Some(HighlightedSection::Skills),
+    //         Some(HighlightedSection::Qualities),
+    //         (!character_sheet.cyberware.is_empty()).then_some(HighlightedSection::Cyberware),
+    //         (!character_sheet.bioware.is_empty()).then_some(HighlightedSection::Bioware),
+    //         Some(HighlightedSection::Resources),
+    //         (!character_sheet.inventory.is_empty()).then_some(HighlightedSection::Inventory),
+    //         (!character_sheet.contacts.is_empty()).then_some(HighlightedSection::Contact),
+    //     ]
+    //     .into_iter()
+    //     .flatten()
+    //     .collect::<Vec<_>>();
+    //
+    //     if available_sections.is_empty() {
+    //         self.highlighted_section = HighlightedSection::None;
+    //         return;
+    //     }
+    //
+    //     let current_index = available_sections
+    //         .iter()
+    //         .position(|s| s == &self.highlighted_section)
+    //         .unwrap_or(usize::MAX);
+    //
+    //     let next_index =
+    //         (current_index.wrapping_add(1)) % (available_sections.len().wrapping_add(1));
+    //
+    //     self.highlighted_section = if next_index < available_sections.len() {
+    //         available_sections[next_index].clone()
+    //     } else {
+    //         HighlightedSection::None
+    //     };
+    // }
 
     fn submit_user_input(&mut self) {
         let input = self.user_input.value().trim().to_string();
@@ -1075,7 +813,7 @@ impl App {
         self.add_message(Message::new(MessageType::User, input.clone()));
 
         // Send a command to process the message
-        if let Err(e) = self.command_sender.send(AppCommand::ProcessMessage(input)) {
+        if let Err(e) = self.command_sender.send(Action::ProcessMessage(input)) {
             self.add_message(Message::new(
                 MessageType::System,
                 format!("Error sending message command: {:#?}", e),
@@ -1088,69 +826,6 @@ impl App {
     }
 
     // TODO: Make unified and dynamic setting for all settings. cf the Ratatui examples
-    pub fn apply_settings(&mut self) {
-        // Apply changes from settings_state to settings
-        self.settings.language = match self.settings_state.selected_options[0] {
-            0 => "English".to_string(),
-            1 => "Français".to_string(),
-            2 => "日本語".to_string(),
-            3 => "Türkçe".to_string(),
-            _ => self.settings.language.clone(),
-        };
-        self.settings.model = match self.settings_state.selected_options[2] {
-            0 => "gpt-4o-mini".to_string(),
-            1 => "gpt-4o".to_string(),
-            2 => "o1-mini".to_string(),
-            _ => self.settings.language.clone(),
-        };
-        self.settings.audio_output_enabled = self.settings_state.selected_options[3] == 0;
-        self.settings.audio_input_enabled = self.settings_state.selected_options[4] == 0;
-        self.settings.debug_mode = self.settings_state.selected_options[5] == 1;
-
-        // Save settings to file
-        let home_dir = dir::home_dir().expect("Failed to get home directory");
-        let path = home_dir.join("sharad").join("data").join("settings.json");
-        if let Err(e) = self.settings.save_to_file(path) {
-            eprintln!("Failed to save settings: {:#?}", e);
-        }
-    }
-
-    fn navigate_main_menu(&mut self, direction: isize) {
-        let i = self.main_menu_state.selected().unwrap_or(0) as isize;
-        let new_i = (i + direction).rem_euclid(4) as usize;
-        self.main_menu_state.select(Some(new_i));
-    }
-
-    fn select_main_menu_option(&mut self) {
-        match self.main_menu_state.selected() {
-            Some(0) => {
-                self.state = if self.openai_api_key_valid {
-                    AppState::InputSaveName
-                } else {
-                    AppState::InputApiKey
-                }
-            }
-            Some(1) => self.state = AppState::LoadMenu,
-            Some(2) => {
-                self.state = {
-                    if self.openai_api_key_valid {
-                        AppState::CreateImage
-                    } else {
-                        AppState::InputApiKey
-                    }
-                }
-            }
-
-            Some(3) => self.state = AppState::SettingsMenu,
-            _ => {}
-        }
-    }
-
-    fn select_main_menu_by_char(&mut self, c: char) {
-        let index = (c as usize - 1) % 4;
-        self.main_menu_state.select(Some(index));
-        self.select_main_menu_option();
-    }
 
     pub fn start_spinner(&mut self) {
         self.spinner_active = true;
@@ -1259,84 +934,84 @@ impl App {
         }
     }
 
-    pub async fn start_new_game(&mut self, save_name: String) -> Result<()> {
-        // Initialize AI client if not already initialized
-        if self.ai_client.is_none() {
-            self.initialize_ai_client().await?;
-        }
-
-        let client = self.ai_client.clone().unwrap().client;
-        let assistant = match create_assistant(&client, &self.settings.model, &save_name).await {
-            Ok(assistant) => assistant,
-            Err(e) => {
-                println!("{}", e);
-                return Err(e);
-            }
-        };
-        let assistant_id = &assistant.id;
-
-        if let Some(ai) = &self.ai_client {
-            // Start a new conversation
-            ai.start_new_conversation(
-                assistant_id,
-                GameConversationState {
-                    assistant_id: assistant_id.to_string(),
-                    thread_id: String::new(),
-                    character_sheet: None,
-                },
-            )
-            .await?;
-
-            // Get the thread_id from the conversation state
-            let thread_id = ai
-                .conversation_state
-                .lock()
-                .await
-                .as_ref()
-                .ok_or("Conversation state not initialized".to_string())?
-                .thread_id
-                .clone();
-
-            // Create a new game state
-            let new_game_state = Arc::new(Mutex::new(GameState {
-                assistant_id: assistant_id.to_string(),
-                thread_id,
-                main_character_sheet: None,
-                characters: Vec::new(),
-                save_name: save_name.clone(),
-                save_path: Some(
-                    get_save_base_dir()
-                        .join(&save_name)
-                        .join(format!("{}.json", &save_name)),
-                ),
-                image_path: None,
-            }));
-
-            self.current_game = Some(new_game_state);
-
-            // Save the game
-            self.save_current_game().await?;
-
-            self.state = AppState::InGame;
-            self.add_message(message::Message::new(
-                message::MessageType::System,
-                format!("New game '{}' started!", save_name),
-            ));
-
-            // Start the spinner
-            self.start_spinner();
-
-            // Send initial message to start the game
-            self.process_message(format!(
-                "Start the game. Respond with the fluff in the following language: {}",
-                self.settings.language
-            ));
-
-            Ok(())
-        } else {
-            Err("AI client not initialized".to_string().into())
-        }
-    }
+    // pub async fn start_new_game(&mut self, save_name: String) -> Result<()> {
+    //     // Initialize AI client if not already initialized
+    //     if self.ai_client.is_none() {
+    //         self.initialize_ai_client().await?;
+    //     }
+    //
+    //     let client = self.ai_client.clone().unwrap().client;
+    //     let assistant = match create_assistant(&client, &self.settings.model, &save_name).await {
+    //         Ok(assistant) => assistant,
+    //         Err(e) => {
+    //             println!("{}", e);
+    //             return Err(e);
+    //         }
+    //     };
+    //     let assistant_id = &assistant.id;
+    //
+    //     if let Some(ai) = &self.ai_client {
+    //         // Start a new conversation
+    //         ai.start_new_conversation(
+    //             assistant_id,
+    //             GameConversationState {
+    //                 assistant_id: assistant_id.to_string(),
+    //                 thread_id: String::new(),
+    //                 character_sheet: None,
+    //             },
+    //         )
+    //         .await?;
+    //
+    //         // Get the thread_id from the conversation state
+    //         let thread_id = ai
+    //             .conversation_state
+    //             .lock()
+    //             .await
+    //             .as_ref()
+    //             .ok_or("Conversation state not initialized".to_string())?
+    //             .thread_id
+    //             .clone();
+    //
+    //         // Create a new game state
+    //         let new_game_state = Arc::new(Mutex::new(GameState {
+    //             assistant_id: assistant_id.to_string(),
+    //             thread_id,
+    //             main_character_sheet: None,
+    //             characters: Vec::new(),
+    //             save_name: save_name.clone(),
+    //             save_path: Some(
+    //                 get_save_base_dir()
+    //                     .join(&save_name)
+    //                     .join(format!("{}.json", &save_name)),
+    //             ),
+    //             image_path: None,
+    //         }));
+    //
+    //         self.current_game = Some(new_game_state);
+    //
+    //         // Save the game
+    //         self.save_current_game().await?;
+    //
+    //         self.state = AppState::InGame;
+    //         self.add_message(message::Message::new(
+    //             message::MessageType::System,
+    //             format!("New game '{}' started!", save_name),
+    //         ));
+    //
+    //         // Start the spinner
+    //         self.start_spinner();
+    //
+    //         // Send initial message to start the game
+    //         self.process_message(format!(
+    //             "Start the game. Respond with the fluff in the following language: {}",
+    //             self.settings.language
+    //         ));
+    //
+    //         Ok(())
+    //     } else {
+    //         Err("AI client not initialized".to_string().into())
+    //     }
+    // }
 
     pub async fn update_character_sheet(&mut self, character_sheet: CharacterSheet) {
         if let Some(game_state) = &self.current_game {
@@ -1378,127 +1053,32 @@ impl App {
         }
     }
 
-    pub async fn save_current_game(&mut self) -> Result<()> {
-        let game_state = match &self.current_game {
-            Some(arc_mutex) => arc_mutex,
-            None => return Err(AppError::NoCurrentGame.into()),
-        };
-
-        // Clone the Arc to get a new reference
-        let game_state_clone = Arc::clone(game_state);
-
-        // Clone the save_name to own the data
-        let mut save_manager_clone = self.save_manager.clone();
-
-        // Spawn a new task to handle the saving process
-        tokio::spawn(async move {
-            // Now we can safely lock the mutex without blocking the main thread
-            let game_state = game_state_clone.lock().await;
-            save_manager_clone.current_save = Some(game_state.clone());
-
-            let _ = save_manager_clone.save();
-        });
-
-        // Update self.save_manager.current_save with the current game state
-        let game_state = game_state.lock().await;
-        self.save_manager.current_save = Some(game_state.clone());
-
-        Ok(())
-    }
-
-    fn delete_selected_save(&mut self) -> Result<()> {
-        if let Some(selected) = self.load_game_menu_state.selected() {
-            let save_name = self.save_manager.available_saves[selected].clone();
-            let ai_client = self
-                .ai_client
-                .clone()
-                .ok_or(Error::from("AI client not found".to_string()))?;
-            let save_2 = save_name.clone();
-            let assistant_id = get_assistant_id(&save_name)?;
-            tokio::spawn(async move {
-                delete_assistant(&ai_client.client, &assistant_id).await;
-            });
-            self.save_manager.available_saves.remove(selected);
-            self.save_manager.clone().delete_save(&save_2)?;
-
-            // Update the selected state to ensure it remains within bounds
-            let new_selected = if selected >= self.save_manager.available_saves.len() {
-                self.save_manager.available_saves.len().saturating_sub(1)
-            } else {
-                selected
-            };
-            self.load_game_menu_state.select(Some(new_selected));
-            Ok(())
-        } else {
-            Err("No save selected".to_string().into())
-        }
-    }
-
-    fn navigate_load_game_menu(&mut self, direction: isize) {
-        let len = self.save_manager.available_saves.len();
-        if len == 0 {
-            return;
-        }
-        let current = self.load_game_menu_state.selected().unwrap_or(0);
-        let next = if direction > 0 {
-            (current + 1) % len
-        } else {
-            (current + len - 1) % len
-        };
-        self.load_game_menu_state.select(Some(next));
-    }
-
-    pub async fn load_game(&mut self, save_path: &PathBuf) -> Result<()> {
-        self.save_manager = self.save_manager.clone().load_from_file(save_path)?;
-
-        let game_state = self
-            .save_manager
-            .current_save
-            .clone()
-            .ok_or(Error::from("No current game".to_string()))?;
-        if let Some(image_path) = game_state.image_path.clone() {
-            self.load_image_from_file(image_path)?;
-        }
-
-        self.update_save_name(game_state.save_name.clone()).await;
-        if self.ai_client.is_none() {
-            self.initialize_ai_client().await?;
-        }
-
-        let conversation_state = GameConversationState {
-            assistant_id: game_state.assistant_id.clone(),
-            thread_id: game_state.thread_id.clone(),
-            character_sheet: game_state.main_character_sheet.clone(),
-        };
-
-        // Clone the Arc to get a new reference to the AI client
-        let ai_client = self.ai_client.as_mut().unwrap().borrow_mut();
-
-        // Use the cloned Arc to call load_conversation
-        ai_client.load_conversation(conversation_state).await;
-
-        // Fetch all messages from the thread
-        let all_messages = ai_client.fetch_all_messages(&game_state.thread_id).await?;
-
-        // Load message history
-        *self.game_content.borrow_mut() = all_messages;
-
-        // Add a system message indicating the game was loaded
-        self.add_message(message::Message::new(
-            message::MessageType::System,
-            format!("Game '{}' loaded successfully!", game_state.save_name),
-        ));
-
-        // Store the game state
-        self.current_game = Some(Arc::new(Mutex::new(game_state)));
-
-        self.state = AppState::InGame;
-
-        // Calculate total lines after loading the game content
-        self.total_lines = self.calculate_total_lines();
-        // Scroll to the bottom after updating the scroll
-        self.scroll_to_bottom();
-
-        Ok(())
-    }
+    // TODO: move this to save_manager
+    // pub async fn save_current_game(&mut self) -> Result<()> {
+    //     let game_state = match &self.current_game {
+    //         Some(arc_mutex) => arc_mutex,
+    //         None => return Err(AppError::NoCurrentGame.into()),
+    //     };
+    //
+    //     // Clone the Arc to get a new reference
+    //     let game_state_clone = Arc::clone(game_state);
+    //
+    //     // Clone the save_name to own the data
+    //     let mut save_manager_clone = self.save_manager.clone();
+    //
+    //     // Spawn a new task to handle the saving process
+    //     tokio::spawn(async move {
+    //         // Now we can safely lock the mutex without blocking the main thread
+    //         let game_state = game_state_clone.lock().await;
+    //         save_manager_clone.current_save = Some(game_state.clone());
+    //
+    //         let _ = save_manager_clone.save();
+    //     });
+    //
+    //     // Update self.save_manager.current_save with the current game state
+    //     let game_state = game_state.lock().await;
+    //     self.save_manager.current_save = Some(game_state.clone());
+    //
+    //     Ok(())
+    // }
 }

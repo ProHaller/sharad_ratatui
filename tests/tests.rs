@@ -210,7 +210,7 @@ fn test_character_sheet_update_from_json() {
             .as_str()
             .expect("Expected some String")
         {
-            "Add" => UpdateOperation::Add(Value::VecQuality(
+            "Add" => UpdateOperation::Add(CharacterValue::VecQuality(
                 args["update"]["value"]
                     .as_array()
                     .expect("Expected some array")

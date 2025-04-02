@@ -1,9 +1,9 @@
 // settings_state.rs
 
-use crate::settings::Settings;
+use crate::settings::{Language, Settings};
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct SettingsState {
     pub selected_setting: usize,
     pub selected_options: Vec<usize>,
@@ -14,11 +14,12 @@ impl SettingsState {
         SettingsState {
             selected_setting: 0,
             selected_options: vec![
-                match settings.language.as_str() {
-                    "English" => 0,
-                    "Français" => 1,
-                    "日本語" => 2,
-                    "Türkçe" => 3,
+                match settings.language {
+                    Language::English => 0,
+                    Language::French => 1,
+                    Language::Japanese => 2,
+                    Language::Turkish => 3,
+                    // TODO: Add support for custom language
                     _ => 0,
                 },
                 0, // API Key (always 0 as it's not a toggle)
