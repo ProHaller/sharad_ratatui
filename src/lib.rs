@@ -6,7 +6,6 @@ pub mod app;
 pub mod assistant;
 pub mod audio;
 pub mod character;
-pub mod cleanup;
 pub mod context;
 pub mod dice;
 pub mod error;
@@ -16,6 +15,7 @@ pub mod message;
 pub mod save;
 pub mod settings;
 pub mod settings_state;
+pub mod tui;
 pub mod ui;
 
 // Re-export commonly used items for easier access

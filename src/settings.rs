@@ -7,8 +7,6 @@ use std::{
 };
 use strum_macros::Display;
 
-use crate::error::send_global_error;
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Settings {
     // TODO: Make the language an Enum
@@ -75,14 +73,7 @@ impl Settings {
         let client = Client::with_config(OpenAIConfig::new().with_api_key(api_key)); // Configure the OpenAI client with the API key.
         match client.models().list().await {
             Ok(_) => true,
-            Err(OpenAIError::Reqwest(e)) => {
-                send_global_error(crate::error::ShadowrunError::Network(format!(
-                    "Please verify your internet connection. Error: {}",
-                    e
-                )))
-                .await;
-                false
-            }
+            Err(OpenAIError::Reqwest(e)) => false,
             _ => false,
         }
     }

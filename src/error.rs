@@ -1,10 +1,7 @@
 // /error.rs
 use derive_more::{Display, From};
 use log::error;
-use once_cell::sync::Lazy;
-use std::{sync::Arc, time::Instant};
 use thiserror::Error;
-use tokio::sync::{Mutex, mpsc};
 
 // TODO: Add Jeremy Chone Error trick https://www.youtube.com/watch?v=j-VQCYP7wyw
 pub type Result<T> = core::result::Result<T, Error>;
@@ -20,23 +17,12 @@ pub enum Error {
     Box(Box<dyn std::error::Error + Send + Sync>),
     IO(std::io::Error),
     RatatuiImage(ratatui_image::errors::Errors),
+    report(color_eyre::eyre::Report),
 }
 
-static GLOBAL_ERROR_HANDLER: Lazy<Arc<Mutex<Option<ErrorHandler>>>> =
-    Lazy::new(|| Arc::new(Mutex::new(None)));
-
-pub async fn initialize_global_error_handler() -> mpsc::UnboundedReceiver<ShadowrunError> {
-    let (error_handler, error_receiver) = ErrorHandler::new();
-    let mut global = GLOBAL_ERROR_HANDLER.lock().await;
-    *global = Some(error_handler);
-    error_receiver
-}
-
-pub async fn send_global_error(error: ShadowrunError) {
-    if let Some(handler) = &*GLOBAL_ERROR_HANDLER.lock().await {
-        handler.send_error(error);
-    } else {
-        error!("Global error handler not initialized: {:?}", error);
+impl From<&str> for Error {
+    fn from(value: &str) -> Self {
+        Error::String(value.to_string())
     }
 }
 
@@ -60,49 +46,6 @@ pub enum ShadowrunError {
     Image(String),
     #[error("Unknown error: {0}")]
     Unknown(String),
-}
-
-#[derive(Clone)]
-pub struct ErrorMessage {
-    pub error: ShadowrunError,
-    pub timestamp: Instant,
-}
-
-impl ErrorMessage {
-    pub fn new(error: ShadowrunError) -> Self {
-        Self {
-            error,
-            timestamp: Instant::now(),
-        }
-    }
-}
-
-pub struct ErrorHandler {
-    sender: mpsc::UnboundedSender<ShadowrunError>,
-}
-
-impl ErrorHandler {
-    pub fn new() -> (Self, mpsc::UnboundedReceiver<ShadowrunError>) {
-        let (sender, receiver) = mpsc::unbounded_channel();
-        (Self { sender }, receiver)
-    }
-
-    pub fn send_error(&self, error: ShadowrunError) {
-        if let Err(e) = self.sender.send(error.clone()) {
-            error!("Failed to send error through channel: {:?}", e);
-        }
-        match &error {
-            ShadowrunError::Network(msg) => error!("Network Error: {}", msg),
-            ShadowrunError::Game(msg) => error!("Game Logic Error: {}", msg),
-            ShadowrunError::AI(msg) => error!("AI Error: {}", msg),
-            ShadowrunError::Audio(msg) => error!("Audio Error: {}", msg),
-            ShadowrunError::Serialization(msg) => error!("Serialization Error: {}", msg),
-            ShadowrunError::IO(msg) => error!("IO Error: {}", msg),
-            ShadowrunError::OpenAI(msg) => error!("OpenAI Error: {}", msg),
-            ShadowrunError::Image(msg) => error!("Image Error: {}", msg),
-            ShadowrunError::Unknown(msg) => error!("Unknown Error: {}", msg),
-        }
-    }
 }
 
 #[derive(Debug, Error, Clone)]

@@ -2,15 +2,8 @@
 
 // Import required modules and structs from other parts of the application or external crates.
 use super::{
-    Component,
-    api_key_input::ApiKeyInput,
-    constants::{ART, TITLE},
-    draw::center_rect,
-    image_menu::ImageMenu,
-    load_menu::LoadMenu,
-    main_menu_fix::*,
-    save_name_input::SaveName,
-    settings_menu::SettingsMenu,
+    Component, api_key_input::ApiKeyInput, draw::center_rect, image_menu::ImageMenu,
+    load_menu::LoadMenu, main_menu_fix::*, save_name_input::SaveName, settings_menu::SettingsMenu,
 };
 
 use crate::{app::Action, context::Context, message::MessageType};
@@ -61,10 +54,7 @@ impl Component for MainMenu {
                 self.select_main_menu_by_char(c);
                 None
             }
-            KeyCode::Char('q') => {
-                crate::cleanup::cleanup();
-                std::process::exit(0);
-            }
+            KeyCode::Char('q') => Some(Action::Quit),
             _ => None,
         }
     }
@@ -76,44 +66,16 @@ impl Component for MainMenu {
                 [
                     Constraint::Max(1),
                     // TODO: extract the logic in separate functions
-                    Constraint::Length(if area.height - 20 > 20 { 20 } else { 0 }),
-                    Constraint::Length(if area.height - 7 > 7 { 7 } else { 0 }),
-                    Constraint::Max(1),
-                    Constraint::Min(10),
-                ]
-                .as_ref(),
-            )
-            .split(area);
-
-        // Render individual parts of the main menu using the layout defined above.
-        self.render_header(buffer, chunks[0]);
-        self.render_art(buffer, chunks[1]);
-        self.render_title(buffer, chunks[2]);
-        self.render_console(buffer, context, chunks[3]);
-        self.render_menu(buffer, context, chunks[4]);
-    }
-}
-
-impl MainMenu {
-    fn navigate_main_menu(&mut self, direction: isize) {
-        let i = self.state.selected().unwrap_or(0) as isize;
-        let new_i = (i + direction).rem_euclid(4) as usize;
-        self.state.select(Some(new_i));
-    }
-    fn select_main_menu_by_char(&mut self, c: char) {
-        let index = (c as usize - 1) % 4;
-        self.state.select(Some(index));
-    }
-    pub fn draw_main_menu(self, buffer: &mut Buffer, area: Rect, context: &Context) {
-        // Define layout constraints for different sections of the main menu.
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .flex(ratatui::layout::Flex::Center)
-            .constraints(
-                [
-                    Constraint::Max(1),
-                    Constraint::Length(if area.height - 20 > 20 { 20 } else { 0 }),
-                    Constraint::Length(if area.height - 7 > 7 { 7 } else { 0 }),
+                    Constraint::Length(if area.height.saturating_sub(20) > 20 {
+                        20
+                    } else {
+                        0
+                    }),
+                    Constraint::Length(if area.height.saturating_sub(7) > 7 {
+                        7
+                    } else {
+                        0
+                    }),
                     Constraint::Max(1),
                     Constraint::Min(10),
                 ]
@@ -128,53 +90,26 @@ impl MainMenu {
         self.render_console(buffer, context, chunks[3]);
         self.render_menu(buffer, context, chunks[4]);
     }
+}
 
-    // Function to render the header section of the menu.
-    pub fn render_header(&self, buffer: &mut Buffer, area: Rect) {
-        let header = Paragraph::new(format!("Sharad Ratatui v{}", env!("CARGO_PKG_VERSION")))
-            .style(Style::default().fg(Color::DarkGray))
-            .block(Block::default().border_type(BorderType::Rounded))
-            .alignment(Alignment::Center);
-        header.render(area, buffer);
+impl MainMenu {
+    fn new() -> Self {
+        Self {
+            state: ListState::default(),
+        }
     }
-
-    // Function to render the art section of the menu.
-    pub fn render_art(&self, buffer: &mut Buffer, area: Rect) {
-        let outer_block = Block::default()
-            .border_type(BorderType::Rounded)
-            .style(Style::default().fg(Color::DarkGray));
-        outer_block.render(area, buffer);
-
-        let inner_rect = center_rect(area, Constraint::Length(80), Constraint::Length(18));
-
-        let inner_block = Block::default()
-            .border_type(BorderType::Rounded)
-            .borders(Borders::ALL)
-            .style(Style::default().fg(Color::Green));
-        inner_block.render(inner_rect, buffer);
-
-        let art = Paragraph::new(ART)
-            .alignment(Alignment::Center)
-            .style(Style::default().fg(Color::Green));
-        art.render(inner_rect, buffer);
+    fn navigate_main_menu(&mut self, direction: isize) {
+        let i = self.state.selected().unwrap_or(0) as isize;
+        let new_i = (i + direction).rem_euclid(4) as usize;
+        self.state.select(Some(new_i));
     }
-
-    // Function to render the title section of the menu.
-    pub fn render_title(&self, buffer: &mut Buffer, area: Rect) {
-        let outer_block = Block::default()
-            .border_type(BorderType::Rounded)
-            .style(Style::default().fg(Color::DarkGray));
-        let title_area = center_rect(area, Constraint::Length(38), Constraint::Length(8));
-        outer_block.render(title_area, buffer);
-
-        let title = Paragraph::new(TITLE)
-            .alignment(Alignment::Center)
-            .style(Style::default().fg(Color::Green));
-        title.render(title_area, buffer);
+    fn select_main_menu_by_char(&mut self, c: char) {
+        let index = (c as usize - 1) % 4;
+        self.state.select(Some(index));
     }
 
     // Function to render the console section of the menu.
-    pub fn render_console(&self, buffer: &mut Buffer, context: &Context, area: Rect) {
+    fn render_console(&self, buffer: &mut Buffer, context: &Context, area: Rect) {
         let outer_block = Block::default()
             .border_type(BorderType::Rounded)
             .style(Style::default().fg(Color::DarkGray));
@@ -198,7 +133,7 @@ impl MainMenu {
     }
 
     // Function to render the interactive menu section of the main menu.
-    pub fn render_menu(&self, buffer: &mut Buffer, context: &Context, area: Rect) {
+    fn render_menu(&self, buffer: &mut Buffer, context: &Context, area: Rect) {
         // Define menu items to be displayed.
         let menu_items = [
             "Start a new game",
@@ -248,6 +183,7 @@ impl MainMenu {
 
 // Function to render the status bar at the bottom of the menu.
 // TODO: Should make this into key_hint implementation.
+//
 // pub fn render_status(buffer: &mut Buffer, context: &Context, area: Rect) {
 //     // Define the status message based on the current application state.
 //     let status_message = match context.state {
