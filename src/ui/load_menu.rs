@@ -1,8 +1,10 @@
 // ui/load_menu.rs
 
-use super::{Component, draw::center_rect, main_menu_fix::*};
-use crate::{app::Action, context::Context, error::Result};
-use crossterm::event::KeyEvent;
+use std::path::PathBuf;
+
+use super::{Component, draw::center_rect, main_menu_fix::*, widgets::StatefulList};
+use crate::{app::Action, context::Context, ui::MainMenu};
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -13,83 +15,64 @@ use ratatui::{
 
 #[derive(Debug, Default)]
 pub struct LoadMenu {
-    state: ListState,
+    state: StatefulList<PathBuf>,
     backspace_counter: bool,
 }
 
 impl Component for LoadMenu {
     fn on_key(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
-        // TODO: Handle key events for LoadMenu
-        None
-        // TODO: Adapt this to loadmenu on_key
+        match key.code {
+            KeyCode::Enter | KeyCode::Char('l') => self.state.state.selected().map(|selected| {
+                Action::LoadGame(context.save_manager.available_saves[selected].clone())
+            }),
+            KeyCode::Esc | KeyCode::Char('h') => {
+                Some(Action::SwitchComponent(Box::new(MainMenu::default())))
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.backspace_counter = false;
+                self.state.previous();
+                None
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.backspace_counter = false;
+                self.state.next();
+                None
+            }
+            KeyCode::Backspace => {
+                if self.backspace_counter {
+                    if !&context.save_manager.available_saves.is_empty() {
+                        context
+                            .save_manager
+                            .clone()
+                            .delete_save(
+                                &context.save_manager.available_saves
+                                    [self.state.state.selected().unwrap()]
+                                .clone(),
+                            )
+                            .unwrap();
+                    }
+                    self.backspace_counter = false;
+                    None
+                } else {
+                    self.backspace_counter = true;
+                    None
+                }
+            }
 
-        //     fn handle_load_game_input(&mut self, key: KeyEvent) {
-        //         match key.code {
-        //             KeyCode::Enter | KeyCode::Char('l') => {
-        //                 if let Some(selected) = self.load_game_menu_state.selected() {
-        //                     if selected < self.save_manager.available_saves.len() {
-        //                         if let Err(e) = self.command_sender.send(Action::LoadGame(
-        //                             self.save_manager.available_saves[selected].clone(),
-        //                         )) {
-        //                             self.add_message(Message::new(
-        //                                 MessageType::System,
-        //                                 format!("Failed to send load game command: {:#?}", e),
-        //                             ));
-        //                         } else {
-        //                             // Add a message to indicate that the game is being loaded
-        //                             self.add_message(Message::new(
-        //                                 MessageType::System,
-        //                                 "Loading game...".to_string(),
-        //                             ));
-        //                         }
-        //                     }
-        //                 }
-        //             }
-        //             KeyCode::Esc | KeyCode::Char('h') => {
-        //                 self.state = AppState::MainMenu;
-        //             }
-        //             KeyCode::Up | KeyCode::Char('k') => {
-        //                 self.backspace_counter = false;
-        //                 self.navigate_load_game_menu(-1)
-        //             }
-        //             KeyCode::Down | KeyCode::Char('j') => {
-        //                 self.backspace_counter = false;
-        //                 self.navigate_load_game_menu(1)
-        //             }
-        //             KeyCode::Backspace => {
-        //                 if self.backspace_counter {
-        //                     if !self.save_manager.available_saves.is_empty() {
-        //                         let _ = self.delete_selected_save();
-        //                     }
-        //                     self.backspace_counter = false;
-        //                 } else {
-        //                     self.backspace_counter = true;
-        //                 }
-        //             }
-        //
-        //             KeyCode::Char(c) => {
-        //                 if let Some(digit) = c.to_digit(10) {
-        //                     let selected = ((digit as usize).saturating_sub(1))
-        //                     % self.save_manager.available_saves.len();
-        //                     self.load_game_menu_state.select(Some(selected));
-        //                     let save_name = self.save_manager.available_saves[selected].clone();
-        //                     if let Err(e) = self.command_sender.send(Action::LoadGame(save_name)) {
-        //                         self.add_message(Message::new(
-        //                             MessageType::System,
-        //                             format!("Failed to send load game command: {:#?}", e),
-        //                         ));
-        //                     } else {
-        //                         self.add_message(Message::new(
-        //                             MessageType::System,
-        //                             "Loading game...".to_string(),
-        //                         ));
-        //                     }
-        //                 }
-        //             }
-        //             _ => {}
-        //         }
-        //     }
+            KeyCode::Char(c) => {
+                if let Some(digit) = c.to_digit(10) {
+                    let selected = ((digit as usize).saturating_sub(1)) % self.state.items.len();
+                    self.state.state.select(Some(selected));
+                    let save_name = context.save_manager.available_saves[selected].clone();
+                    Some(Action::LoadGame(save_name))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
     }
+
     fn render(&self, area: Rect, buffer: &mut Buffer, context: &Context) {
         let saves_length = context.save_manager.available_saves.len() as u16;
         let chunks = Layout::default()
@@ -120,6 +103,13 @@ impl Component for LoadMenu {
 }
 
 impl LoadMenu {
+    fn new() -> Self {
+        LoadMenu::default()
+    }
+    fn default(context)->Self{
+        Self { state: StatefulList { state: ListState::default(), items: vec![context.save_manager.scan_s s] }, backspace_counter: todo!() }
+
+    }
     fn render_console(&self, buffer: &mut Buffer, context: &Context, area: Rect) {
         let console_text = if context.save_manager.available_saves.is_empty() {
             format!(
@@ -153,7 +143,7 @@ impl LoadMenu {
                 .enumerate()
                 .map(|(i, save)| {
                     let save_name = save.file_stem().unwrap().to_string_lossy().to_string();
-                    if Some(i) == self.state.selected() {
+                    if Some(i) == self.state.state.selected() {
                         Line::from(
                             Span::styled(
                                 format!("{}. {}", (i + 1), save_name),
@@ -224,19 +214,6 @@ impl LoadMenu {
     //     }
     // }
     //
-    // fn navigate_load_game_menu(&mut self, direction: isize) {
-    //     let len = self.save_manager.available_saves.len();
-    //     if len == 0 {
-    //         return;
-    //     }
-    //     let current = self.load_game_menu_state.selected().unwrap_or(0);
-    //     let next = if direction > 0 {
-    //         (current + 1) % len
-    //     } else {
-    //         (current + len - 1) % len
-    //     };
-    //     self.load_game_menu_state.select(Some(next));
-    // }
     //
     // pub async fn load_game(&mut self, save_path: &PathBuf) -> Result<()> {
     //     self.save_manager = self.save_manager.clone().load_from_file(save_path)?;
