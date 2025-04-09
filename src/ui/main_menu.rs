@@ -24,24 +24,7 @@ pub struct MainMenu {
 impl Component for MainMenu {
     fn on_key(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
         match key.code {
-            KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
-                match self.state.selected() {
-                    Some(0) => Some(Action::SwitchComponent(Box::new(SaveName::default()))),
-                    Some(1) => {
-                        // Load Game
-                        Some(Action::SwitchComponent(Box::new(LoadMenu::default())))
-                    }
-                    Some(2) => {
-                        if context.openai_api_key_valid {
-                            Some(Action::SwitchComponent(Box::new(ImageMenu::default())))
-                        } else {
-                            Some(Action::SwitchComponent(Box::new(ApiKeyInput::default())))
-                        }
-                    }
-                    Some(3) => Some(Action::SwitchComponent(Box::new(SettingsMenu::default()))),
-                    _ => None,
-                }
-            }
+            KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => self.switch_component(context),
             KeyCode::Up | KeyCode::Char('k') => {
                 self.navigate_main_menu(-1);
                 None
@@ -52,7 +35,7 @@ impl Component for MainMenu {
             }
             KeyCode::Char(c) if ('1'..='4').contains(&c) => {
                 self.select_main_menu_by_char(c);
-                None
+                self.switch_component(context)
             }
             KeyCode::Char('q') => Some(Action::Quit),
             _ => None,
@@ -178,6 +161,27 @@ impl MainMenu {
             .style(Style::default().fg(Color::White));
 
         menu.render(centered_area, buffer);
+    }
+
+    fn switch_component(&mut self, context: Context<'_>) -> Option<Action> {
+        match self.state.selected() {
+            Some(0) => Some(Action::SwitchComponent(Box::new(SaveName::default()))),
+            Some(1) => {
+                // Load Game
+                Some(Action::SwitchComponent(Box::new(LoadMenu::default(
+                    context,
+                ))))
+            }
+            Some(2) => {
+                if context.openai_api_key_valid {
+                    Some(Action::SwitchComponent(Box::new(ImageMenu::default())))
+                } else {
+                    Some(Action::SwitchComponent(Box::new(ApiKeyInput::default())))
+                }
+            }
+            Some(3) => Some(Action::SwitchComponent(Box::new(SettingsMenu::default()))),
+            _ => None,
+        }
     }
 }
 

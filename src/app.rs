@@ -205,7 +205,7 @@ impl<'a> App<'a> {
             tui.draw(|frame| {
                 let context = Context {
                     openai_api_key_valid: self.openai_api_key_valid,
-                    save_manager: &self.save_manager,
+                    save_manager: &mut self.save_manager,
                     save_name: "",
                     ai_client: &self.ai_client,
                     settings: &self.settings,
@@ -377,7 +377,7 @@ impl<'a> App<'a> {
             // TODO: Should probably not construct a context here.
             Context {
                 openai_api_key_valid: self.openai_api_key_valid,
-                save_manager: &self.save_manager,
+                save_manager: &mut self.save_manager,
                 save_name: "",
                 ai_client: &self.ai_client,
                 settings: &self.settings,

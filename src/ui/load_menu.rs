@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use super::{Component, draw::center_rect, main_menu_fix::*, widgets::StatefulList};
-use crate::{app::Action, context::Context, ui::MainMenu};
+use crate::{app::Action, context::Context, save, ui::MainMenu};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     buffer::Buffer,
@@ -13,7 +13,7 @@ use ratatui::{
     widgets::*,
 };
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct LoadMenu {
     state: StatefulList<PathBuf>,
     backspace_counter: bool,
@@ -52,6 +52,8 @@ impl Component for LoadMenu {
                             .unwrap();
                     }
                     self.backspace_counter = false;
+                    context.save_manager.available_saves = save::SaveManager::scan_save_files();
+                    self.state.items = context.save_manager.available_saves.clone();
                     None
                 } else {
                     self.backspace_counter = true;
@@ -103,12 +105,11 @@ impl Component for LoadMenu {
 }
 
 impl LoadMenu {
-    fn new() -> Self {
-        LoadMenu::default()
-    }
-    fn default(context)->Self{
-        Self { state: StatefulList { state: ListState::default(), items: vec![context.save_manager.scan_s s] }, backspace_counter: todo!() }
-
+    pub fn default(context: Context) -> Self {
+        Self {
+            state: StatefulList::with_items(context.save_manager.available_saves.clone()),
+            backspace_counter: false,
+        }
     }
     fn render_console(&self, buffer: &mut Buffer, context: &Context, area: Rect) {
         let console_text = if context.save_manager.available_saves.is_empty() {

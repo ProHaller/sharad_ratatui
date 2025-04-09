@@ -17,7 +17,7 @@ pub enum Error {
     Box(Box<dyn std::error::Error + Send + Sync>),
     IO(std::io::Error),
     RatatuiImage(ratatui_image::errors::Errors),
-    report(color_eyre::eyre::Report),
+    Report(color_eyre::eyre::Report),
 }
 
 impl From<&str> for Error {
