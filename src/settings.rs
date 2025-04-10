@@ -9,10 +9,11 @@ use strum_macros::Display;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Settings {
-    // TODO: Make the language an Enum
     pub language: Language,
     pub openai_api_key: Option<String>,
+    // TODO: Make the model an enum
     pub model: String,
+    // TODO: Make the audio an enum
     pub audio_output_enabled: bool,
     pub audio_input_enabled: bool,
     pub debug_mode: bool,
@@ -26,6 +27,13 @@ pub enum Language {
     Japanese,
     Turkish,
     Custom(String),
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default, Display)]
+pub enum Model {
+    #[default]
+    Gpt4oMini,
+    Gpt4o,
 }
 
 // TODO:  Add a model parameter to change the AI model
@@ -73,7 +81,7 @@ impl Settings {
         let client = Client::with_config(OpenAIConfig::new().with_api_key(api_key)); // Configure the OpenAI client with the API key.
         match client.models().list().await {
             Ok(_) => true,
-            Err(OpenAIError::Reqwest(e)) => false,
+            Err(OpenAIError::Reqwest(_)) => false,
             _ => false,
         }
     }

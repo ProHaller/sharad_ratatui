@@ -1,13 +1,10 @@
 // ui/settings_menu.rs
 
 use crate::{
-    app::Action,
-    context::Context,
-    settings::{Language, Settings},
-    settings_state::SettingsState,
+    app::Action, context::Context, settings::Language, settings_state::SettingsState,
     ui::draw::center_rect,
 };
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
     prelude::Buffer,
@@ -16,112 +13,66 @@ use ratatui::{
     widgets::*,
 };
 
-use super::{Component, main_menu_fix::*};
+use super::{Component, MainMenu, api_key_input::ApiKeyInput, main_menu_fix::*};
 
 #[derive(Debug, Default)]
 pub struct SettingsMenu {
     state: SettingsState,
-    settings: Settings,
 }
 
 impl Component for SettingsMenu {
     fn on_key(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
-        todo!();
-        // TODO: adapt this to on_key for SettingsMenu
-
-        // fn handle_settings_input(&mut self, key: KeyEvent) {
-        //     match key.code {
-        //         KeyCode::Up | KeyCode::Char('k') => {
-        //             self.settings_state.selected_setting =
-        //                 (self.settings_state.selected_setting + 5) % 6; // Wrap around 6 settings
-        //         }
-        //         KeyCode::Down | KeyCode::Char('j') => {
-        //             self.settings_state.selected_setting =
-        //                 (self.settings_state.selected_setting + 1) % 6; // TODO: Make this into a stateful list
-        //         }
-        //         KeyCode::Left | KeyCode::Char('h') => {
-        //             let current_setting = self.settings_state.selected_setting;
-        //             if current_setting == 0 {
-        //                 // Language setting
-        //                 let current_language =
-        //                     self.settings_state.selected_options[current_setting];
-        //                 self.settings_state.selected_options[current_setting] =
-        //                     (current_language + 3) % 4;
-        //             } else if current_setting == 2 {
-        //                 // Model setting
-        //                 let current_model = self.settings_state.selected_options[current_setting];
-        //                 self.settings_state.selected_options[current_setting] =
-        //                     (current_model + 2) % 3;
-        //             } else if current_setting != 1 {
-        //                 // Not API Key setting
-        //                 self.settings_state.selected_options[current_setting] =
-        //                     1 - self.settings_state.selected_options[current_setting];
-        //             }
-        //             self.apply_settings();
-        //         }
-        //         KeyCode::Right | KeyCode::Char('l') => {
-        //             let current_setting = self.settings_state.selected_setting;
-        //             if current_setting == 0 {
-        //                 // Language setting
-        //                 let current_option = self.settings_state.selected_options[current_setting];
-        //                 self.settings_state.selected_options[current_setting] =
-        //                     (current_option + 1) % 4;
-        //             } else if current_setting == 1 {
-        //                 // API Key setting
-        //                 self.state = AppState::InputApiKey;
-        //             } else if current_setting == 2 {
-        //                 // Model setting
-        //                 let current_option = self.settings_state.selected_options[current_setting];
-        //                 self.settings_state.selected_options[current_setting] =
-        //                     (current_option + 1) % 3;
-        //             } else if current_setting != 1 {
-        //                 // Not API Key setting
-        //                 self.settings_state.selected_options[current_setting] =
-        //                     1 - self.settings_state.selected_options[current_setting];
-        //             }
-        //             self.apply_settings();
-        //         }
-        //         KeyCode::Enter => {
-        //             let current_setting = self.settings_state.selected_setting;
-        //             if current_setting == 1 {
-        //                 // API Key setting
-        //                 self.state = AppState::InputApiKey;
-        //             } else {
-        //                 self.state = AppState::MainMenu;
-        //                 self.apply_settings();
-        //             }
-        //         }
-        //         KeyCode::Esc => {
-        //             self.state = AppState::MainMenu;
-        //         }
-        //         KeyCode::Char(c) => {
-        //             if let Some(digit) = c.to_digit(10) {
-        //                 if digit <= 6 {
-        //                     self.settings_state.selected_setting = (digit - 1) as usize;
-        //                     let current_setting = self.settings_state.selected_setting;
-        //                     if current_setting == 1 {
-        //                         // API Key setting
-        //                         self.state = AppState::InputApiKey;
-        //                     } else {
-        //                         let current_option =
-        //                             self.settings_state.selected_options[current_setting];
-        //                         let new_option = match current_setting {
-        //                             0 => (current_option + 1) % 4, // Language (3 options)
-        //                             2..=6 => 1 - current_option,   // Toggle settings (2 options)
-        //                             _ => current_option,
-        //                         };
-        //                         self.settings_state.selected_options[current_setting] = new_option;
-        //                     }
-        //                     self.apply_settings();
-        //                 }
-        //             }
-        //         }
-        //         _ => {}
-        //     }
-        // }
+        eprintln!("SettingsMenu.on_key");
+        let action: Option<Action> = match key.code {
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.state.selected_setting = self
+                    .state
+                    .selected_setting
+                    .wrapping_sub(self.state.selected_options.len());
+                None
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.state.selected_setting = self
+                    .state
+                    .selected_setting
+                    .wrapping_add(self.state.selected_options.len());
+                None
+            }
+            KeyCode::Left | KeyCode::Char('h') => {
+                self.change_settings(-1);
+                None
+            }
+            KeyCode::Right | KeyCode::Enter | KeyCode::Char('l') => {
+                if self.state.selected_setting == 1 {
+                    Some(Action::SwitchComponent(Box::new(ApiKeyInput::default())))
+                } else {
+                    self.change_settings(1);
+                    None
+                }
+            }
+            KeyCode::Esc => Some(Action::SwitchComponent(Box::new(MainMenu::default()))),
+            KeyCode::Char(c) => {
+                if let Some(digit) = c.to_digit(10) {
+                    match digit {
+                        1 => Some(Action::SwitchComponent(Box::new(ApiKeyInput::default()))),
+                        digit if digit <= self.state.selected_options.len() as u32 => {
+                            self.change_settings(1);
+                            None
+                        }
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        self.apply_settings(context);
+        action
     }
 
     fn render(&self, area: Rect, buffer: &mut Buffer, context: &Context) {
+        eprintln!("SettingsMenu.on_key");
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .flex(ratatui::layout::Flex::Center)
@@ -249,30 +200,52 @@ impl SettingsMenu {
         console.render(area, buffer);
     }
 
-    pub fn apply_settings(&mut self) {
+    pub fn apply_settings(&mut self, context: Context) {
         // Apply changes from settings_state to settings
-        self.settings.language = match self.state.selected_options[0] {
+        context.settings.language = match self.state.selected_options[0] {
             0 => Language::English,
             1 => Language::French,
             2 => Language::Japanese,
             3 => Language::Turkish,
-            _ => self.settings.language.clone(),
+            _ => context.settings.language.clone(),
         };
-        self.settings.model = match self.state.selected_options[2] {
+        context.settings.model = match self.state.selected_options[2] {
             0 => "gpt-4o-mini".to_string(),
             1 => "gpt-4o".to_string(),
             2 => "o1-mini".to_string(),
-            _ => self.settings.model.clone(),
+            _ => context.settings.model.clone(),
         };
-        self.settings.audio_output_enabled = self.state.selected_options[3] == 0;
-        self.settings.audio_input_enabled = self.state.selected_options[4] == 0;
-        self.settings.debug_mode = self.state.selected_options[5] == 1;
+        context.settings.audio_output_enabled = self.state.selected_options[3] == 0;
+        context.settings.audio_input_enabled = self.state.selected_options[4] == 0;
+        context.settings.debug_mode = self.state.selected_options[5] == 1;
 
         // Save settings to file
         let home_dir = dir::home_dir().expect("Failed to get home directory");
         let path = home_dir.join("sharad").join("data").join("settings.json");
-        if let Err(e) = self.settings.save_to_file(path) {
+        if let Err(e) = context.settings.save_to_file(path) {
             eprintln!("Failed to save settings: {:#?}", e);
+        }
+    }
+
+    fn change_settings(&mut self, change: isize) {
+        let current_setting = self.state.selected_setting;
+        match (current_setting, change) {
+            (current, _) if current == 1 => {
+                return;
+            }
+            (0, change) => {
+                let current_language = self.state.selected_options[current_setting];
+                self.state.selected_options[current_setting] = current_language
+                    .wrapping_add_signed(self.state.selected_options.len() as isize + change);
+            }
+            (2, change) => {
+                let current_model = self.state.selected_options[current_setting];
+                self.state.selected_options[current_setting] = current_model
+                    .wrapping_add_signed(self.state.selected_options.len() as isize + change);
+            }
+            (_current, _change) => {
+                1 - self.state.selected_options[current_setting];
+            }
         }
     }
 }

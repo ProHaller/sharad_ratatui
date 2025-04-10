@@ -4,6 +4,7 @@
 use super::{
     Component, api_key_input::ApiKeyInput, draw::center_rect, image_menu::ImageMenu,
     load_menu::LoadMenu, main_menu_fix::*, save_name_input::SaveName, settings_menu::SettingsMenu,
+    widgets::StatefulList,
 };
 
 use crate::{app::Action, context::Context, message::MessageType};
@@ -16,28 +17,41 @@ use ratatui::{
     widgets::*,
 };
 
+const MAIN_MENU: [&str; 4] = [
+    "Start a new game",
+    "Load a game",
+    "Create an image",
+    "Settings",
+];
+
 #[derive(Default, Debug)]
-pub struct MainMenu {
-    state: ListState,
+pub struct MainMenu<'a> {
+    state: StatefulList<&'a str>,
 }
 
-impl Component for MainMenu {
+impl Component for MainMenu<'_> {
     fn on_key(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
         match key.code {
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => self.switch_component(context),
             KeyCode::Up | KeyCode::Char('k') => {
-                self.navigate_main_menu(-1);
+                self.state.previous();
                 None
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                self.navigate_main_menu(1);
+                self.state.next();
                 None
             }
-            KeyCode::Char(c) if ('1'..='4').contains(&c) => {
-                self.select_main_menu_by_char(c);
-                self.switch_component(context)
-            }
+            // TODO: Make this dynamic based on menu length
             KeyCode::Char('q') => Some(Action::Quit),
+            KeyCode::Char(c) => {
+                if let Some(digit) = c.to_digit(10) {
+                    let selected = ((digit as usize).saturating_sub(1)) % self.state.items.len();
+                    self.state.state.select(Some(selected));
+                    self.switch_component(context)
+                } else {
+                    None
+                }
+            }
             _ => None,
         }
     }
@@ -75,20 +89,18 @@ impl Component for MainMenu {
     }
 }
 
-impl MainMenu {
+impl<'a> MainMenu<'a> {
     fn new() -> Self {
         Self {
-            state: ListState::default(),
+            state: StatefulList {
+                state: ListState::default(),
+                items: Vec::from(MAIN_MENU),
+            },
         }
     }
-    fn navigate_main_menu(&mut self, direction: isize) {
-        let i = self.state.selected().unwrap_or(0) as isize;
-        let new_i = (i + direction).rem_euclid(4) as usize;
-        self.state.select(Some(new_i));
-    }
     fn select_main_menu_by_char(&mut self, c: char) {
-        let index = (c as usize - 1) % 4;
-        self.state.select(Some(index));
+        let index = (c as usize - 1) % self.state.items.len();
+        self.state.state.select(Some(index));
     }
 
     // Function to render the console section of the menu.
@@ -118,12 +130,7 @@ impl MainMenu {
     // Function to render the interactive menu section of the main menu.
     fn render_menu(&self, buffer: &mut Buffer, context: &Context, area: Rect) {
         // Define menu items to be displayed.
-        let menu_items = [
-            "Start a new game",
-            "Load a game",
-            "Create an image",
-            "Settings",
-        ];
+        let menu_items = MAIN_MENU;
 
         // Map menu items to text lines, applying different styles to the selected item.
         // TODO: Make it into a constant
@@ -133,7 +140,7 @@ impl MainMenu {
             .map(|(i, &item)| {
                 let number = format!("{}. ", i + 1);
                 let content = item;
-                if i == self.state.selected().unwrap_or(0) {
+                if i == self.state.state.selected().unwrap_or(0) {
                     Line::from(vec![
                         Span::styled(number, Style::default().fg(Color::Yellow)),
                         Span::styled(
@@ -164,7 +171,7 @@ impl MainMenu {
     }
 
     fn switch_component(&mut self, context: Context<'_>) -> Option<Action> {
-        match self.state.selected() {
+        match self.state.state.selected() {
             Some(0) => Some(Action::SwitchComponent(Box::new(SaveName::default()))),
             Some(1) => {
                 // Load Game
