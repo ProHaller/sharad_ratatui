@@ -44,9 +44,9 @@ impl Default for Settings {
             language: Language::English,
             openai_api_key: None,
             model: "gpt-4o-mini".to_string(),
-            audio_output_enabled: true,
-            audio_input_enabled: true,
-            debug_mode: false,
+            audio_output_enabled: false,
+            audio_input_enabled: false,
+            debug_mode: true,
         }
     }
 }

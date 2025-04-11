@@ -11,7 +11,7 @@ pub struct Context<'a> {
     pub save_name: &'a str,
     pub ai_client: &'a Option<GameAI>,
     pub settings: &'a mut Settings,
-    pub clipboard: &'a ClipboardContext,
+    pub clipboard: ClipboardContext,
     pub console_messages: &'a RefCell<Vec<Message>>,
     pub input_mode: &'a InputMode, // TODO: Move it into Input struct
 }

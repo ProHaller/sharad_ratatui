@@ -7,7 +7,12 @@ use super::{
     widgets::StatefulList,
 };
 
-use crate::{app::Action, context::Context, message::MessageType};
+use crate::{
+    app::Action,
+    context::{self, Context},
+    message::MessageType,
+    settings_state::SettingsState,
+};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     buffer::Buffer,
@@ -24,9 +29,19 @@ const MAIN_MENU: [&str; 4] = [
     "Settings",
 ];
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct MainMenu<'a> {
     state: StatefulList<&'a str>,
+}
+
+impl Default for MainMenu<'_> {
+    fn default() -> Self {
+        let mut menu = Self {
+            state: StatefulList::with_items(Vec::from(MAIN_MENU)),
+        };
+        menu.state.state.select(Some(0));
+        menu
+    }
 }
 
 impl Component for MainMenu<'_> {
@@ -41,7 +56,6 @@ impl Component for MainMenu<'_> {
                 self.state.next();
                 None
             }
-            // TODO: Make this dynamic based on menu length
             KeyCode::Char('q') => Some(Action::Quit),
             KeyCode::Char(c) => {
                 if let Some(digit) = c.to_digit(10) {
@@ -89,15 +103,7 @@ impl Component for MainMenu<'_> {
     }
 }
 
-impl<'a> MainMenu<'a> {
-    fn new() -> Self {
-        Self {
-            state: StatefulList {
-                state: ListState::default(),
-                items: Vec::from(MAIN_MENU),
-            },
-        }
-    }
+impl MainMenu<'_> {
     fn select_main_menu_by_char(&mut self, c: char) {
         let index = (c as usize - 1) % self.state.items.len();
         self.state.state.select(Some(index));
@@ -186,7 +192,9 @@ impl<'a> MainMenu<'a> {
                     Some(Action::SwitchComponent(Box::new(ApiKeyInput::default())))
                 }
             }
-            Some(3) => Some(Action::SwitchComponent(Box::new(SettingsMenu::default()))),
+            Some(3) => Some(Action::SwitchComponent(Box::new(SettingsMenu::new(
+                context,
+            )))),
             _ => None,
         }
     }

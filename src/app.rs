@@ -89,7 +89,6 @@ pub struct App<'a> {
 
     image_prompt: Input,
     is_recording: Arc<AtomicBool>,
-    clipboard: ClipboardContext,
 
     // --- Global information
     settings: Settings,
@@ -159,7 +158,6 @@ impl<'a> App<'a> {
             ai_client: None,
 
             input_mode: InputMode::Normal,
-            clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
             input: Input::default(),
             image_prompt: Input::default(),
             is_recording: Arc::new(AtomicBool::new(false)),
@@ -209,7 +207,7 @@ impl<'a> App<'a> {
                     save_name: "",
                     ai_client: &self.ai_client,
                     settings: &mut self.settings,
-                    clipboard: &self.clipboard,
+                    clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
                     console_messages: &self.game_content,
                     input_mode: &self.input_mode,
                 };
@@ -381,7 +379,7 @@ impl<'a> App<'a> {
                 save_name: "",
                 ai_client: &self.ai_client,
                 settings: &mut self.settings,
-                clipboard: &self.clipboard,
+                clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
                 console_messages: &self.game_content,
                 input_mode: &self.input_mode,
             },

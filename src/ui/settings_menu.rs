@@ -15,27 +15,29 @@ use ratatui::{
 
 use super::{Component, MainMenu, api_key_input::ApiKeyInput, main_menu_fix::*};
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct SettingsMenu {
-    state: SettingsState,
+    pub state: SettingsState,
 }
 
 impl Component for SettingsMenu {
     fn on_key(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
-        eprintln!("SettingsMenu.on_key");
         let action: Option<Action> = match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
-                self.state.selected_setting = self
-                    .state
-                    .selected_setting
-                    .wrapping_sub(self.state.selected_options.len());
+                self.state.selected_setting = if self.state.selected_setting == 0 {
+                    self.state.selected_options.len() - 1
+                } else {
+                    self.state.selected_setting - 1
+                };
                 None
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                self.state.selected_setting = self
-                    .state
-                    .selected_setting
-                    .wrapping_add(self.state.selected_options.len());
+                self.state.selected_setting =
+                    if self.state.selected_setting >= self.state.selected_options.len() - 1 {
+                        0
+                    } else {
+                        self.state.selected_setting + 1
+                    };
                 None
             }
             KeyCode::Left | KeyCode::Char('h') => {
@@ -72,7 +74,6 @@ impl Component for SettingsMenu {
     }
 
     fn render(&self, area: Rect, buffer: &mut Buffer, context: &Context) {
-        eprintln!("SettingsMenu.on_key");
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .flex(ratatui::layout::Flex::Center)
@@ -97,6 +98,12 @@ impl Component for SettingsMenu {
 }
 
 impl SettingsMenu {
+    pub fn new(context: Context) -> Self {
+        Self {
+            state: SettingsState::from_settings(context.settings),
+        }
+    }
+
     fn render_settings(&self, buffer: &mut Buffer, context: &Context, area: Rect) {
         // TODO: Make this dynamic based on settings content.
         let settings = [
@@ -185,8 +192,9 @@ impl SettingsMenu {
 
         settings_widget.render(inner_area, buffer);
     }
-    fn render_console(&self, buffer: &mut Buffer, context: &Context, area: Rect) {
-        let console_text = format!("This should be dynamically filled",);
+
+    fn render_console(&self, buffer: &mut Buffer, _context: &Context, area: Rect) {
+        let console_text = "This should be dynamically filled";
 
         let console = Paragraph::new(console_text)
             .style(Style::default().fg(Color::Yellow))
@@ -230,21 +238,27 @@ impl SettingsMenu {
     fn change_settings(&mut self, change: isize) {
         let current_setting = self.state.selected_setting;
         match (current_setting, change) {
-            (current, _) if current == 1 => {
-                return;
-            }
             (0, change) => {
-                let current_language = self.state.selected_options[current_setting];
-                self.state.selected_options[current_setting] = current_language
-                    .wrapping_add_signed(self.state.selected_options.len() as isize + change);
+                if self.state.selected_options[current_setting] == 0 {
+                    self.state.selected_options[current_setting] = (4 + change) as usize % 4;
+                } else {
+                    self.state.selected_options[current_setting] =
+                        (self.state.selected_options[current_setting] as isize + change) as usize
+                            % 4
+                }
             }
             (2, change) => {
-                let current_model = self.state.selected_options[current_setting];
-                self.state.selected_options[current_setting] = current_model
-                    .wrapping_add_signed(self.state.selected_options.len() as isize + change);
+                if self.state.selected_options[current_setting] == 0 {
+                    self.state.selected_options[current_setting] = (3 + change) as usize % 3;
+                } else {
+                    self.state.selected_options[current_setting] =
+                        (self.state.selected_options[current_setting] as isize + change) as usize
+                            % 3
+                }
             }
             (_current, _change) => {
-                1 - self.state.selected_options[current_setting];
+                self.state.selected_options[current_setting] =
+                    1 - self.state.selected_options[current_setting];
             }
         }
     }
