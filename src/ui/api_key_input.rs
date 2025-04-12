@@ -13,7 +13,7 @@ use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Position},
     prelude::{Alignment, Buffer, Rect},
-    style::{Color, Style},
+    style::{Color, Modifier, Style, Stylize},
     widgets::*,
 };
 use tokio::runtime::Handle;
@@ -53,24 +53,32 @@ impl Component for ApiKeyInput {
             )
             .split(centered_area);
 
-        let (title, style) = match context.openai_api_key_valid {
+        let (title, normal_style) = match context.openai_api_key_valid {
             true => {
-                let title = Paragraph::new(" Your API Key is valid ")
-                    .style(Style::default().fg(Color::Cyan))
+                let title = Paragraph::new(" Your API Key is valid ".bold())
+                    .style(Style::default().fg(Color::Green))
                     .alignment(Alignment::Center);
-                let style = Style::default().fg(Color::Green);
-                (title, style)
+                let normal_style = Style::default().fg(Color::Green);
+                (title, normal_style)
             }
             false => {
-                let title = Paragraph::new(" Please input a Valid Api_key ");
-                let style = Style::default().fg(Color::LightRed);
-                (title, style)
+                let title = Paragraph::new(" Please input a Valid Api_key ")
+                    .style(Style::default().fg(Color::Red))
+                    .alignment(Alignment::Center);
+                let normal_style = Style::default().fg(Color::Red);
+                (title, normal_style)
             }
         };
-        let input_field = Paragraph::new(self.input.value()).style(style).block(
+        let style = match context.input_mode {
+            InputMode::Normal => normal_style,
+            InputMode::Editing => Style::default().fg(Color::Yellow),
+            InputMode::Recording => Style::default().bg(Color::Red),
+        };
+        let input_field = Paragraph::new(self.input.value()).block(
             Block::default()
                 .border_type(BorderType::Rounded)
                 .borders(Borders::ALL)
+                .border_style(style)
                 .title(" API Key "),
         );
         title.render(chunks[0], buffer);
@@ -90,31 +98,16 @@ impl Component for ApiKeyInput {
 }
 
 impl ApiKeyInput {
-    fn handle_editing(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
+    fn handle_editing(&mut self, key: KeyEvent, mut context: Context) -> Option<Action> {
         match key.code {
             KeyCode::Enter => {
                 if !self.input.value().is_empty() {
-                    let api_key = self.input.value().to_string();
-                    context.settings.openai_api_key = Some(api_key.clone());
-
-                    let api_valid = tokio::task::block_in_place(|| {
-                        Handle::current().block_on(Settings::validate_api_key(&api_key))
-                    });
-
-                    if api_valid {
-                        // TODO: Need to go back to settings..
-                        Some(Action::ApiKeyValidationResult(true))
-                    } else {
-                        self.input.reset();
-                        None
-                    }
+                    self.validate_key(&mut context)
                 } else {
                     Some(Action::SwitchInputMode(InputMode::Editing))
                 }
             }
-            KeyCode::Esc => Some(Action::SwitchComponent(Box::new(SettingsMenu::new(
-                context,
-            )))),
+            KeyCode::Esc => Some(Action::SwitchInputMode(InputMode::Normal)),
             KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.paste(context)
             }
@@ -124,11 +117,35 @@ impl ApiKeyInput {
             }
         }
     }
-    fn handle_normal_input(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
+
+    fn validate_key(&mut self, context: &mut Context<'_>) -> Option<Action> {
+        let api_key = self.input.value().to_string();
+
+        context.openai_api_key_valid = tokio::task::block_in_place(|| {
+            Handle::current().block_on(Settings::validate_api_key(&api_key))
+        });
+
+        if context.openai_api_key_valid {
+            context.settings.openai_api_key = Some(api_key.clone());
+            Some(Action::SwitchInputMode(InputMode::Normal))
+        } else {
+            self.input.reset();
+            self.input = Input::new("Invalid api key".into());
+            None
+        }
+    }
+    fn handle_normal_input(&mut self, key: KeyEvent, mut context: Context) -> Option<Action> {
         match key.code {
-            KeyCode::Enter | KeyCode::Char('e') => {
-                Some(Action::SwitchInputMode(InputMode::Editing))
+            KeyCode::Enter => {
+                if !context.openai_api_key_valid {
+                    self.validate_key(&mut context)
+                } else {
+                    Some(Action::SwitchComponent(Box::new(SettingsMenu::new(
+                        context,
+                    ))))
+                }
             }
+            KeyCode::Char('e') => Some(Action::SwitchInputMode(InputMode::Editing)),
             KeyCode::Esc => Some(Action::SwitchComponent(Box::new(SettingsMenu::new(
                 context,
             )))),

@@ -53,7 +53,6 @@ pub enum Action {
     StartNewGame(String),
     ProcessMessage(String),
     AIResponse(Box<Result<GameMessage>>),
-    ApiKeyValidationResult(bool),
     // TODO: Probably don't need the transcription target anymore.
     TranscriptionResult(String, TranscriptionTarget),
     TranscriptionError(String),
@@ -391,7 +390,6 @@ impl<'a> App<'a> {
 
     fn handle_action(&mut self, action: Action) -> Result<()> {
         match action {
-            Action::ApiKeyValidationResult(bool) => self.openai_api_key_valid = bool,
             Action::SwitchComponent(component) => self.component = component,
             Action::SwitchInputMode(input_mode) => self.input_mode = input_mode,
             Action::Quit => self.quit()?,
