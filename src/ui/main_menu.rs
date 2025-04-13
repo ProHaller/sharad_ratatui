@@ -189,7 +189,9 @@ impl MainMenu<'_> {
                 if context.openai_api_key_valid {
                     Some(Action::SwitchComponent(Box::new(ImageMenu::default())))
                 } else {
-                    Some(Action::SwitchComponent(Box::new(ApiKeyInput::default())))
+                    Some(Action::SwitchComponent(Box::new(ApiKeyInput::new(
+                        &context.settings.openai_api_key,
+                    ))))
                 }
             }
             Some(3) => Some(Action::SwitchComponent(Box::new(SettingsMenu::new(

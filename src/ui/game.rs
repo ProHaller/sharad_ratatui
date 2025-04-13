@@ -10,6 +10,7 @@ use crate::{
     context::{self, Context},
     game_state::GameState,
     message::{GameMessage, Message, MessageType, UserMessage},
+    save,
     ui::spinner::spinner_frame,
 };
 
@@ -356,7 +357,11 @@ impl InGame {
     }
 
     fn draw_game_content(&self, buffer: &mut Buffer, context: &Context, area: Rect) {
-        let save_name = context.save_name;
+        let save_name = if let Some(game) = &context.save_manager.current_save {
+            game.save_name.clone()
+        } else {
+            "Loading... ".into()
+        };
 
         let fluff_block = Block::default()
             .border_type(BorderType::Rounded)

@@ -46,7 +46,9 @@ impl Component for SettingsMenu {
             }
             KeyCode::Right | KeyCode::Enter | KeyCode::Char('l') => {
                 if self.state.selected_setting == 1 {
-                    Some(Action::SwitchComponent(Box::new(ApiKeyInput::default())))
+                    Some(Action::SwitchComponent(Box::new(ApiKeyInput::new(
+                        &context.settings.openai_api_key,
+                    ))))
                 } else {
                     self.change_settings(1);
                     None
@@ -55,13 +57,16 @@ impl Component for SettingsMenu {
             KeyCode::Esc => Some(Action::SwitchComponent(Box::new(MainMenu::default()))),
             KeyCode::Char(c) => {
                 if let Some(digit) = c.to_digit(10) {
-                    match digit {
-                        1 => Some(Action::SwitchComponent(Box::new(ApiKeyInput::default()))),
-                        digit if digit <= self.state.selected_options.len() as u32 => {
+                    self.state.selected_setting =
+                        ((digit as usize).saturating_sub(1)) % self.state.selected_options.len();
+                    match self.state.selected_setting {
+                        1 => Some(Action::SwitchComponent(Box::new(ApiKeyInput::new(
+                            &context.settings.openai_api_key,
+                        )))),
+                        _ => {
                             self.change_settings(1);
                             None
                         }
-                        _ => None,
                     }
                 } else {
                     None
@@ -80,8 +85,8 @@ impl Component for SettingsMenu {
             .constraints(
                 [
                     Constraint::Max(1),
-                    Constraint::Min(if area.height - 20 > 20 { 20 } else { 0 }),
-                    Constraint::Min(if area.height - 7 > 7 { 7 } else { 0 }),
+                    Constraint::Length(if area.height - 20 > 20 { 20 } else { 0 }),
+                    Constraint::Length(if area.height - 7 > 7 { 7 } else { 0 }),
                     Constraint::Max(1),
                     Constraint::Min(10),
                 ]

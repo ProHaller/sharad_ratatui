@@ -15,7 +15,7 @@ use ratatui::{
 };
 use tui_input::{Input, backend::crossterm::EventHandler};
 
-use super::{Component, MainMenu};
+use super::{Component, MainMenu, center_rect};
 
 #[derive(Default, Debug)]
 pub struct ImageMenu {
@@ -32,7 +32,9 @@ impl Component for ImageMenu {
                 KeyCode::Char('r') => Some(Action::SwitchInputMode(InputMode::Recording)),
                 KeyCode::Esc => Some(Action::SwitchComponent(Box::new(MainMenu::default()))),
                 KeyCode::Enter => {
-                    // let prompt = self.input.value().clone().to_string();
+                    // TODO: Fix the image generation
+                    //
+                    // let prompt = self.input.value().into();
                     // let image_sender = self.image_sender.clone();
                     // tokio::spawn(async move {
                     //     self.path.push(
@@ -48,6 +50,7 @@ impl Component for ImageMenu {
             },
             InputMode::Editing => match key.code {
                 KeyCode::Esc => Some(Action::SwitchInputMode(InputMode::Normal)),
+                KeyCode::Enter => Some(Action::SwitchComponent(Box::new(MainMenu::default()))),
                 _ => {
                     self.input.handle_event(&Event::Key(key));
                     None
@@ -58,19 +61,21 @@ impl Component for ImageMenu {
     }
 
     fn render(&self, area: Rect, buffer: &mut Buffer, context: &Context) {
+        let centered_area =
+            center_rect(area, Constraint::Percentage(70), Constraint::Percentage(50));
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .flex(Center)
+            .flex(ratatui::layout::Flex::Center)
             .constraints(
                 [
+                    Constraint::Length(1),
                     Constraint::Length(3),
-                    Constraint::Length(3),
-                    Constraint::Length(3),
-                    Constraint::Min(1),
+                    Constraint::Length(1),
+                    Constraint::Length(1),
                 ]
                 .as_ref(),
             )
-            .split(area);
+            .split(centered_area);
 
         let title = Paragraph::new(" Enter an image prompt ")
             .style(Style::default().fg(Color::Cyan))

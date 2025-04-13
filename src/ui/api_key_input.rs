@@ -22,7 +22,7 @@ use tui_input::backend::crossterm::EventHandler;
 
 use super::{Component, SettingsMenu, center_rect};
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ApiKeyInput {
     input: Input,
 }
@@ -74,13 +74,15 @@ impl Component for ApiKeyInput {
             InputMode::Editing => Style::default().fg(Color::Yellow),
             InputMode::Recording => Style::default().bg(Color::Red),
         };
-        let input_field = Paragraph::new(self.input.value()).block(
-            Block::default()
-                .border_type(BorderType::Rounded)
-                .borders(Borders::ALL)
-                .border_style(style)
-                .title(" API Key "),
-        );
+        let input_field = Paragraph::new(self.input.value())
+            .style(Style::new().fg(Color::DarkGray))
+            .block(
+                Block::default()
+                    .border_type(BorderType::Rounded)
+                    .borders(Borders::ALL)
+                    .border_style(style)
+                    .title(" API Key "),
+            );
         title.render(chunks[0], buffer);
         input_field.render(chunks[1], buffer);
 
@@ -98,7 +100,19 @@ impl Component for ApiKeyInput {
 }
 
 impl ApiKeyInput {
+    pub fn new(api_key: &Option<String>) -> Self {
+        Self {
+            input: api_input_default(api_key),
+        }
+    }
+
     fn handle_editing(&mut self, key: KeyEvent, mut context: Context) -> Option<Action> {
+        // HACK: I should make this into a more robust check for the different cases. maybe an
+        // enum
+        if self.input.value().contains(' ') {
+            self.input.reset();
+        }
+
         match key.code {
             KeyCode::Enter => {
                 if !self.input.value().is_empty() {
@@ -107,7 +121,10 @@ impl ApiKeyInput {
                     Some(Action::SwitchInputMode(InputMode::Editing))
                 }
             }
-            KeyCode::Esc => Some(Action::SwitchInputMode(InputMode::Normal)),
+            KeyCode::Esc => {
+                self.input = api_input_default(&context.settings.openai_api_key);
+                Some(Action::SwitchInputMode(InputMode::Normal))
+            }
             KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.paste(context)
             }
@@ -130,7 +147,7 @@ impl ApiKeyInput {
             Some(Action::SwitchInputMode(InputMode::Normal))
         } else {
             self.input.reset();
-            self.input = Input::new("Invalid api key".into());
+            self.input = Input::new("This key is invalid".into());
             None
         }
     }
@@ -145,7 +162,13 @@ impl ApiKeyInput {
                     ))))
                 }
             }
-            KeyCode::Char('e') => Some(Action::SwitchInputMode(InputMode::Editing)),
+            KeyCode::Char('e') => {
+                self.input = self
+                    .input
+                    .clone()
+                    .with_value("Editing this will delete your current key".into());
+                Some(Action::SwitchInputMode(InputMode::Editing))
+            }
             KeyCode::Esc => Some(Action::SwitchComponent(Box::new(SettingsMenu::new(
                 context,
             )))),
@@ -164,4 +187,24 @@ impl ApiKeyInput {
         );
         None
     }
+}
+
+pub fn api_input_default(api_key: &Option<String>) -> Input {
+    match api_key {
+        None => Input::new("Please input a valid API key".into()),
+        Some(api_key) => Input::new(hide_api(&api_key)),
+    }
+}
+fn hide_api(s: &str) -> String {
+    let head_len = 7;
+    let tail_len = 3;
+
+    if s.len() < head_len + tail_len + 3 {
+        return s.to_string();
+    }
+
+    let head = &s[..head_len];
+    let tail = &s[s.len() - tail_len..];
+
+    format!("{}...{}", head, tail)
 }

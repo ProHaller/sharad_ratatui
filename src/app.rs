@@ -1,5 +1,6 @@
 // /app.rs
-use crate::context::Context;
+use crate::context::{self, Context};
+use crate::settings::{self, Settings};
 use crate::tui::{Tui, TuiEvent};
 use crate::ui::Component;
 use crate::ui::main_menu::MainMenu;
@@ -14,7 +15,6 @@ use crate::{
     imager,
     message::{self, AIMessage, GameMessage, Message, MessageType},
     save::{SaveManager, get_save_base_dir},
-    settings::Settings,
     settings_state::SettingsState,
     ui::{
         game::{self, HighlightedSection},
@@ -54,8 +54,6 @@ pub enum Action {
     ProcessMessage(String),
     AIResponse(Box<Result<GameMessage>>),
     // TODO: Probably don't need the transcription target anymore.
-    TranscriptionResult(String, TranscriptionTarget),
-    TranscriptionError(String),
     SwitchComponent(Box<dyn Component>),
     SwitchInputMode(InputMode),
 }
@@ -81,17 +79,12 @@ pub struct App<'a> {
     running: bool,
     component: Box<dyn Component>,
     context: Option<Context<'a>>,
-
-    // --- Global State
-    input_mode: InputMode, // TODO: Move it into Input struct
-    input: Input,
-
-    image_prompt: Input,
-    is_recording: Arc<AtomicBool>,
+    openai_api_key_valid: bool,
+    settings: Settings,
+    save_manager: SaveManager,
+    input_mode: InputMode,
 
     // --- Global information
-    settings: Settings,
-    openai_api_key_valid: bool,
     ai_client: Option<GameAI>,
 
     // --- UI elements
@@ -99,24 +92,16 @@ pub struct App<'a> {
     spinner_active: bool,
     last_spinner_update: Instant,
 
+    // InGame
     game_content_scroll: usize,
     visible_lines: usize,
     total_lines: usize,
     cached_content_len: usize,
-
     highlighted_section: HighlightedSection, // TODO: Move it into game
-
-    // --- GameState
-    save_manager: SaveManager,
-    backspace_counter: bool,
     current_save_name: Arc<RwLock<String>>,
     current_game: Option<Arc<Mutex<GameState>>>,
     game_content: RefCell<Vec<message::Message>>,
-    cached_game_content: Option<Rc<Vec<(Line<'static>, Alignment)>>>,
-    last_known_character_sheet: Option<CharacterSheet>,
 
-    action_sender: mpsc::UnboundedSender<Action>,
-    action_receiver: mpsc::UnboundedReceiver<Action>,
     ai_sender: mpsc::UnboundedSender<AIMessage>,
     ai_receiver: mpsc::UnboundedReceiver<AIMessage>,
 
@@ -128,7 +113,6 @@ pub struct App<'a> {
 
 impl<'a> App<'a> {
     pub async fn new() -> Self {
-        let (command_sender, command_receiver) = mpsc::unbounded_channel();
         // Set up unbounded channel for AI messages.
         let (ai_sender, ai_receiver) = mpsc::unbounded_channel::<AIMessage>();
         // Set up unbounded channel for images.
@@ -142,7 +126,8 @@ impl<'a> App<'a> {
         let mut load_game_menu_state = ListState::default();
         load_game_menu_state.select(Some(0));
 
-        let openai_api_key_valid = if let Some(ref api_key) = settings.openai_api_key {
+        let mut settings = Settings::load().expect("Could not read settings");
+        let mut openai_api_key_valid = if let Some(ref api_key) = settings.openai_api_key {
             Settings::validate_api_key(api_key).await
         } else {
             false
@@ -151,43 +136,30 @@ impl<'a> App<'a> {
         Self {
             running: true,
             component: Box::new(MainMenu::default()),
-            context: None,
-
-            openai_api_key_valid,
             ai_client: None,
-
+            context: None,
             input_mode: InputMode::Normal,
-            input: Input::default(),
-            image_prompt: Input::default(),
-            is_recording: Arc::new(AtomicBool::new(false)),
-
             game_content_scroll: 0,
-            cached_game_content: None,
             cached_content_len: 0,
             total_lines: 0,
             visible_lines: 0,
-
             highlighted_section: HighlightedSection::None,
+
             spinner: Spinner::new(),
             spinner_active: false,
             last_spinner_update: Instant::now(),
-            settings,
-
-            save_manager: SaveManager::new(),
-            backspace_counter: false,
             game_content: RefCell::new(Vec::new()),
             current_game: None,
             current_save_name: Arc::new(RwLock::new(String::new())),
-            last_known_character_sheet: None,
-
-            action_sender: command_sender,
-            action_receiver: command_receiver,
             ai_sender,
             ai_receiver,
 
             image: None,
             image_sender,
             image_receiver,
+            openai_api_key_valid,
+            settings,
+            save_manager: SaveManager::new(),
         }
     }
     // Asynchronous function to continuously run and update the application.
@@ -203,7 +175,6 @@ impl<'a> App<'a> {
                 let context = Context {
                     openai_api_key_valid: self.openai_api_key_valid,
                     save_manager: &mut self.save_manager,
-                    save_name: "",
                     ai_client: &self.ai_client,
                     settings: &mut self.settings,
                     clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
@@ -375,7 +346,6 @@ impl<'a> App<'a> {
             Context {
                 openai_api_key_valid: self.openai_api_key_valid,
                 save_manager: &mut self.save_manager,
-                save_name: "",
                 ai_client: &self.ai_client,
                 settings: &mut self.settings,
                 clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
@@ -393,10 +363,11 @@ impl<'a> App<'a> {
             Action::SwitchComponent(component) => self.component = component,
             Action::SwitchInputMode(input_mode) => self.input_mode = input_mode,
             Action::Quit => self.quit()?,
-
-            Action::TranscriptionResult(_transcription, _transcription_target) => {}
-            Action::TranscriptionError(_) => { /* TODO: handle the error*/ }
-            Action::LoadGame(_path_buf) => {}
+            Action::LoadGame(save_path) => {
+                // load the game
+                // build a context
+                // pass the context to the InGame component
+            }
             Action::StartNewGame(_) => {}
             Action::ProcessMessage(_) => {}
             Action::AIResponse(_game_message) => { /*TODO: Handle gmae_message and pass it to component*/
@@ -746,28 +717,6 @@ impl<'a> App<'a> {
     //     }
     // }
 
-    pub fn handle_api_key_validation_result(&mut self, is_valid: bool) {
-        if !is_valid {
-            self.settings.openai_api_key = None;
-            self.add_message(Message::new(
-                MessageType::System,
-                "We could not validate your API Key. Please verify your key and internet connection and try again.".to_string(),
-            ));
-            self.openai_api_key_valid = false;
-        } else {
-            self.openai_api_key_valid = true;
-            self.add_message(Message::new(
-                MessageType::System,
-                "API Key Validated, Thank you.".to_string(),
-            ));
-        }
-        let home_dir = dir::home_dir().expect("Failed to get home directory");
-        let path = home_dir.join("sharad").join("data").join("settings.json");
-        if let Err(e) = self.settings.save_to_file(path) {
-            self.add_debug_message(format!("Failed to save settings: {:#?}", e));
-        }
-    }
-
     // TODO: add this to the game component
 
     // fn cycle_highlighted_section(&mut self) {
@@ -814,28 +763,28 @@ impl<'a> App<'a> {
     //     };
     // }
 
-    fn submit_user_input(&mut self) {
-        let input = self.input.value().trim().to_string();
-        self.start_spinner();
-
-        if input.is_empty() {
-            return;
-        }
-
-        self.add_message(Message::new(MessageType::User, input.clone()));
-
-        // Send a command to process the message
-        if let Err(e) = self.action_sender.send(Action::ProcessMessage(input)) {
-            self.add_message(Message::new(
-                MessageType::System,
-                format!("Error sending message command: {:#?}", e),
-            ));
-        }
-
-        // Clear the user input
-        self.input = Input::default();
-        self.scroll_to_bottom();
-    }
+    // fn submit_user_input(&mut self) {
+    //     let input = self.input.value().trim().to_string();
+    //     self.start_spinner();
+    //
+    //     if input.is_empty() {
+    //         return;
+    //     }
+    //
+    //     self.add_message(Message::new(MessageType::User, input.clone()));
+    //
+    //     // Send a command to process the message
+    //     if let Err(e) = self.action_sender.send(Action::ProcessMessage(input)) {
+    //         self.add_message(Message::new(
+    //             MessageType::System,
+    //             format!("Error sending message command: {:#?}", e),
+    //         ));
+    //     }
+    //
+    //     // Clear the user input
+    //     self.input = Input::default();
+    //     self.scroll_to_bottom();
+    // }
 
     // TODO: Make unified and dynamic setting for all settings. cf the Ratatui examples
 
@@ -873,9 +822,6 @@ impl<'a> App<'a> {
 
         // Update the scroll position
         self.game_content_scroll = self.total_lines.saturating_sub(self.visible_lines);
-
-        // Force UI update
-        self.cached_game_content = None;
     }
 
     fn calculate_total_lines(&self) -> usize {
@@ -894,20 +840,20 @@ impl<'a> App<'a> {
         self.game_content_scroll = self.game_content_scroll.min(max_scroll);
     }
 
-    pub fn add_debug_message(&self, message: String) {
-        if !self.settings.debug_mode {
-            return;
-        }
-
-        if let Ok(mut file) = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("sharad_debug.log")
-        {
-            let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
-            let _ = writeln!(file, "[{}] {}", timestamp, &message);
-        }
-    }
+    // pub fn add_debug_message(&self, message: String) {
+    //     if !self.settings.debug_mode {
+    //         return;
+    //     }
+    //
+    //     if let Ok(mut file) = OpenOptions::new()
+    //         .create(true)
+    //         .append(true)
+    //         .open("sharad_debug.log")
+    //     {
+    //         let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
+    //         let _ = writeln!(file, "[{}] {}", timestamp, &message);
+    //     }
+    // }
 
     pub fn add_message(&self, message: message::Message) {
         self.game_content.borrow_mut().push(message);
@@ -992,21 +938,21 @@ impl<'a> App<'a> {
     //     }
     // }
 
-    pub async fn update_character_sheet(&mut self, character_sheet: CharacterSheet) {
-        if let Some(game_state) = &self.current_game {
-            let mut game_state = game_state.lock().await;
-            if let Some(ai) = &self.ai_client {
-                if let Err(e) = ai.update_character_sheet(&mut game_state, character_sheet) {
-                    self.add_message(Message::new(
-                        MessageType::System,
-                        format!("Failed to update character sheet: {:#?}", e),
-                    ));
-                } else {
-                    self.add_debug_message("Character sheet updated successfully".to_string());
-                }
-            }
-        }
-    }
+    // pub async fn update_character_sheet(&mut self, character_sheet: CharacterSheet) {
+    //     if let Some(game_state) = &self.current_game {
+    //         let mut game_state = game_state.lock().await;
+    //         if let Some(ai) = &self.ai_client {
+    //             if let Err(e) = ai.update_character_sheet(&mut game_state, character_sheet) {
+    //                 self.add_message(Message::new(
+    //                     MessageType::System,
+    //                     format!("Failed to update character sheet: {:#?}", e),
+    //                 ));
+    //             } else {
+    //                 self.add_debug_message("Character sheet updated successfully".to_string());
+    //             }
+    //         }
+    //     }
+    // }
 
     pub fn load_image_from_file(&mut self, path: PathBuf) -> Result<()> {
         if let Some(current_game_state) = self.current_game.clone() {

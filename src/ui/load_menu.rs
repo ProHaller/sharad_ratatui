@@ -49,7 +49,7 @@ impl Component for LoadMenu {
                                     [self.state.state.selected().unwrap()]
                                 .clone(),
                             )
-                            .unwrap();
+                            .expect("Expected save deletion");
                     }
                     self.backspace_counter = false;
                     context.save_manager.available_saves = save::SaveManager::scan_save_files();

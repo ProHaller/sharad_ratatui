@@ -8,7 +8,6 @@ pub struct Context<'a> {
     // TODO: Make the openai_api_key_valid a date
     pub openai_api_key_valid: bool,
     pub save_manager: &'a mut SaveManager,
-    pub save_name: &'a str,
     pub ai_client: &'a Option<GameAI>,
     pub settings: &'a mut Settings,
     pub clipboard: ClipboardContext,
