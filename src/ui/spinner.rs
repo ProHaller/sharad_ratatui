@@ -7,6 +7,7 @@ use std::sync::{
 const SPINNER_CHARS: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 // const SPINNER_DICE: &[char] = &['⚀', '⚁', '⚂', '⚃', '⚄', '⚅',];
 
+#[derive(Clone)]
 pub struct Spinner {
     current_frame: Arc<AtomicUsize>,
 }

@@ -170,35 +170,17 @@ impl InGame {
         // TODO: Propagate the error
         let image = match &state.image_path {
             Some(image_path) => match load_image_from_file(picker, image_path) {
-                Ok(image) => image,
-                Err(e) => {
-                    let error_message = format!(
-                        " Path: {:?} Image error: {:?} ",
-                        state.image_path,
-                        e.to_string()
-                    );
-                    let log_path = Path::new("./error_log_image.txt");
-                    if let Err(log_err) = fs::write(log_path, &error_message) {
-                        eprintln!("Failed to write error log: {}", log_err);
-                    }
-                    panic!("Failed to load image: {}", error_message);
-                }
+                Ok(image) => Some(image),
+                Err(_) => None,
             },
-            None => {
-                let error_message = "image_path is None".to_string();
-                let log_path = Path::new("./error_log_path.txt");
-                if let Err(log_err) = fs::write(log_path, &error_message) {
-                    eprintln!("Failed to write error log: {}", log_err);
-                }
-                panic!("{}", error_message);
-            }
+            None => None,
         };
 
         Self {
             state,
             // Content should go fetch the meesages from the memory/AI
             content: Vec::new(),
-            image: Some(image),
+            image,
             // TODO: Input should be autonomous with info about its size and scroll
             input: Input::default(),
             highlighted_section: HighlightedSection::None,

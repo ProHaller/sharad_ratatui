@@ -37,6 +37,7 @@ pub struct GameConversationState {
     pub character_sheet: Option<CharacterSheet>,
 }
 
+#[derive(Debug)]
 pub struct GameAI {
     pub client: Client<OpenAIConfig>,
     // pub conversation_state: Arc<Mutex<Option<GameConversationState>>>,
@@ -57,7 +58,7 @@ impl Clone for GameAI {
 
 impl GameAI {
     pub async fn new(
-        api_key: String,
+        api_key: &str,
         // debug_callback: impl Fn(String) + Send + Sync + 'static,
         image_sender: mpsc::UnboundedSender<PathBuf>,
     ) -> Result<Self> {

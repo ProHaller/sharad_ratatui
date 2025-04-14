@@ -17,6 +17,8 @@ use crossterm::event::{KeyEvent, KeyEventKind};
 use ratatui::widgets::ListState;
 use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
 use std::io::Cursor;
+use std::thread::sleep;
+use std::time::Duration;
 use std::{cell::RefCell, path::PathBuf, sync::Arc};
 use tokio::sync::{Mutex, RwLock, mpsc};
 
@@ -87,16 +89,22 @@ impl<'a> App<'a> {
         load_game_menu_state.select(Some(0));
 
         let settings = Settings::load().expect("Could not read settings");
-        let openai_api_key_valid = if let Some(ref api_key) = settings.openai_api_key {
-            Settings::validate_api_key(api_key).await
+        let openai_api_key_valid: bool;
+        let mut ai: Option<GameAI> = None;
+        if let Some(api_key) = &settings.openai_api_key {
+            openai_api_key_valid = Settings::validate_api_key(api_key).await;
+            ai = match GameAI::new(api_key, image_sender.clone()).await {
+                Ok(ai) => Some(ai),
+                Err(_) => None,
+            }
         } else {
-            false
+            openai_api_key_valid = false
         };
 
         Self {
             running: true,
             component: Box::new(MainMenu::default()),
-            ai_client: None,
+            ai_client: ai,
             context: None,
             input_mode: InputMode::Normal,
             game_content: RefCell::new(Vec::new()),
@@ -121,8 +129,8 @@ impl<'a> App<'a> {
             .frame_rate(30.0); // 30 frames per second
 
         tui.enter()?; // Starts event handler, enters raw mode, enters alternate screen
-        let picker = tui.picker.clone();
-        self.picker = Some(picker.clone());
+        let picker = tui.picker;
+        self.picker = Some(picker);
 
         loop {
             tui.draw(|frame| {
@@ -326,7 +334,8 @@ impl<'a> App<'a> {
             }
             Action::Quit => self.quit()?,
             Action::LoadGame(save_path) => {
-                self.load_save(&save_path)?;
+                let game = self.load_save(&save_path)?;
+                self.component = Box::new(game);
             }
             Action::StartNewGame(_) => {}
             Action::ProcessMessage(_) => {}
@@ -339,24 +348,31 @@ impl<'a> App<'a> {
         Ok(())
     }
 
-    fn load_save(&mut self, save_path: &PathBuf) -> Result<()> {
-        let game_state = self.load_game(&save_path)?;
-        let mut game = InGame::new(
+    fn load_save(&mut self, save_path: &PathBuf) -> Result<InGame> {
+        let game_state = self.load_game(save_path)?;
+        let mut empty_game = InGame::new(
             game_state,
             &self.picker.expect("Expected picker from app"),
             self.ai_client
                 .clone()
-                .expect("Expected a ai client and sender"),
+                .expect("Expected an ai client and sender"),
         );
+        let thread_id = empty_game.state.thread_id.clone();
+        let (game_tx, mut game_rx) = mpsc::unbounded_channel::<InGame>();
         tokio::spawn(async move {
-            game.content = game
+            empty_game.content = empty_game
                 .ai
-                .fetch_all_messages(&game.state.thread_id)
+                .fetch_all_messages(&thread_id)
                 .await
                 .expect("Expected the return of vec messages")
+                .to_owned();
+            game_tx.send(empty_game)
         });
+        // HACK: That should be properly awaited
+        sleep(Duration::from_secs(1));
+        let filled_game = game_rx.try_recv().ok().unwrap();
 
-        Ok(())
+        Ok(filled_game)
     }
 
     fn quit(&mut self) -> Result<()> {
@@ -385,7 +401,7 @@ impl<'a> App<'a> {
 
         self.ai_client = Some(
             GameAI::new(
-                api_key,
+                &api_key,
                 /*, debug_callback,*/
                 self.image_sender.clone(),
             )
