@@ -1,15 +1,15 @@
 use ratatui::{
-    Frame,
+    buffer::Buffer,
     layout::Rect,
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, Paragraph, Widget, Wrap},
 };
 
 use super::super::game::HighlightedSection;
 use crate::character::CharacterSheet;
 pub fn draw_qualities(
-    f: &mut Frame,
+    buffer: &mut Buffer,
     sheet: &CharacterSheet,
     area: Rect,
     highlighted: &HighlightedSection,
@@ -42,5 +42,5 @@ pub fn draw_qualities(
             }),
         )
         .wrap(Wrap { trim: true });
-    f.render_widget(qualities_paragraph, area);
+    qualities_paragraph.render(area, buffer);
 }

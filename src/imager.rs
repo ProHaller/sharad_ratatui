@@ -8,6 +8,7 @@ use async_openai::{
     types::{CreateImageRequestArgs, ImageModel, ImageResponseFormat, ImageSize, ImagesResponse},
 };
 use futures::TryFutureExt;
+use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
 use std::{path::PathBuf, process::Command};
 use tokio::time::{Duration, timeout};
 
@@ -61,5 +62,32 @@ pub async fn generate_and_save_image(prompt: &str) -> Result<PathBuf> {
         Ok(path.clone())
     } else {
         Err("No image file path received.".into())
+    }
+}
+
+pub fn load_image_from_file(picker: &Picker, path: &PathBuf) -> Result<StatefulProtocol> {
+    // Open and decode the image file
+    match image::ImageReader::open(path)?.decode() {
+        Ok(image) => Ok(picker.new_resize_protocol(image)),
+        Err(err) => {
+            // Convert ImageError to ShadowrunError using the implemented From trait
+            Err(err.to_string().into())
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui_image::picker;
+
+    use super::*;
+
+    #[test]
+    fn test_image_load_from_file() {
+        let picker = Picker::from_query_stdio().unwrap();
+        let path =
+            PathBuf::from("/Users/prohaller/sharad/save/portrait/img-sds4GqNc5Fbm4G7T6rMKgHr4.png");
+        let result = load_image_from_file(&picker, &path);
+        assert!(result.is_ok());
     }
 }

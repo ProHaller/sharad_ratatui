@@ -16,6 +16,7 @@ mod save_name_input;
 mod settings_menu;
 pub mod spinner;
 pub mod widgets;
+pub mod input;
 
 pub use self::character_sheet::*;
 pub use self::component::*;

@@ -4,14 +4,15 @@ use crate::character::CharacterSheet;
 use crate::ui::game::HighlightedSection;
 use ratatui::{
     Frame,
+    buffer::Buffer,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, Paragraph, Widget, Wrap},
 };
 
 pub fn draw_augmentations(
-    f: &mut Frame,
+    buffer: &mut Buffer,
     sheet: &CharacterSheet,
     area: Rect,
     highlighted: &HighlightedSection,
@@ -86,6 +87,6 @@ pub fn draw_augmentations(
         )
         .wrap(Wrap { trim: true });
 
-    f.render_widget(cyberware_paragraph, chunks[0]);
-    f.render_widget(bioware_paragraph, chunks[1]);
+    cyberware_paragraph.render(chunks[0], buffer);
+    bioware_paragraph.render(chunks[1], buffer);
 }

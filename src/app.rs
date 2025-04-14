@@ -1,57 +1,31 @@
 // /app.rs
-use crate::context::{self, Context};
-use crate::settings::{self, Settings};
-use crate::tui::{Tui, TuiEvent};
-use crate::ui::Component;
-use crate::ui::main_menu::MainMenu;
+use crate::context::Context;
 use crate::{
-    ai::{GameAI, GameConversationState},
-    ai_response::create_user_message,
-    assistant::{create_assistant, delete_assistant, get_assistant_id},
-    audio::{self, play_audio},
-    character::CharacterSheet,
-    error::{AppError, Error, Result, ShadowrunError},
+    ai::GameAI,
+    error::{AppError, Result, ShadowrunError},
     game_state::GameState,
-    imager,
-    message::{self, AIMessage, GameMessage, Message, MessageType},
-    save::{SaveManager, get_save_base_dir},
-    settings_state::SettingsState,
-    ui::{
-        game::{self, HighlightedSection},
-        spinner::Spinner,
-    },
+    message::{self, AIMessage, GameMessage},
+    save::SaveManager,
+    settings::Settings,
+    tui::{Tui, TuiEvent},
+    ui::{Component, game::InGame, main_menu::MainMenu},
 };
 
-use chrono::Local;
-use copypasta::{ClipboardContext, ClipboardProvider};
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use futures::stream::{FuturesOrdered, StreamExt};
-use ratatui::DefaultTerminal;
-use ratatui::{layout::Alignment, text::Line, widgets::ListState};
+use copypasta::ClipboardContext;
+use crossterm::cursor;
+use crossterm::event::{KeyEvent, KeyEventKind};
+use ratatui::widgets::ListState;
 use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
-use std::{
-    borrow::BorrowMut,
-    cell::RefCell,
-    fs::OpenOptions,
-    io::Write,
-    path::PathBuf,
-    rc::Rc,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    time::{Duration, Instant},
-};
-use tokio::fs::copy;
+use std::io::Cursor;
+use std::{cell::RefCell, path::PathBuf, sync::Arc};
 use tokio::sync::{Mutex, RwLock, mpsc};
-use tokio::time::sleep;
-use tui_input::{Input, InputRequest, backend::crossterm::EventHandler};
 
 pub enum Action {
     Quit,
     LoadGame(PathBuf),
     StartNewGame(String),
     ProcessMessage(String),
+    SendMessage(String),
     AIResponse(Box<Result<GameMessage>>),
     // TODO: Probably don't need the transcription target anymore.
     SwitchComponent(Box<dyn Component>),
@@ -88,16 +62,6 @@ pub struct App<'a> {
     ai_client: Option<GameAI>,
 
     // --- UI elements
-    spinner: Spinner,
-    spinner_active: bool,
-    last_spinner_update: Instant,
-
-    // InGame
-    game_content_scroll: usize,
-    visible_lines: usize,
-    total_lines: usize,
-    cached_content_len: usize,
-    highlighted_section: HighlightedSection, // TODO: Move it into game
     current_save_name: Arc<RwLock<String>>,
     current_game: Option<Arc<Mutex<GameState>>>,
     game_content: RefCell<Vec<message::Message>>,
@@ -106,6 +70,7 @@ pub struct App<'a> {
     ai_receiver: mpsc::UnboundedReceiver<AIMessage>,
 
     // --- Images
+    picker: Option<Picker>,
     image: Option<StatefulProtocol>,
     image_sender: mpsc::UnboundedSender<PathBuf>,
     image_receiver: mpsc::UnboundedReceiver<PathBuf>,
@@ -118,16 +83,11 @@ impl<'a> App<'a> {
         // Set up unbounded channel for images.
         let (image_sender, image_receiver) = mpsc::unbounded_channel::<PathBuf>();
         // Set up unbounded channel for errors.
-
-        let home_dir = dir::home_dir().expect("Failed to get home directory");
-        let path = home_dir.join("sharad").join("data").join("settings.json");
-        let settings = Settings::load_settings_from_file(path).unwrap_or_default();
-
         let mut load_game_menu_state = ListState::default();
         load_game_menu_state.select(Some(0));
 
-        let mut settings = Settings::load().expect("Could not read settings");
-        let mut openai_api_key_valid = if let Some(ref api_key) = settings.openai_api_key {
+        let settings = Settings::load().expect("Could not read settings");
+        let openai_api_key_valid = if let Some(ref api_key) = settings.openai_api_key {
             Settings::validate_api_key(api_key).await
         } else {
             false
@@ -139,21 +99,13 @@ impl<'a> App<'a> {
             ai_client: None,
             context: None,
             input_mode: InputMode::Normal,
-            game_content_scroll: 0,
-            cached_content_len: 0,
-            total_lines: 0,
-            visible_lines: 0,
-            highlighted_section: HighlightedSection::None,
-
-            spinner: Spinner::new(),
-            spinner_active: false,
-            last_spinner_update: Instant::now(),
             game_content: RefCell::new(Vec::new()),
             current_game: None,
             current_save_name: Arc::new(RwLock::new(String::new())),
             ai_sender,
             ai_receiver,
 
+            picker: None,
             image: None,
             image_sender,
             image_receiver,
@@ -169,22 +121,29 @@ impl<'a> App<'a> {
             .frame_rate(30.0); // 30 frames per second
 
         tui.enter()?; // Starts event handler, enters raw mode, enters alternate screen
+        let picker = tui.picker.clone();
+        self.picker = Some(picker.clone());
 
         loop {
             tui.draw(|frame| {
                 let context = Context {
                     openai_api_key_valid: self.openai_api_key_valid,
                     save_manager: &mut self.save_manager,
-                    ai_client: &self.ai_client,
                     settings: &mut self.settings,
                     clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
                     console_messages: &self.game_content,
                     input_mode: &self.input_mode,
+                    picker,
                 };
                 self.component
                     .render(frame.area(), frame.buffer_mut(), &context)
             })?;
 
+            // TODO: improve input cursor position
+            match self.input_mode {
+                InputMode::Editing => tui.terminal.show_cursor()?,
+                _ => tui.terminal.hide_cursor()?,
+            };
             if let Some(event) = tui.next().await {
                 // `tui.next().await` blocks till next event
                 self.handle_tui_event(event)?;
@@ -323,6 +282,7 @@ impl<'a> App<'a> {
                 self.on_key(key_event)?
             }
             // TODO: Pass the pasted text to the Input
+            // Maybe I don't need copypasta anymore?
             TuiEvent::Paste(_pasted_text) => {}
             TuiEvent::Mouse(_mouse_event) => {}
             TuiEvent::Key(_) => {}
@@ -346,11 +306,11 @@ impl<'a> App<'a> {
             Context {
                 openai_api_key_valid: self.openai_api_key_valid,
                 save_manager: &mut self.save_manager,
-                ai_client: &self.ai_client,
                 settings: &mut self.settings,
                 clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
                 console_messages: &self.game_content,
                 input_mode: &self.input_mode,
+                picker: self.picker.expect("Expected picker from app"),
             },
         ) {
             self.handle_action(action)?
@@ -361,18 +321,40 @@ impl<'a> App<'a> {
     fn handle_action(&mut self, action: Action) -> Result<()> {
         match action {
             Action::SwitchComponent(component) => self.component = component,
-            Action::SwitchInputMode(input_mode) => self.input_mode = input_mode,
+            Action::SwitchInputMode(input_mode) => {
+                self.input_mode = input_mode;
+            }
             Action::Quit => self.quit()?,
             Action::LoadGame(save_path) => {
-                // load the game
-                // build a context
-                // pass the context to the InGame component
+                self.load_save(&save_path)?;
             }
             Action::StartNewGame(_) => {}
             Action::ProcessMessage(_) => {}
             Action::AIResponse(_game_message) => { /*TODO: Handle gmae_message and pass it to component*/
             }
+            // TODO: Handle the user message
+            Action::SendMessage(_) => {}
         }
+
+        Ok(())
+    }
+
+    fn load_save(&mut self, save_path: &PathBuf) -> Result<()> {
+        let game_state = self.load_game(&save_path)?;
+        let mut game = InGame::new(
+            game_state,
+            &self.picker.expect("Expected picker from app"),
+            self.ai_client
+                .clone()
+                .expect("Expected a ai client and sender"),
+        );
+        tokio::spawn(async move {
+            game.content = game
+                .ai
+                .fetch_all_messages(&game.state.thread_id)
+                .await
+                .expect("Expected the return of vec messages")
+        });
 
         Ok(())
     }
@@ -396,15 +378,25 @@ impl<'a> App<'a> {
             .ok_or(AppError::AIClientNotInitialized)?
             .clone();
 
-        let ai_sender = self.ai_sender.clone();
-        let debug_callback = move |message: String| {
-            let _ = ai_sender.send(message::AIMessage::Debug(message));
-        };
+        // let ai_sender = self.ai_sender.clone();
+        // let debug_callback = move |message: String| {
+        //     let _ = ai_sender.send(message::AIMessage::Debug(message));
+        // };
 
-        self.ai_client =
-            Some(GameAI::new(api_key, debug_callback, self.image_sender.clone()).await?);
+        self.ai_client = Some(
+            GameAI::new(
+                api_key,
+                /*, debug_callback,*/
+                self.image_sender.clone(),
+            )
+            .await?,
+        );
 
         Ok(())
+    }
+
+    fn load_game(&mut self, save_path: &PathBuf) -> Result<GameState> {
+        self.save_manager.load_from_file(save_path)
     }
 
     // TODO: should probably go to game, or ai sections
@@ -606,254 +598,7 @@ impl<'a> App<'a> {
         *save_name = new_name;
     }
 
-    // TODO: Make the Game Component and adapt this to its on_key
-
-    // fn handle_in_game_editing(&mut self, key: KeyEvent) {
-    //     match key.code {
-    //         KeyCode::Enter => {
-    //             self.input_mode = InputMode::Normal;
-    //         }
-    //         KeyCode::Esc => {
-    //             self.input_mode = InputMode::Normal;
-    //         }
-    //         KeyCode::Char('v') => {
-    //             if key.modifiers.contains(KeyModifiers::CONTROL) {
-    //                 if let Err(e) = self.handle_paste() {
-    //                     self.add_debug_message(format!("Failed to paste: {:#?}", e));
-    //                 }
-    //             } else {
-    //                 self.user_input.handle_event(&Event::Key(key));
-    //             }
-    //         }
-    //         _ => {
-    //             // Let tui_input handle all other key events
-    //             self.user_input.handle_event(&Event::Key(key));
-    //         }
-    //     }
-    // }
-
-    // fn handle_in_game_input(&mut self, key: KeyEvent) {
-    //     match self.input_mode {
-    //         InputMode::Normal => match key.code {
-    //             KeyCode::Char('e') => {
-    //                 self.input_mode = InputMode::Editing;
-    //             }
-    //             KeyCode::Char('r') => {
-    //                 self.start_recording();
-    //             }
-    //             KeyCode::Esc if (self.highlighted_section != HighlightedSection::None) => {
-    //                 self.highlighted_section = HighlightedSection::None;
-    //             }
-    //             KeyCode::Esc => {
-    //                 self.game_content.borrow_mut().clear();
-    //                 self.current_game = None;
-    //                 self.last_known_character_sheet = None;
-    //                 self.user_input.reset();
-    //                 self.state = AppState::MainMenu;
-    //                 self.save_manager.available_saves = SaveManager::scan_save_files();
-    //                 self.add_message(Message::new(
-    //                     MessageType::System,
-    //                     "Game paused. Returned to main menu.".to_string(),
-    //                 ))
-    //             }
-    //             KeyCode::Enter => {
-    //                 if !self.user_input.value().is_empty() {
-    //                     self.submit_user_input();
-    //                 }
-    //             }
-    //             KeyCode::PageUp => {
-    //                 for _ in 0..self.visible_lines {
-    //                     self.scroll_up();
-    //                 }
-    //             }
-    //             KeyCode::PageDown => {
-    //                 for _ in 0..self.visible_lines {
-    //                     self.scroll_down();
-    //                 }
-    //             }
-    //             KeyCode::Up | KeyCode::Char('k') => self.scroll_up(),
-    //             KeyCode::Down | KeyCode::Char('j') => self.scroll_down(),
-    //
-    //             KeyCode::Tab => self.cycle_highlighted_section(),
-    //
-    //             KeyCode::Home => {
-    //                 self.game_content_scroll = 0;
-    //             }
-    //             KeyCode::End => {
-    //                 self.game_content_scroll = self.total_lines.saturating_sub(self.visible_lines);
-    //             }
-    //             _ => {}
-    //         },
-    //         InputMode::Editing => match key.code {
-    //             KeyCode::Esc => {
-    //                 self.input_mode = InputMode::Normal;
-    //             }
-    //             KeyCode::Enter => {
-    //                 self.input_mode = InputMode::Normal;
-    //             }
-    //             KeyCode::Char('v') => {
-    //                 if key.modifiers.contains(KeyModifiers::CONTROL) {
-    //                     if let Err(e) = self.handle_paste() {
-    //                         self.add_debug_message(format!("Failed to paste: {:#?}", e));
-    //                     }
-    //                 } else {
-    //                     self.user_input.handle_event(&Event::Key(key));
-    //                 }
-    //             }
-    //             _ => {
-    //                 self.user_input.handle_event(&Event::Key(key));
-    //             }
-    //         },
-    //         InputMode::Recording => {
-    //             match key.code {
-    //                 KeyCode::Esc => {
-    //                     self.stop_recording();
-    //                 }
-    //                 _ => {
-    //                     // Ignore other keys during recording
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
-
-    // TODO: add this to the game component
-
-    // fn cycle_highlighted_section(&mut self) {
-    //     let Some(character_sheet) = self.last_known_character_sheet.as_ref() else {
-    //         return;
-    //     };
-    //
-    //     let available_sections = [
-    //         Some(HighlightedSection::Backstory),
-    //         Some(HighlightedSection::Attributes(0)),
-    //         Some(HighlightedSection::Attributes(1)),
-    //         Some(HighlightedSection::Attributes(2)),
-    //         Some(HighlightedSection::Derived(0)),
-    //         Some(HighlightedSection::Derived(1)),
-    //         Some(HighlightedSection::Skills),
-    //         Some(HighlightedSection::Qualities),
-    //         (!character_sheet.cyberware.is_empty()).then_some(HighlightedSection::Cyberware),
-    //         (!character_sheet.bioware.is_empty()).then_some(HighlightedSection::Bioware),
-    //         Some(HighlightedSection::Resources),
-    //         (!character_sheet.inventory.is_empty()).then_some(HighlightedSection::Inventory),
-    //         (!character_sheet.contacts.is_empty()).then_some(HighlightedSection::Contact),
-    //     ]
-    //     .into_iter()
-    //     .flatten()
-    //     .collect::<Vec<_>>();
-    //
-    //     if available_sections.is_empty() {
-    //         self.highlighted_section = HighlightedSection::None;
-    //         return;
-    //     }
-    //
-    //     let current_index = available_sections
-    //         .iter()
-    //         .position(|s| s == &self.highlighted_section)
-    //         .unwrap_or(usize::MAX);
-    //
-    //     let next_index =
-    //         (current_index.wrapping_add(1)) % (available_sections.len().wrapping_add(1));
-    //
-    //     self.highlighted_section = if next_index < available_sections.len() {
-    //         available_sections[next_index].clone()
-    //     } else {
-    //         HighlightedSection::None
-    //     };
-    // }
-
-    // fn submit_user_input(&mut self) {
-    //     let input = self.input.value().trim().to_string();
-    //     self.start_spinner();
-    //
-    //     if input.is_empty() {
-    //         return;
-    //     }
-    //
-    //     self.add_message(Message::new(MessageType::User, input.clone()));
-    //
-    //     // Send a command to process the message
-    //     if let Err(e) = self.action_sender.send(Action::ProcessMessage(input)) {
-    //         self.add_message(Message::new(
-    //             MessageType::System,
-    //             format!("Error sending message command: {:#?}", e),
-    //         ));
-    //     }
-    //
-    //     // Clear the user input
-    //     self.input = Input::default();
-    //     self.scroll_to_bottom();
-    // }
-
     // TODO: Make unified and dynamic setting for all settings. cf the Ratatui examples
-
-    pub fn start_spinner(&mut self) {
-        self.spinner_active = true;
-        self.last_spinner_update = Instant::now();
-    }
-
-    pub fn stop_spinner(&mut self) {
-        self.spinner_active = false;
-    }
-
-    pub fn update_spinner(&mut self) {
-        if self.spinner_active && self.last_spinner_update.elapsed() >= Duration::from_millis(100) {
-            self.spinner.next_frame();
-            self.last_spinner_update = Instant::now();
-        }
-    }
-
-    pub fn scroll_up(&mut self) {
-        if self.game_content_scroll > 0 {
-            self.game_content_scroll -= 1;
-        }
-    }
-
-    pub fn scroll_down(&mut self) {
-        if self.game_content_scroll < self.total_lines.saturating_sub(self.visible_lines) {
-            self.game_content_scroll += 1;
-        }
-    }
-
-    pub fn scroll_to_bottom(&mut self) {
-        // Recalculate total lines
-        self.total_lines = self.calculate_total_lines();
-
-        // Update the scroll position
-        self.game_content_scroll = self.total_lines.saturating_sub(self.visible_lines);
-    }
-
-    fn calculate_total_lines(&self) -> usize {
-        self.game_content
-            .borrow()
-            .iter()
-            .map(|message| {
-                let wrapped_lines = textwrap::wrap(&message.content, self.visible_lines);
-                wrapped_lines.len()
-            })
-            .sum()
-    }
-
-    pub fn update_scroll(&mut self) {
-        let max_scroll = self.total_lines.saturating_sub(self.visible_lines);
-        self.game_content_scroll = self.game_content_scroll.min(max_scroll);
-    }
-
-    // pub fn add_debug_message(&self, message: String) {
-    //     if !self.settings.debug_mode {
-    //         return;
-    //     }
-    //
-    //     if let Ok(mut file) = OpenOptions::new()
-    //         .create(true)
-    //         .append(true)
-    //         .open("sharad_debug.log")
-    //     {
-    //         let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S");
-    //         let _ = writeln!(file, "[{}] {}", timestamp, &message);
-    //     }
-    // }
 
     pub fn add_message(&self, message: message::Message) {
         self.game_content.borrow_mut().push(message);
@@ -953,30 +698,6 @@ impl<'a> App<'a> {
     //         }
     //     }
     // }
-
-    pub fn load_image_from_file(&mut self, path: PathBuf) -> Result<()> {
-        if let Some(current_game_state) = self.current_game.clone() {
-            let path_clone = path.clone();
-            tokio::spawn(async move {
-                current_game_state.lock().await.image_path = Some(path_clone);
-            });
-        };
-
-        let picker: Picker = Picker::from_query_stdio()?;
-
-        // Open and decode the image file
-        match image::ImageReader::open(&path)?.decode() {
-            Ok(image) => {
-                // Store the image with the new resize protocol
-                self.image = Some(picker.new_resize_protocol(image));
-                Ok(())
-            }
-            Err(err) => {
-                // Convert ImageError to ShadowrunError using the implemented From trait
-                Err(ShadowrunError::from(err).into())
-            }
-        }
-    }
 
     // TODO: move this to save_manager
     // pub async fn save_current_game(&mut self) -> Result<()> {

@@ -75,7 +75,7 @@ impl Component for LoadMenu {
         }
     }
 
-    fn render(&self, area: Rect, buffer: &mut Buffer, context: &Context) {
+    fn render(&mut self, area: Rect, buffer: &mut Buffer, context: &Context) {
         let saves_length = context.save_manager.available_saves.len() as u16;
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -106,10 +106,12 @@ impl Component for LoadMenu {
 
 impl LoadMenu {
     pub fn default(context: Context) -> Self {
-        Self {
+        let mut menu = Self {
             state: StatefulList::with_items(context.save_manager.available_saves.clone()),
             backspace_counter: false,
-        }
+        };
+        menu.state.next();
+        menu
     }
     fn render_console(&self, buffer: &mut Buffer, context: &Context, area: Rect) {
         let console_text = if context.save_manager.available_saves.is_empty() {
@@ -216,7 +218,7 @@ impl LoadMenu {
     // }
     //
     //
-    // pub async fn load_game(&mut self, save_path: &PathBuf) -> Result<()> {
+    // pub async fn load_game(&self, save_path: &PathBuf) -> Result<GameState> {
     //     self.save_manager = self.save_manager.clone().load_from_file(save_path)?;
     //
     //     let game_state = self

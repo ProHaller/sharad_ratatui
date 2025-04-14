@@ -1,10 +1,10 @@
 // /ui/sheet/sheet.rs
 use ratatui::{
-    Frame,
+    buffer::Buffer,
     layout::{Alignment, Constraint, Direction, Flex, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::*,
+    widgets::{Block, BorderType, Borders, Cell, Paragraph, Row, Table, Widget, Wrap},
 };
 use std::cmp::min;
 
@@ -14,7 +14,7 @@ use crate::{character::CharacterSheet, character::DerivedAttributes, ui::descrip
 use super::{draw_augmentations, draw_inventory, draw_qualities, draw_resources};
 
 pub fn draw_character_sheet(
-    f: &mut Frame,
+    buffer: &mut Buffer,
     sheet: &CharacterSheet,
     area: Rect,
     highlighted: &HighlightedSection,
@@ -31,15 +31,15 @@ pub fn draw_character_sheet(
         .split(area);
 
     // Drawing individual sections of the character sheet.
-    draw_basic_info(f, sheet, chunks[0], highlighted);
-    draw_attributes_and_derived(f, sheet, chunks[1], highlighted);
-    draw_skills_qualities_and_other(f, sheet, chunks[2], highlighted);
-    draw_contacts(f, sheet, chunks[3], highlighted);
+    draw_basic_info(buffer, sheet, chunks[0], highlighted);
+    draw_attributes_and_derived(buffer, sheet, chunks[1], highlighted);
+    draw_skills_qualities_and_other(buffer, sheet, chunks[2], highlighted);
+    draw_contacts(buffer, sheet, chunks[3], highlighted);
 }
 
 // Display basic information like name, race, and gender.
 fn draw_basic_info(
-    f: &mut Frame,
+    buffer: &mut Buffer,
     sheet: &CharacterSheet,
     area: Rect,
     highlighted: &HighlightedSection,
@@ -85,11 +85,11 @@ fn draw_basic_info(
         )
         .alignment(Alignment::Center)
         .wrap(Wrap { trim: true });
-    f.render_widget(basic_info, area);
+    basic_info.render(area, buffer);
 }
 
 fn draw_attributes_and_derived(
-    f: &mut Frame,
+    buffer: &mut Buffer,
     sheet: &CharacterSheet,
     area: Rect,
     highlighted: &HighlightedSection,
@@ -99,11 +99,11 @@ fn draw_attributes_and_derived(
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(area);
 
-    draw_attributes(f, sheet, chunks[0], highlighted);
-    draw_derived_attributes(f, sheet, chunks[1], highlighted);
+    draw_attributes(buffer, sheet, chunks[0], highlighted);
+    draw_derived_attributes(buffer, sheet, chunks[1], highlighted);
 }
 fn draw_attributes(
-    f: &mut Frame,
+    buffer: &mut Buffer,
     sheet: &CharacterSheet,
     area: Rect,
     highlighted: &HighlightedSection,
@@ -169,11 +169,12 @@ fn draw_attributes(
         )
         .row_highlight_style(Style::default().add_modifier(Modifier::BOLD));
 
-    f.render_widget(table, area);
+    // HACK: Check the stateful table to improve on the highlights
+    table.render(area, buffer);
 }
 
 fn draw_derived_attributes(
-    f: &mut Frame,
+    buffer: &mut Buffer,
     sheet: &CharacterSheet,
     area: Rect,
     highlighted: &HighlightedSection,
@@ -227,11 +228,11 @@ fn draw_derived_attributes(
         .column_spacing(1)
         .flex(Flex::Center);
 
-    f.render_widget(table, area);
+    table.render(area, buffer);
 }
 
 fn draw_skills_qualities_and_other(
-    f: &mut Frame,
+    buffer: &mut Buffer,
     sheet: &CharacterSheet,
     area: Rect,
     highlighted: &HighlightedSection,
@@ -244,14 +245,14 @@ fn draw_skills_qualities_and_other(
         ])
         .split(area);
 
-    draw_skills(f, sheet, chunks[0], highlighted);
-    draw_other_info(f, sheet, chunks[1], highlighted);
+    draw_skills(buffer, sheet, chunks[0], highlighted);
+    draw_other_info(buffer, sheet, chunks[1], highlighted);
 }
 
 // Specific function to handle the display of skills.
 
 fn draw_skills(
-    f: &mut Frame,
+    buffer: &mut Buffer,
     sheet: &CharacterSheet,
     area: Rect,
     highlighted: &HighlightedSection,
@@ -328,7 +329,7 @@ fn draw_skills(
                 )),
         );
 
-    f.render_widget(table, area);
+    table.render(area, buffer);
 }
 
 // Function to handle the display of qualities.
@@ -336,7 +337,7 @@ fn draw_skills(
 // Function to display miscellaneous information.
 
 fn draw_other_info(
-    f: &mut Frame,
+    buffer: &mut Buffer,
     sheet: &CharacterSheet,
     area: Rect,
     highlighted: &HighlightedSection,
@@ -366,14 +367,14 @@ fn draw_other_info(
         ])
         .split(chunks[1]);
 
-    draw_qualities(f, sheet, left_chunks[0], highlighted);
-    draw_resources(f, sheet, left_chunks[1], highlighted);
-    draw_augmentations(f, sheet, right_chunks[0], highlighted);
-    draw_inventory(f, sheet, right_chunks[1], highlighted);
+    draw_qualities(buffer, sheet, left_chunks[0], highlighted);
+    draw_resources(buffer, sheet, left_chunks[1], highlighted);
+    draw_augmentations(buffer, sheet, right_chunks[0], highlighted);
+    draw_inventory(buffer, sheet, right_chunks[1], highlighted);
 }
 
 fn draw_contacts(
-    f: &mut Frame,
+    buffer: &mut Buffer,
     sheet: &CharacterSheet,
     area: Rect,
     highlighted: &HighlightedSection,
@@ -415,7 +416,7 @@ fn draw_contacts(
             .title(" Contacts "),
     );
 
-    f.render_widget(table, area);
+    table.render(area, buffer);
 }
 
 pub fn chunk_attributes(attributes: Vec<(&str, u8)>, chunk_nb: u8) -> Vec<Line<'_>> {

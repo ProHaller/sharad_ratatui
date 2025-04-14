@@ -60,7 +60,7 @@ impl Component for ImageMenu {
         }
     }
 
-    fn render(&self, area: Rect, buffer: &mut Buffer, context: &Context) {
+    fn render(&mut self, area: Rect, buffer: &mut Buffer, context: &Context) {
         let centered_area =
             center_rect(area, Constraint::Percentage(70), Constraint::Percentage(50));
         let chunks = Layout::default()

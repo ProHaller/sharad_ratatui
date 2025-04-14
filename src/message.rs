@@ -33,9 +33,9 @@ pub struct Speaker {
 
 #[derive(Serialize, Deserialize, Debug, Hash, Clone)]
 pub enum Gender {
-    NonBinary,
     Female,
     Male,
+    NonBinary,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

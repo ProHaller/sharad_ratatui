@@ -1,16 +1,16 @@
 // /ui/sheet/resources.rs
 use ratatui::{
-    Frame,
+    buffer::Buffer,
     layout::{Constraint, Rect},
     style::{Color, Style},
-    widgets::{Block, BorderType, Borders, Cell, Row, Table},
+    widgets::{Block, BorderType, Borders, Cell, Row, Table, Widget},
 };
 
 use crate::character::CharacterSheet;
 use crate::ui::game::HighlightedSection;
 
 pub fn draw_resources(
-    f: &mut Frame,
+    buffer: &mut Buffer,
     sheet: &CharacterSheet,
     area: Rect,
     highlighted: &HighlightedSection,
@@ -44,5 +44,5 @@ pub fn draw_resources(
             .title(" Resources "),
     );
 
-    f.render_widget(table, area);
+    table.render(area, buffer);
 }

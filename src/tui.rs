@@ -15,11 +15,14 @@ use ratatui::crossterm::{
     },
     terminal::{EnterAlternateScreen, LeaveAlternateScreen},
 };
+use ratatui_image::picker::Picker;
 use tokio::{
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
+
+use crate::{MIN_HEIGHT, MIN_WIDTH};
 
 #[derive(Clone, Debug)]
 pub enum TuiEvent {
@@ -31,6 +34,7 @@ pub enum TuiEvent {
     Render,
     FocusGained,
     FocusLost,
+    // TODO: Maybe I don't need copypasta anymore?
     Paste(String),
     Key(KeyEvent),
     Mouse(MouseEvent),
@@ -39,6 +43,7 @@ pub enum TuiEvent {
 
 pub struct Tui {
     pub terminal: ratatui::Terminal<Backend<std::io::Stderr>>,
+    pub picker: Picker,
     pub task: JoinHandle<()>,
     pub cancellation_token: CancellationToken,
     pub event_rx: UnboundedReceiver<TuiEvent>,
@@ -54,6 +59,7 @@ impl Tui {
         let tick_rate = 4.0;
         let frame_rate = 60.0;
         let terminal = ratatui::Terminal::new(Backend::new(std::io::stderr()))?;
+        let picker = Picker::from_query_stdio()?;
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let cancellation_token = CancellationToken::new();
         let task = tokio::spawn(async {});
@@ -61,6 +67,7 @@ impl Tui {
         let paste = true;
         Ok(Self {
             terminal,
+            picker,
             task,
             cancellation_token,
             event_rx,
@@ -181,6 +188,7 @@ impl Tui {
         if self.paste {
             crossterm::execute!(std::io::stderr(), EnableBracketedPaste)?;
         }
+        self.ensure_minimum_terminal_size()?;
         self.start();
         Ok(())
     }
@@ -219,6 +227,17 @@ impl Tui {
 
     pub async fn next(&mut self) -> Option<TuiEvent> {
         self.event_rx.recv().await
+    }
+
+    pub fn ensure_minimum_terminal_size(&self) -> Result<()> {
+        let size = self.terminal.size()?; // Get current size of the terminal.
+        // If the current size is less than minimum, resize to the minimum required.
+        if size.width < MIN_WIDTH || size.height < MIN_HEIGHT {
+            //need to send a TuiEvent::Resize(size)
+            self.event_tx
+                .send(TuiEvent::Resize(MIN_WIDTH, MIN_HEIGHT))?;
+        }
+        Ok(())
     }
 }
 

@@ -69,7 +69,7 @@ impl Component for MainMenu<'_> {
             _ => None,
         }
     }
-    fn render(&self, area: Rect, buffer: &mut Buffer, context: &Context) {
+    fn render(&mut self, area: Rect, buffer: &mut Buffer, context: &Context) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .flex(ratatui::layout::Flex::Center)

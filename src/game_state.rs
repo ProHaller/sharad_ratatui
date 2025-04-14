@@ -9,11 +9,11 @@ use serde::{Deserialize, Serialize};
 pub struct GameState {
     pub assistant_id: String,
     pub thread_id: String,
-    pub main_character_sheet: Option<CharacterSheet>,
+    pub characters: Vec<CharacterSheet>,
     pub save_name: String,
+    pub main_character_sheet: Option<CharacterSheet>,
     pub save_path: Option<PathBuf>,
     pub image_path: Option<PathBuf>,
-    pub characters: Vec<CharacterSheet>,
 }
 
 // Implement the Debug trait manually to control what information is shown when debug printed.

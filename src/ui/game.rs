@@ -1,33 +1,28 @@
 use super::{
-    Component, center_rect, chunk_attributes,
-    descriptions::*,
-    draw::{MIN_HEIGHT, MIN_WIDTH},
-    draw_character_sheet, get_attributes, get_derived,
+    Component, MainMenu, center_rect, chunk_attributes, descriptions::*, draw_character_sheet,
+    get_attributes, get_derived, input::Pastable, spinner::Spinner,
 };
+use crate::ai::GameAI;
 use crate::{
-    app::{Action, App, InputMode},
-    character::CharacterSheet,
-    context::{self, Context},
+    app::{Action, InputMode},
+    context::Context,
     game_state::GameState,
+    imager::load_image_from_file,
     message::{GameMessage, Message, MessageType, UserMessage},
-    save,
-    ui::spinner::spinner_frame,
 };
 
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use derive_more::Debug;
 use ratatui::{
-    Frame,
     buffer::Buffer,
-    layout::{Alignment, Constraint, Direction, Flex, Layout, Position, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::*,
 };
-use ratatui_image::{StatefulImage, protocol::StatefulProtocol};
-use std::cell::RefCell;
-use tui_input::Input;
-use unicode_segmentation::UnicodeSegmentation;
-use unicode_width::UnicodeWidthStr;
+use ratatui_image::{StatefulImage, picker::Picker, protocol::StatefulProtocol};
+use std::{fs, path::Path, time::Instant};
+use tui_input::{Input, backend::crossterm::EventHandler};
 
 // TODO: Make sure I still need the cache
 //
@@ -37,11 +32,26 @@ use unicode_width::UnicodeWidthStr;
 // }
 
 pub struct InGame {
-    state: GameState,
-    content: Vec<Message>,
-    input: Input,
-    highlighted_section: HighlightedSection,
-    image: Option<StatefulProtocol>,
+    // GamePlay state:
+    pub state: GameState,
+    pub content: Vec<Message>,
+    pub image: Option<StatefulProtocol>,
+
+    //AI
+    pub ai: GameAI,
+
+    // User actions:
+    pub input: Input,
+    pub highlighted_section: HighlightedSection,
+
+    // UI state:
+    // TODO: implement the spinner in a seprarte struct and thread
+    pub spinner: Spinner,
+    pub last_spinner_update: Instant,
+    pub spinner_active: bool,
+    pub total_lines: usize,
+    pub visible_lines: usize,
+    pub content_scroll: usize,
 }
 
 impl std::fmt::Debug for InGame {
@@ -76,11 +86,16 @@ pub enum HighlightedSection {
 }
 
 impl Component for InGame {
-    fn on_key(&mut self, key: crossterm::event::KeyEvent, context: Context) -> Option<Action> {
-        todo!()
+    fn on_key(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
+        match context.input_mode {
+            InputMode::Normal => self.handle_normal_input(key, context),
+            InputMode::Editing => self.handle_edit_input(key, context),
+            // TODO: handle the voice recording
+            InputMode::Recording => Some(Action::SwitchInputMode(InputMode::Normal)),
+        }
     }
 
-    fn render(&self, area: Rect, buffer: &mut Buffer, context: &Context) {
+    fn render(&mut self, area: Rect, buffer: &mut Buffer, context: &Context) {
         // TODO:  Do I need this cache ?
         //
         // let (_main_chunk, left_chunk, game_info_area) = CACHED_LAYOUTS.with(|cache: &Cache| {
@@ -106,7 +121,7 @@ impl Component for InGame {
         let screen_split_layout = Layout::default()
             .direction(Direction::Horizontal)
             .flex(ratatui::layout::Flex::Center)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
+            .constraints([Constraint::Percentage(60), Constraint::Percentage(40)].as_ref())
             .split(area);
         let left_screen = Layout::default()
             .direction(Direction::Vertical)
@@ -118,52 +133,15 @@ impl Component for InGame {
 
         self.draw_user_input(buffer, context, left_screen[1]);
 
-        // TODO: Spinner logic
-        //
-        // app.update_spinner();
-        // if app.spinner_active {
-        //     let spinner_area = Rect::new(
-        //         left_chunk[0].x,
-        //         left_chunk[0].bottom() - 1,
-        //         left_chunk[0].width,
-        //         1,
-        //     );
-        //
-        //     let spinner_text = spinner_frame(&app.spinner);
-        //     let spinner_widget = Paragraph::new(spinner_text)
-        //         .style(Style::default().fg(Color::Green))
-        //         .alignment(Alignment::Center);
-        //
-        //     f.render_widget(spinner_widget, spinner_area);
-        // }
-
         match &self.state.main_character_sheet {
-            Some(_sheet) => {
-                let center_rect = center_rect(
+            Some(sheet) => {
+                draw_character_sheet(
+                    buffer,
+                    sheet,
                     screen_split_layout[1],
-                    Constraint::Percentage(100),
-                    Constraint::Length(3),
+                    &self.highlighted_section,
                 );
-                let center_block = Block::bordered();
-                let no_character =
-                    Paragraph::new("Character Sheet available but not yet implemented")
-                        .style(Style::default().fg(Color::Red))
-                        .alignment(Alignment::Center)
-                        .block(center_block.padding(Padding {
-                            left: 0,
-                            right: 0,
-                            top: 1,
-                            bottom: 0,
-                        }));
-                no_character.render(center_rect, buffer);
-                // TODO: Implement the drawing of the character sheet
-                // draw_character_sheet(
-                //     f,
-                //     sheet,
-                //     screen_split_layout[1],
-                //     &self.highlighted_section,
-                // );
-                // draw_detailed_info(app, f, sheet, screen_split_layout[0]);
+                self.draw_detailed_info(screen_split_layout[0], buffer, context);
             }
             None => {
                 let center_rect = center_rect(
@@ -188,17 +166,66 @@ impl Component for InGame {
 }
 
 impl InGame {
-    pub fn draw_detailed_info(&mut self, area: Rect, buffer: &mut Buffer, context: &Context) {
+    pub fn new(state: GameState, picker: &Picker, game_ai: GameAI) -> Self {
+        // TODO: Propagate the error
+        let image = match &state.image_path {
+            Some(image_path) => match load_image_from_file(picker, image_path) {
+                Ok(image) => image,
+                Err(e) => {
+                    let error_message = format!(
+                        " Path: {:?} Image error: {:?} ",
+                        state.image_path,
+                        e.to_string()
+                    );
+                    let log_path = Path::new("./error_log_image.txt");
+                    if let Err(log_err) = fs::write(log_path, &error_message) {
+                        eprintln!("Failed to write error log: {}", log_err);
+                    }
+                    panic!("Failed to load image: {}", error_message);
+                }
+            },
+            None => {
+                let error_message = "image_path is None".to_string();
+                let log_path = Path::new("./error_log_path.txt");
+                if let Err(log_err) = fs::write(log_path, &error_message) {
+                    eprintln!("Failed to write error log: {}", log_err);
+                }
+                panic!("{}", error_message);
+            }
+        };
+
+        Self {
+            state,
+            // Content should go fetch the meesages from the memory/AI
+            content: Vec::new(),
+            image: Some(image),
+            // TODO: Input should be autonomous with info about its size and scroll
+            input: Input::default(),
+            highlighted_section: HighlightedSection::None,
+            spinner: Spinner::new(),
+            last_spinner_update: Instant::now(),
+            spinner_active: false,
+            total_lines: 0,
+            visible_lines: 0,
+            content_scroll: 0,
+            ai: game_ai,
+        }
+    }
+
+    pub fn draw_detailed_info(&mut self, area: Rect, buffer: &mut Buffer, _context: &Context) {
         // Early return if HighlightedSection::None
         if matches!(self.highlighted_section, HighlightedSection::None) {
             return;
         }
+
+        let detail_area = Layout::horizontal([Constraint::Ratio(1, 2); 2]).split(area);
+
         let sheet = self
             .state
             .main_character_sheet
             .as_ref()
             .expect("Expected a character sheet");
-        let attributes = get_attributes(&sheet);
+        let attributes = get_attributes(sheet);
         let detail_text = match self.highlighted_section {
             HighlightedSection::Backstory => vec![Line::from(vec![Span::raw(&sheet.backstory)])],
             HighlightedSection::Inventory => sheet
@@ -305,6 +332,8 @@ impl InGame {
             HighlightedSection::None => unreachable!(),
         };
 
+        Clear.render(area, buffer);
+
         // Create a block for the floating frame
         let block = Block::default()
             .border_type(BorderType::Rounded)
@@ -329,40 +358,33 @@ impl InGame {
             })
             .style(Style::default()); // Make the block opaque
 
-        // HACK: Not sure I need the clear.
-        // Clear.render(area, buffer);
-        block.render(area, buffer);
-
         let detail_paragraph = Paragraph::new(detail_text) // Use
             // the wrapped text as the Paragraph detail_text)
             .style(Style::default().fg(Color::White))
             .alignment(Alignment::Left)
-            .wrap(Wrap { trim: true });
+            .wrap(Wrap { trim: true })
+            .block(block);
 
         // Render the content inside the block
-        if let Some(image) = self.image.as_mut() {
-            // HACK: Probably a better way to do this.
-            let image_rect = Rect::new(1, 1, (area.width + 2) / 3, area.height - 2);
+        if let Some(image) = &mut self.image {
+            // HACK: Probably a better way to render the image.
             let image_block = Block::default()
                 .border_type(BorderType::Rounded)
                 .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::White))
                 .title(" Portrait ");
 
-            detail_paragraph.render(area, buffer);
+            detail_paragraph.render(detail_area[1], buffer);
+            image_block.render(detail_area[0], buffer);
             // FIX: How to make the first rendering faster? Pre-rendering?
-            StatefulImage::new().render(image_block.inner(image_rect), buffer, image);
+            StatefulImage::new().render(detail_area[0].inner(Margin::new(1, 1)), buffer, image);
         } else {
             detail_paragraph.render(area, buffer);
         }
     }
 
-    fn draw_game_content(&self, buffer: &mut Buffer, context: &Context, area: Rect) {
-        let save_name = if let Some(game) = &context.save_manager.current_save {
-            game.save_name.clone()
-        } else {
-            "Loading... ".into()
-        };
-
+    fn draw_game_content(&self, buffer: &mut Buffer, _context: &Context, area: Rect) {
+        let save_name = &self.state.save_name;
         let fluff_block = Block::default()
             .border_type(BorderType::Rounded)
             .title(if save_name.is_empty() {
@@ -422,6 +444,7 @@ impl InGame {
         // app.update_scroll();
     }
 
+    // FIX:  the cursor is not currently displayed properly. cf: https://github.com/ratatui/ratatui/discussions/872
     fn draw_user_input(&self, buffer: &mut Buffer, context: &Context, area: Rect) {
         let block = Block::default()
             .border_type(BorderType::Rounded)
@@ -439,66 +462,64 @@ impl InGame {
                 InputMode::Recording => Color::Red,
             }));
 
-        let inner_area = block.inner(area);
-        block.render(inner_area, buffer);
+        // let max_width = area.width as usize - 2;
+        //
+        // let text = self.input.value();
+        //
+        // // Wrap the text manually, considering grapheme clusters and their widths
+        // let mut wrapped_lines = Vec::new();
+        // let mut current_line = String::new();
+        // let mut current_width = 0;
+        //
+        // for grapheme in text.graphemes(true) {
+        //     let grapheme_width = grapheme.width();
+        //     if current_width + grapheme_width > max_width {
+        //         wrapped_lines.push(current_line);
+        //         current_line = String::new();
+        //         current_width = 0;
+        //     }
+        //     current_line.push_str(grapheme);
+        //     current_width += grapheme_width;
+        // }
+        // if !current_line.is_empty() {
+        //     wrapped_lines.push(current_line);
+        // }
+        //
+        // // Calculate cursor position
+        // let cursor_position = self.input.visual_cursor();
+        // let mut cursor_x = 0;
+        // let mut cursor_y = 0;
+        // let mut total_width = 0;
+        //
+        // for (line_idx, line) in wrapped_lines.iter().enumerate() {
+        //     let line_width: usize = line.width();
+        //     if total_width + line_width >= cursor_position {
+        //         cursor_y = line_idx;
+        //         cursor_x = cursor_position - total_width;
+        //         break;
+        //     }
+        //     total_width += line_width;
+        //     cursor_y = line_idx + 1;
+        // }
+        //
+        // // Ensure cursor_x doesn't exceed the line width
+        // if cursor_y < wrapped_lines.len() {
+        //     cursor_x = cursor_x.min(wrapped_lines[cursor_y].width());
+        // }
+        //
+        // let joined_lines = wrapped_lines.join("\n");
 
-        let max_width = inner_area.width as usize - 2;
-
-        let text = self.input.value();
-
-        // Wrap the text manually, considering grapheme clusters and their widths
-        let mut wrapped_lines = Vec::new();
-        let mut current_line = String::new();
-        let mut current_width = 0;
-
-        for grapheme in text.graphemes(true) {
-            let grapheme_width = grapheme.width();
-            if current_width + grapheme_width > max_width {
-                wrapped_lines.push(current_line);
-                current_line = String::new();
-                current_width = 0;
-            }
-            current_line.push_str(grapheme);
-            current_width += grapheme_width;
-        }
-        if !current_line.is_empty() {
-            wrapped_lines.push(current_line);
-        }
-
-        // Calculate cursor position
-        let cursor_position = self.input.visual_cursor();
-        let mut cursor_x = 0;
-        let mut cursor_y = 0;
-        let mut total_width = 0;
-
-        for (line_idx, line) in wrapped_lines.iter().enumerate() {
-            let line_width: usize = line.width();
-            if total_width + line_width >= cursor_position {
-                cursor_y = line_idx;
-                cursor_x = cursor_position - total_width;
-                break;
-            }
-            total_width += line_width;
-            cursor_y = line_idx + 1;
-        }
-
-        // Ensure cursor_x doesn't exceed the line width
-        if cursor_y < wrapped_lines.len() {
-            cursor_x = cursor_x.min(wrapped_lines[cursor_y].width());
-        }
-
-        let joined_lines = wrapped_lines.join("\n");
-
-        let input = Paragraph::new(joined_lines)
+        let input = Paragraph::new(self.input.value())
             .style(Style::default().fg(match context.input_mode {
                 InputMode::Normal => Color::DarkGray,
                 InputMode::Editing => Color::Yellow,
                 InputMode::Recording => Color::Red,
             }))
             .alignment(Alignment::Left)
-            .wrap(Wrap { trim: false });
+            .wrap(Wrap { trim: false })
+            .block(block);
 
-        input.render(inner_area, buffer);
+        input.render(area, buffer);
 
         // TODO: Verify the position of the cursor in the input field
 
@@ -509,12 +530,6 @@ impl InGame {
         // }
         //
         // // Set cursor
-        // if let InputMode::Editing = context.input_mode {
-        //     f.set_cursor_position(Position::new(
-        //         inner_area.x + cursor_x as u16,
-        //         inner_area.y + cursor_y as u16,
-        //     ));
-        // }
     }
 
     fn parse_game_content(&self, max_width: usize) -> Vec<(Line<'static>, Alignment)> {
@@ -574,10 +589,160 @@ impl InGame {
 
         all_lines
     }
+
+    pub fn handle_edit_input(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
+        match key.code {
+            KeyCode::Enter | KeyCode::Esc => Some(Action::SwitchInputMode(InputMode::Normal)),
+            KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.input.paste(context);
+                None
+            }
+            _ => {
+                self.input.handle_event(&crossterm::event::Event::Key(key));
+                None
+            }
+        }
+    }
+
+    fn handle_normal_input(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
+        match key.code {
+            KeyCode::Char('e') => Some(Action::SwitchInputMode(InputMode::Editing)),
+            KeyCode::Char('r') => {
+                // TODO: Handle Recording
+                // Some(Action::SwitchInputMode(InputMode::Recording))
+                None
+            }
+            // HACK: This should be a different key handling for the detail section
+            KeyCode::Esc if (self.highlighted_section != HighlightedSection::None) => {
+                self.highlighted_section = HighlightedSection::None;
+                None
+            }
+            KeyCode::Esc => {
+                self.content.clear();
+                self.input.reset();
+                Some(Action::SwitchComponent(Box::new(MainMenu::default())))
+            }
+            KeyCode::Enter if !self.input.value().is_empty() => {
+                Some(Action::SendMessage(self.input.value().into()))
+            }
+            KeyCode::PageUp => {
+                for _ in 0..self.visible_lines {
+                    self.scroll_up();
+                }
+                None
+            }
+            KeyCode::PageDown => {
+                for _ in 0..self.visible_lines {
+                    self.scroll_down();
+                }
+                None
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.scroll_up();
+                None
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.scroll_down();
+                None
+            }
+
+            KeyCode::Tab => {
+                self.cycle_highlighted_section();
+                None
+            }
+
+            KeyCode::Home => {
+                self.content_scroll = 0;
+                None
+            }
+            KeyCode::End => {
+                self.scroll_to_bottom();
+                None
+            }
+            _ => None,
+        }
+    }
+
+    pub fn update_scroll(&mut self) {
+        let max_scroll = self.total_lines.saturating_sub(self.visible_lines);
+        self.content_scroll = self.content_scroll.min(max_scroll);
+    }
+
+    pub fn scroll_up(&mut self) {
+        if self.content_scroll > 0 {
+            self.content_scroll -= 1;
+        }
+    }
+
+    pub fn scroll_down(&mut self) {
+        if self.content_scroll < self.total_lines.saturating_sub(self.visible_lines) {
+            self.content_scroll += 1;
+        }
+    }
+
+    pub fn scroll_to_bottom(&mut self) {
+        // Recalculate total lines
+        self.total_lines = self.calculate_total_lines();
+
+        // Update the scroll position
+        self.content_scroll = self.total_lines.saturating_sub(self.visible_lines);
+    }
+
+    fn calculate_total_lines(&self) -> usize {
+        self.content
+            .iter()
+            .map(|message| {
+                let wrapped_lines = textwrap::wrap(&message.content, self.visible_lines);
+                wrapped_lines.len()
+            })
+            .sum()
+    }
+    fn cycle_highlighted_section(&mut self) {
+        let Some(character_sheet) = &mut self.state.main_character_sheet else {
+            return;
+        };
+
+        let available_sections = [
+            Some(HighlightedSection::Backstory),
+            Some(HighlightedSection::Attributes(0)),
+            Some(HighlightedSection::Attributes(1)),
+            Some(HighlightedSection::Attributes(2)),
+            Some(HighlightedSection::Derived(0)),
+            Some(HighlightedSection::Derived(1)),
+            Some(HighlightedSection::Skills),
+            Some(HighlightedSection::Qualities),
+            (!character_sheet.cyberware.is_empty()).then_some(HighlightedSection::Cyberware),
+            (!character_sheet.bioware.is_empty()).then_some(HighlightedSection::Bioware),
+            Some(HighlightedSection::Resources),
+            (!character_sheet.inventory.is_empty()).then_some(HighlightedSection::Inventory),
+            (!character_sheet.contacts.is_empty()).then_some(HighlightedSection::Contact),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+
+        if available_sections.is_empty() {
+            self.highlighted_section = HighlightedSection::None;
+            return;
+        }
+
+        let current_index = available_sections
+            .iter()
+            .position(|s| s == &self.highlighted_section)
+            .unwrap_or(usize::MAX);
+
+        let next_index =
+            (current_index.wrapping_add(1)) % (available_sections.len().wrapping_add(1));
+
+        self.highlighted_section = if next_index < available_sections.len() {
+            available_sections[next_index].clone()
+        } else {
+            HighlightedSection::None
+        };
+    }
 }
 
 // Function to parse markdown-like text to formatted spans.
-
 pub fn parse_markdown(line: String, base_style: Style) -> Line<'static> {
     let mut spans = Vec::new();
     let mut current_text = String::new();
@@ -662,3 +827,29 @@ pub fn parse_markdown(line: String, base_style: Style) -> Line<'static> {
 
     Line::from(spans)
 }
+
+// TODO: add this to the game component
+
+// fn submit_user_input(&mut self) {
+//     let input = self.input.value().trim().to_string();
+//     self.start_spinner();
+//
+//     if input.is_empty() {
+//         return;
+//     }
+//
+//     self.add_message(Message::new(MessageType::User, input.clone()));
+//
+//     // Send a command to process the message
+//     if let Err(e) = self.action_sender.send(Action::ProcessMessage(input)) {
+//         self.add_message(Message::new(
+//             MessageType::System,
+//             format!("Error sending message command: {:#?}", e),
+//         ));
+//     }
+//
+//     // Clear the user input
+//     self.input = Input::default();
+//     self.scroll_to_bottom();
+// }
+//

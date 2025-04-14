@@ -20,7 +20,7 @@ use tokio::runtime::Handle;
 use tui_input::Input;
 use tui_input::backend::crossterm::EventHandler;
 
-use super::{Component, SettingsMenu, center_rect};
+use super::{Component, SettingsMenu, center_rect, input::Pastable};
 
 #[derive(Debug)]
 pub struct ApiKeyInput {
@@ -31,12 +31,13 @@ impl Component for ApiKeyInput {
     fn on_key(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
         match context.input_mode {
             InputMode::Normal => self.handle_normal_input(key, context),
-            InputMode::Editing => self.handle_editing(key, context),
+            InputMode::Editing => self.handle_editing_input(key, context),
+            // TODO: handle the voice recording
             InputMode::Recording => Some(Action::SwitchInputMode(InputMode::Normal)),
         }
     }
 
-    fn render(&self, area: Rect, buffer: &mut Buffer, context: &Context) {
+    fn render(&mut self, area: Rect, buffer: &mut Buffer, context: &Context) {
         let centered_area =
             center_rect(area, Constraint::Percentage(70), Constraint::Percentage(50));
         let chunks = Layout::default()
@@ -106,7 +107,7 @@ impl ApiKeyInput {
         }
     }
 
-    fn handle_editing(&mut self, key: KeyEvent, mut context: Context) -> Option<Action> {
+    fn handle_editing_input(&mut self, key: KeyEvent, mut context: Context) -> Option<Action> {
         // HACK: I should make this into a more robust check for the different cases. maybe an
         // enum
         if self.input.value().contains(' ') {
@@ -126,7 +127,9 @@ impl ApiKeyInput {
                 Some(Action::SwitchInputMode(InputMode::Normal))
             }
             KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.paste(context)
+                self.input.reset();
+                self.input.paste(context);
+                None
             }
             _ => {
                 self.input.handle_event(&crossterm::event::Event::Key(key));
@@ -173,19 +176,12 @@ impl ApiKeyInput {
                 context,
             )))),
             KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.paste(context)
+                self.input.reset();
+                self.input.paste(context);
+                None
             }
             _ => None,
         }
-    }
-    fn paste(&mut self, context: Context) -> Option<Action> {
-        let mut clipboard = context.clipboard;
-        self.input = Input::default().with_value(
-            clipboard
-                .get_contents()
-                .expect("Expected a string from clipboard."),
-        );
-        None
     }
 }
 

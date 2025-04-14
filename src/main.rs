@@ -4,12 +4,19 @@ use crate::app::App;
 
 use core::cmp::Ordering;
 use crossterm::{
-    execute,           // Helper macro to execute terminal commands.
-    terminal::SetSize, // Terminal manipulation utilities.
+    execute, // Helper macro to execute terminal commands.
+    terminal::{LeaveAlternateScreen, SetSize, disable_raw_mode}, // Terminal manipulation utilities.
 };
+use ratatui_image::picker::Picker;
 use self_update::backends::github::{ReleaseList, Update};
 use semver::Version;
-use std::io;
+use std::{
+    io::{self, stdout},
+    panic::{set_hook, take_hook},
+    process::exit,
+    thread::sleep,
+    time::Duration,
+};
 use ui::{MIN_HEIGHT, MIN_WIDTH};
 
 mod ai;
@@ -37,25 +44,11 @@ async fn main() -> io::Result<()> {
     if let Err(e) = update_result {
         eprintln!("Failed to check for updates: {}", e);
     }
-    // Ensure terminal dimensions are correct.
-    ensure_minimum_terminal_size()?;
+    init_panic_hook();
 
     // Run the application and handle errors.
     if let Err(err) = App::new().await.run().await {
         eprintln!("Error: {:#?}", err);
-    }
-
-    Ok(())
-}
-
-fn ensure_minimum_terminal_size() -> io::Result<()> {
-    let (width, height) = crossterm::terminal::size()?; // Get current size of the terminal.
-    // If the current size is less than minimum, resize to the minimum required.
-    if width < MIN_WIDTH || height < MIN_HEIGHT {
-        execute!(
-            io::stdout(),
-            SetSize(MIN_WIDTH.max(width), MIN_HEIGHT.max(height))
-        )?;
     }
     Ok(())
 }
@@ -108,5 +101,18 @@ fn check_for_updates() -> core::result::Result<(), Box<dyn std::error::Error + S
     }
 
     println!();
+    Ok(())
+}
+pub fn init_panic_hook() {
+    let original_hook = take_hook();
+    set_hook(Box::new(move |panic_info| {
+        // intentionally ignore errors here since we're already in a panic
+        let _ = restore_tui();
+        original_hook(panic_info);
+    }));
+}
+pub fn restore_tui() -> io::Result<()> {
+    disable_raw_mode()?;
+    execute!(stdout(), LeaveAlternateScreen)?;
     Ok(())
 }
