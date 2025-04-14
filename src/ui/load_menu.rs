@@ -23,7 +23,7 @@ impl Component for LoadMenu {
     fn on_key(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
         match key.code {
             KeyCode::Enter | KeyCode::Char('l') => self.state.state.selected().map(|selected| {
-                Action::LoadGame(context.save_manager.available_saves[selected].clone())
+                Action::LoadSave(context.save_manager.available_saves[selected].clone())
             }),
             KeyCode::Esc | KeyCode::Char('h') => {
                 Some(Action::SwitchComponent(Box::new(MainMenu::default())))
@@ -66,7 +66,7 @@ impl Component for LoadMenu {
                     let selected = ((digit as usize).saturating_sub(1)) % self.state.items.len();
                     self.state.state.select(Some(selected));
                     let save_name = context.save_manager.available_saves[selected].clone();
-                    Some(Action::LoadGame(save_name))
+                    Some(Action::LoadSave(save_name))
                 } else {
                     None
                 }

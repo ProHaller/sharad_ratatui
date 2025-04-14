@@ -166,7 +166,7 @@ impl Component for InGame {
 }
 
 impl InGame {
-    pub fn new(state: GameState, picker: &Picker, game_ai: GameAI) -> Self {
+    pub fn new(state: GameState, picker: &Picker, game_ai: GameAI, content: Vec<Message>) -> Self {
         // TODO: Propagate the error
         let image = match &state.image_path {
             Some(image_path) => match load_image_from_file(picker, image_path) {
@@ -179,7 +179,7 @@ impl InGame {
         Self {
             state,
             // Content should go fetch the meesages from the memory/AI
-            content: Vec::new(),
+            content,
             image,
             // TODO: Input should be autonomous with info about its size and scroll
             input: Input::default(),

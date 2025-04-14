@@ -12,5 +12,4 @@ pub struct Context<'a> {
     pub clipboard: ClipboardContext,
     pub console_messages: &'a RefCell<Vec<Message>>,
     pub input_mode: &'a InputMode, // TODO: Move it into Input struct
-    pub picker: Picker,
 }

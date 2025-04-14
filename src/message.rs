@@ -1,5 +1,6 @@
 // Import the necessary modules and structs from other parts of the application or crates.
-use crate::character::CharacterSheet;
+use crate::{ai::GameAI, character::CharacterSheet, game_state::GameState};
+
 use async_openai::types::Voice;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -138,6 +139,9 @@ impl std::fmt::Debug for Message {
 // Enumeration for AI-generated messages with different purposes.
 pub enum AIMessage {
     Debug(String),
+    Game((Vec<Message>, GameAI, GameState)),
+    Load(PathBuf),
+    Image(PathBuf),
 }
 
 // Implementation of Message struct, providing a method to create new messages.

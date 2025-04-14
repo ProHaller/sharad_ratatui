@@ -1,5 +1,6 @@
+use crate::{ai, error::Error};
 // /app.rs
-use crate::context::Context;
+use crate::context::{self, Context};
 use crate::{
     ai::GameAI,
     error::{AppError, Result, ShadowrunError},
@@ -24,8 +25,9 @@ use tokio::sync::{Mutex, RwLock, mpsc};
 
 pub enum Action {
     Quit,
-    LoadGame(PathBuf),
-    StartNewGame(String),
+    LoadSave(PathBuf),
+    CreateNewGame(String),
+    StartGame(InGame),
     ProcessMessage(String),
     SendMessage(String),
     AIResponse(Box<Result<GameMessage>>),
@@ -64,9 +66,7 @@ pub struct App<'a> {
     ai_client: Option<GameAI>,
 
     // --- UI elements
-    current_save_name: Arc<RwLock<String>>,
-    current_game: Option<Arc<Mutex<GameState>>>,
-    game_content: RefCell<Vec<message::Message>>,
+    console_messages: RefCell<Vec<message::Message>>,
 
     ai_sender: mpsc::UnboundedSender<AIMessage>,
     ai_receiver: mpsc::UnboundedReceiver<AIMessage>,
@@ -107,9 +107,7 @@ impl<'a> App<'a> {
             ai_client: ai,
             context: None,
             input_mode: InputMode::Normal,
-            game_content: RefCell::new(Vec::new()),
-            current_game: None,
-            current_save_name: Arc::new(RwLock::new(String::new())),
+            console_messages: RefCell::new(Vec::new()),
             ai_sender,
             ai_receiver,
 
@@ -139,9 +137,8 @@ impl<'a> App<'a> {
                     save_manager: &mut self.save_manager,
                     settings: &mut self.settings,
                     clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
-                    console_messages: &self.game_content,
+                    console_messages: &self.console_messages,
                     input_mode: &self.input_mode,
-                    picker,
                 };
                 self.component
                     .render(frame.area(), frame.buffer_mut(), &context)
@@ -152,9 +149,13 @@ impl<'a> App<'a> {
                 InputMode::Editing => tui.terminal.show_cursor()?,
                 _ => tui.terminal.hide_cursor()?,
             };
+
             if let Some(event) = tui.next().await {
                 // `tui.next().await` blocks till next event
                 self.handle_tui_event(event)?;
+            };
+            if let Some(ai_message) = self.next_ai_message() {
+                self.handle_ai_message(ai_message)?;
             };
 
             if !self.running {
@@ -284,6 +285,31 @@ impl<'a> App<'a> {
         // }
     }
 
+    pub fn next_ai_message(&mut self) -> Option<AIMessage> {
+        self.ai_receiver.try_recv().ok()
+    }
+
+    fn handle_ai_message(&mut self, ai_message: AIMessage) -> Result<()> {
+        match ai_message {
+            AIMessage::Debug(error_string) => return Err(Error::String(error_string)),
+            AIMessage::Game((messages, ai, state)) => {
+                self.component = Box::new(InGame::new(
+                    state,
+                    &self.picker.expect("Expected a Picker from app"),
+                    ai,
+                    messages,
+                ))
+            }
+            AIMessage::Image(image_path) => {
+                self.image_sender.send(image_path);
+            }
+            AIMessage::Load(save_path) => {
+                let game_state = self.load_game_state(&save_path)?;
+                self.get_messages(game_state)?;
+            }
+        };
+        Ok(())
+    }
     fn handle_tui_event(&mut self, event: TuiEvent) -> Result<()> {
         match event {
             TuiEvent::Key(key_event) if key_event.kind == KeyEventKind::Press => {
@@ -316,9 +342,8 @@ impl<'a> App<'a> {
                 save_manager: &mut self.save_manager,
                 settings: &mut self.settings,
                 clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
-                console_messages: &self.game_content,
+                console_messages: &self.console_messages,
                 input_mode: &self.input_mode,
-                picker: self.picker.expect("Expected picker from app"),
             },
         ) {
             self.handle_action(action)?
@@ -333,46 +358,35 @@ impl<'a> App<'a> {
                 self.input_mode = input_mode;
             }
             Action::Quit => self.quit()?,
-            Action::LoadGame(save_path) => {
-                let game = self.load_save(&save_path)?;
-                self.component = Box::new(game);
+            Action::LoadSave(save_path) => {
+                self.ai_sender.send(AIMessage::Load(save_path));
             }
-            Action::StartNewGame(_) => {}
+            Action::CreateNewGame(_) => {}
             Action::ProcessMessage(_) => {}
             Action::AIResponse(_game_message) => { /*TODO: Handle gmae_message and pass it to component*/
             }
-            // TODO: Handle the user message
             Action::SendMessage(_) => {}
+            Action::StartGame(game) => {
+                self.component = Box::new(game);
+            }
         }
 
         Ok(())
     }
 
-    fn load_save(&mut self, save_path: &PathBuf) -> Result<InGame> {
-        let game_state = self.load_game(save_path)?;
-        let mut empty_game = InGame::new(
-            game_state,
-            &self.picker.expect("Expected picker from app"),
-            self.ai_client
-                .clone()
-                .expect("Expected an ai client and sender"),
-        );
-        let thread_id = empty_game.state.thread_id.clone();
-        let (game_tx, mut game_rx) = mpsc::unbounded_channel::<InGame>();
+    fn get_messages(&mut self, game_state: GameState) -> Result<()> {
+        let thread_id = game_state.thread_id.clone();
+        let ai = self.ai_client.clone().expect("Expected GameAI");
+        let sender = self.ai_sender.clone();
         tokio::spawn(async move {
-            empty_game.content = empty_game
-                .ai
+            let messages = ai
                 .fetch_all_messages(&thread_id)
                 .await
-                .expect("Expected the return of vec messages")
-                .to_owned();
-            game_tx.send(empty_game)
+                .expect("Expected the return of vec messages");
+            sender.send(AIMessage::Game((messages, ai, game_state)));
         });
-        // HACK: That should be properly awaited
-        sleep(Duration::from_secs(1));
-        let filled_game = game_rx.try_recv().ok().unwrap();
 
-        Ok(filled_game)
+        Ok(())
     }
 
     fn quit(&mut self) -> Result<()> {
@@ -411,7 +425,7 @@ impl<'a> App<'a> {
         Ok(())
     }
 
-    fn load_game(&mut self, save_path: &PathBuf) -> Result<GameState> {
+    fn load_game_state(&mut self, save_path: &PathBuf) -> Result<GameState> {
         self.save_manager.load_from_file(save_path)
     }
 
@@ -609,15 +623,15 @@ impl<'a> App<'a> {
     //     });
     // }
 
-    pub async fn update_save_name(&self, new_name: String) {
-        let mut save_name = self.current_save_name.write().await;
-        *save_name = new_name;
-    }
+    // pub async fn update_save_name(&self, new_name: String) {
+    //     let mut save_name = self.current_save_name.write().await;
+    //     *save_name = new_name;
+    // }
 
     // TODO: Make unified and dynamic setting for all settings. cf the Ratatui examples
 
     pub fn add_message(&self, message: message::Message) {
-        self.game_content.borrow_mut().push(message);
+        self.console_messages.borrow_mut().push(message);
     }
 
     // pub async fn start_new_game(&mut self, save_name: String) -> Result<()> {

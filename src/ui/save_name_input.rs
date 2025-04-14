@@ -30,7 +30,7 @@ impl Component for SaveName {
                 KeyCode::Esc => Some(Action::SwitchComponent(Box::new(MainMenu::default()))),
                 KeyCode::Enter => {
                     if !self.input.value().is_empty() {
-                        Some(Action::StartNewGame(self.input.value().into()))
+                        Some(Action::CreateNewGame(self.input.value().into()))
                     } else {
                         Some(Action::SwitchInputMode(InputMode::Editing))
                     }
