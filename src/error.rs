@@ -2,7 +2,6 @@
 use derive_more::{Display, From};
 use log::error;
 use thiserror::Error;
-use tokio::sync::mpsc;
 
 // TODO: Add Jeremy Chone Error trick https://www.youtube.com/watch?v=j-VQCYP7wyw
 pub type Result<T> = core::result::Result<T, Error>;

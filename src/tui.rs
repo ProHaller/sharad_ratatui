@@ -6,7 +6,6 @@ use std::{
 use color_eyre::eyre::Result;
 
 use futures::{FutureExt, StreamExt};
-use ratatui::backend::CrosstermBackend as Backend;
 use ratatui::crossterm::{
     cursor,
     event::{
@@ -15,6 +14,7 @@ use ratatui::crossterm::{
     },
     terminal::{EnterAlternateScreen, LeaveAlternateScreen},
 };
+use ratatui::{backend::CrosstermBackend as Backend, buffer::Buffer};
 use ratatui_image::picker::Picker;
 use tokio::{
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},

@@ -166,8 +166,6 @@ impl<'a> App<'a> {
         tui.exit()?; // stops event handler, exits raw mode, exits alternate screen
         Ok(())
 
-        // self.initialize_ai_client().await?;
-
         // loop {
         //     tokio::select! {
         //         event_result = tokio::task::spawn_blocking(|| crossterm::event::poll(Duration::from_millis(1))) => {

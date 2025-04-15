@@ -21,15 +21,8 @@ use ratatui::{
     widgets::*,
 };
 use ratatui_image::{StatefulImage, picker::Picker, protocol::StatefulProtocol};
-use std::{fs, path::Path, time::Instant};
+use std::time::Instant;
 use tui_input::{Input, backend::crossterm::EventHandler};
-
-// TODO: Make sure I still need the cache
-//
-// type Cache = RefCell<Option<(Rect, Vec<Rect>, Vec<Rect>)>>;
-// thread_local! {
-//     static CACHED_LAYOUTS: Cache = const {RefCell::new(None)};
-// }
 
 pub struct InGame {
     // GamePlay state:
@@ -50,7 +43,8 @@ pub struct InGame {
     pub last_spinner_update: Instant,
     pub spinner_active: bool,
     pub total_lines: usize,
-    pub visible_lines: usize,
+    pub max_height: usize,
+    pub max_width: usize,
     pub content_scroll: usize,
 }
 
@@ -96,28 +90,6 @@ impl Component for InGame {
     }
 
     fn render(&mut self, area: Rect, buffer: &mut Buffer, context: &Context) {
-        // TODO:  Do I need this cache ?
-        //
-        // let (_main_chunk, left_chunk, game_info_area) = CACHED_LAYOUTS.with(|cache: &Cache| {
-        //     let mut cache = cache.borrow_mut();
-        //     if cache.is_none() || cache.as_ref().expect("Expected a valide cache").0 != size {
-        //         let main_chunk = Layout::default()
-        //             .direction(Direction::Horizontal)
-        //             .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
-        //             .split(size);
-        //
-        //         let left_chunk = Layout::default()
-        //             .direction(Direction::Vertical)
-        //             .constraints([Constraint::Percentage(80), Constraint::Percentage(20)])
-        //             .split(main_chunk[0]);
-        //
-        //         let new_cache = (size, main_chunk.to_vec(), left_chunk.to_vec());
-        //         *cache = Some(new_cache);
-        //     }
-        //
-        //     let (_, main_chunks, left_chunks) = cache.as_ref().expect("Expected a valide cache");
-        //     (main_chunks.clone(), left_chunks.clone(), main_chunks[1])
-        // });
         let screen_split_layout = Layout::default()
             .direction(Direction::Horizontal)
             .flex(ratatui::layout::Flex::Center)
@@ -176,9 +148,9 @@ impl InGame {
             None => None,
         };
 
-        Self {
+        let mut new_self = Self {
+            ai: game_ai,
             state,
-            // Content should go fetch the meesages from the memory/AI
             content,
             image,
             // TODO: Input should be autonomous with info about its size and scroll
@@ -188,10 +160,12 @@ impl InGame {
             last_spinner_update: Instant::now(),
             spinner_active: false,
             total_lines: 0,
-            visible_lines: 0,
+            max_height: 0,
+            max_width: 0,
             content_scroll: 0,
-            ai: game_ai,
-        }
+        };
+        new_self.on_creation();
+        new_self
     }
 
     pub fn draw_detailed_info(&mut self, area: Rect, buffer: &mut Buffer, _context: &Context) {
@@ -365,7 +339,7 @@ impl InGame {
         }
     }
 
-    fn draw_game_content(&self, buffer: &mut Buffer, _context: &Context, area: Rect) {
+    fn draw_game_content(&mut self, buffer: &mut Buffer, _context: &Context, area: Rect) {
         let save_name = &self.state.save_name;
         let fluff_block = Block::default()
             .border_type(BorderType::Rounded)
@@ -381,28 +355,15 @@ impl InGame {
 
         fluff_block.render(area, buffer);
 
-        let max_width = fluff_area.width.saturating_sub(2) as usize;
-        let max_height = fluff_area.height.saturating_sub(2) as usize;
-
-        // TODO: cached content logic, verify it is needed.
-        //
-        // if app.cached_game_content.is_none()
-        //     || app.cached_content_len != app.game_content.borrow().len()
-        // {
-        //     app.update_cached_content(max_width);
-        // }
-        //
-        // let all_lines = app
-        //     .cached_game_content
-        //     .as_ref()
-        //     .expect("Expected a valid ref to a cached_game_content");
-        //
-        // app.total_lines = all_lines.len();
-        // *app.debug_info.borrow_mut() += &format!(", Total lines: {}", app.total_lines);
-        let all_lines = self.parse_game_content(max_width);
+        self.max_width = fluff_area.width.saturating_sub(2) as usize;
+        self.max_height = fluff_area.height.saturating_sub(2) as usize;
+        let all_lines = self.parse_game_content();
+        self.total_lines = all_lines.len();
 
         let visible_lines: Vec<Line> = all_lines
             .iter()
+            .skip(self.content_scroll)
+            .take(self.max_height)
             .map(|(line, alignment)| {
                 let mut new_line = line.clone();
                 new_line.alignment = Some(*alignment);
@@ -421,13 +382,17 @@ impl InGame {
         content.render(fluff_area, buffer);
 
         // TODO: Make sure the scrolling works
-        //
-        // app.visible_lines = max_height;
-        // app.update_scroll();
+
+        self.update_scroll();
     }
 
     // FIX:  the cursor is not currently displayed properly. cf: https://github.com/ratatui/ratatui/discussions/872
     fn draw_user_input(&self, buffer: &mut Buffer, context: &Context, area: Rect) {
+        let lines = &format!(
+            "Total lines: {}, visible_lines: {}, content_scroll: {}, ",
+            self.total_lines, self.max_height, self.content_scroll
+        )
+        .clone();
         let block = Block::default()
             .border_type(BorderType::Rounded)
             .title(match context.input_mode {
@@ -437,6 +402,7 @@ impl InGame {
                 InputMode::Editing => " Editing ",
                 InputMode::Recording => " Recording… Press 'Esc' to stop ",
             })
+            .title_bottom(Line::from(lines.as_str()))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(match context.input_mode {
                 InputMode::Normal => Color::DarkGray,
@@ -514,7 +480,7 @@ impl InGame {
         // // Set cursor
     }
 
-    fn parse_game_content(&self, max_width: usize) -> Vec<(Line<'static>, Alignment)> {
+    fn parse_game_content(&self) -> Vec<(Line<'static>, Alignment)> {
         let mut all_lines = Vec::new();
 
         for message in self.content.iter() {
@@ -562,7 +528,7 @@ impl InGame {
                 ),
             };
 
-            let wrapped_lines = textwrap::wrap(&content, max_width);
+            let wrapped_lines = textwrap::wrap(&content, self.max_width);
             for line in wrapped_lines {
                 let parsed_line = parse_markdown(line.to_string(), base_style);
                 all_lines.push((parsed_line, alignment));
@@ -586,7 +552,7 @@ impl InGame {
         }
     }
 
-    fn handle_normal_input(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
+    fn handle_normal_input(&mut self, key: KeyEvent, _context: Context) -> Option<Action> {
         match key.code {
             KeyCode::Char('e') => Some(Action::SwitchInputMode(InputMode::Editing)),
             KeyCode::Char('r') => {
@@ -608,13 +574,13 @@ impl InGame {
                 Some(Action::SendMessage(self.input.value().into()))
             }
             KeyCode::PageUp => {
-                for _ in 0..self.visible_lines {
+                for _ in 0..self.max_height {
                     self.scroll_up();
                 }
                 None
             }
             KeyCode::PageDown => {
-                for _ in 0..self.visible_lines {
+                for _ in 0..self.max_height {
                     self.scroll_down();
                 }
                 None
@@ -646,7 +612,7 @@ impl InGame {
     }
 
     pub fn update_scroll(&mut self) {
-        let max_scroll = self.total_lines.saturating_sub(self.visible_lines);
+        let max_scroll = self.total_lines.saturating_sub(self.max_height);
         self.content_scroll = self.content_scroll.min(max_scroll);
     }
 
@@ -657,28 +623,16 @@ impl InGame {
     }
 
     pub fn scroll_down(&mut self) {
-        if self.content_scroll < self.total_lines.saturating_sub(self.visible_lines) {
+        if self.content_scroll < self.total_lines.saturating_sub(self.max_height) {
             self.content_scroll += 1;
         }
     }
 
     pub fn scroll_to_bottom(&mut self) {
-        // Recalculate total lines
-        self.total_lines = self.calculate_total_lines();
-
         // Update the scroll position
-        self.content_scroll = self.total_lines.saturating_sub(self.visible_lines);
+        self.content_scroll = self.total_lines.saturating_sub(self.max_height);
     }
 
-    fn calculate_total_lines(&self) -> usize {
-        self.content
-            .iter()
-            .map(|message| {
-                let wrapped_lines = textwrap::wrap(&message.content, self.visible_lines);
-                wrapped_lines.len()
-            })
-            .sum()
-    }
     fn cycle_highlighted_section(&mut self) {
         let Some(character_sheet) = &mut self.state.main_character_sheet else {
             return;
@@ -721,6 +675,14 @@ impl InGame {
         } else {
             HighlightedSection::None
         };
+    }
+
+    fn on_creation(&mut self) {
+        self.total_lines = self.parse_game_content().len();
+        // HACK: This should be set to fluff_area max_height
+        self.content_scroll = self.total_lines - 30;
+
+        self.scroll_to_bottom();
     }
 }
 

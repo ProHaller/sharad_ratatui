@@ -1,5 +1,4 @@
 use copypasta::ClipboardContext;
-use ratatui_image::picker::Picker;
 
 use crate::{app::InputMode, message::Message, save::SaveManager, settings::Settings};
 use std::cell::RefCell;
