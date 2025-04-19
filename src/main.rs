@@ -5,22 +5,17 @@ use crate::app::App;
 use core::cmp::Ordering;
 use crossterm::{
     execute, // Helper macro to execute terminal commands.
-    terminal::{LeaveAlternateScreen, SetSize, disable_raw_mode}, // Terminal manipulation utilities.
+    terminal::{LeaveAlternateScreen, disable_raw_mode}, // Terminal manipulation utilities.
 };
-use ratatui_image::picker::Picker;
 use self_update::backends::github::{ReleaseList, Update};
 use semver::Version;
 use std::{
     io::{self, stdout},
     panic::{set_hook, take_hook},
-    process::exit,
-    thread::sleep,
-    time::Duration,
 };
 use ui::{MIN_HEIGHT, MIN_WIDTH};
 
 mod ai;
-mod ai_response;
 mod app;
 mod assistant;
 mod audio;

@@ -1,4 +1,5 @@
 use crate::{ai, error::Error};
+use crate::{message::Message, message::MessageType, message::UserCompletionRequest};
 // /app.rs
 use crate::context::{self, Context};
 use crate::{
@@ -12,11 +13,13 @@ use crate::{
     ui::{Component, game::InGame, main_menu::MainMenu},
 };
 
+use async_openai::types::RunObject;
 use copypasta::ClipboardContext;
 use crossterm::cursor;
 use crossterm::event::{KeyEvent, KeyEventKind};
 use ratatui::widgets::ListState;
 use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
+use std::any::Any;
 use std::io::Cursor;
 use std::thread::sleep;
 use std::time::Duration;
@@ -29,8 +32,8 @@ pub enum Action {
     CreateNewGame(String),
     StartGame(InGame),
     ProcessMessage(String),
-    SendMessage(String),
-    AIResponse(Box<Result<GameMessage>>),
+    SendMessage(UserCompletionRequest),
+    AIResponse(GameMessage),
     // TODO: Probably don't need the transcription target anymore.
     SwitchComponent(Box<dyn Component>),
     SwitchInputMode(InputMode),
@@ -65,8 +68,9 @@ pub struct App<'a> {
     // --- Global information
     ai_client: Option<GameAI>,
 
-    // --- UI elements
-    console_messages: RefCell<Vec<message::Message>>,
+    // --- Game elements
+    game: Option<InGame>,
+    messages: Vec<Message>,
 
     ai_sender: mpsc::UnboundedSender<AIMessage>,
     ai_receiver: mpsc::UnboundedReceiver<AIMessage>,
@@ -93,7 +97,7 @@ impl<'a> App<'a> {
         let mut ai: Option<GameAI> = None;
         if let Some(api_key) = &settings.openai_api_key {
             openai_api_key_valid = Settings::validate_api_key(api_key).await;
-            ai = match GameAI::new(api_key, image_sender.clone()).await {
+            ai = match GameAI::new(api_key, ai_sender.clone(), image_sender.clone()).await {
                 Ok(ai) => Some(ai),
                 Err(_) => None,
             }
@@ -107,7 +111,8 @@ impl<'a> App<'a> {
             ai_client: ai,
             context: None,
             input_mode: InputMode::Normal,
-            console_messages: RefCell::new(Vec::new()),
+            game: None,
+            messages: Vec::new(),
             ai_sender,
             ai_receiver,
 
@@ -137,7 +142,7 @@ impl<'a> App<'a> {
                     save_manager: &mut self.save_manager,
                     settings: &mut self.settings,
                     clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
-                    console_messages: &self.console_messages,
+                    messages: &self.messages,
                     input_mode: &self.input_mode,
                 };
                 self.component
@@ -305,6 +310,12 @@ impl<'a> App<'a> {
                 let game_state = self.load_game_state(&save_path)?;
                 self.get_messages(game_state)?;
             }
+            AIMessage::Send(user_completion_request) => todo!(),
+            AIMessage::Response(game_message) => {
+                self.handle_ai_response(game_message);
+            }
+            AIMessage::NewMessage => {}
+            AIMessage::ActionRequired(run) => {}
         };
         Ok(())
     }
@@ -340,7 +351,7 @@ impl<'a> App<'a> {
                 save_manager: &mut self.save_manager,
                 settings: &mut self.settings,
                 clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
-                console_messages: &self.console_messages,
+                messages: &self.messages,
                 input_mode: &self.input_mode,
             },
         ) {
@@ -361,10 +372,15 @@ impl<'a> App<'a> {
             }
             Action::CreateNewGame(_) => {}
             Action::ProcessMessage(_) => {}
-            Action::AIResponse(_game_message) => { /*TODO: Handle gmae_message and pass it to component*/
+            Action::AIResponse(_game_message) => { /*TODO: Handle game_message and pass it to component*/
             }
-            Action::SendMessage(_) => {}
+            Action::SendMessage(user_completion_request) => {
+                let _ = self
+                    .ai_sender
+                    .send(AIMessage::Send(user_completion_request));
+            }
             Action::StartGame(game) => {
+                // self.game = Some(game);
                 self.component = Box::new(game);
             }
         }
@@ -411,14 +427,8 @@ impl<'a> App<'a> {
         //     let _ = ai_sender.send(message::AIMessage::Debug(message));
         // };
 
-        self.ai_client = Some(
-            GameAI::new(
-                &api_key,
-                /*, debug_callback,*/
-                self.image_sender.clone(),
-            )
-            .await?,
-        );
+        self.ai_client =
+            Some(GameAI::new(&api_key, self.ai_sender.clone(), self.image_sender.clone()).await?);
 
         Ok(())
     }
@@ -428,140 +438,6 @@ impl<'a> App<'a> {
     }
 
     // TODO: should probably go to game, or ai sections
-
-    // pub fn process_message(&mut self, message: String) {
-    //     let user_message = create_user_message(&self.settings.language.to_string(), &message);
-    //     let formatted_message = serde_json::to_string(&user_message).unwrap();
-    //
-    //     self.start_spinner();
-    //
-    //     let ai_client = self.ai_client.clone();
-    //     let current_game = self.current_game.clone();
-    //     let sender = self.command_sender.clone();
-    //     todo!();
-    //
-    //     tokio::spawn(async move {
-    //         if let (Some(mut ai), Some(game_state)) = (ai_client, current_game) {
-    //             let mut game_state = game_state.lock().await;
-    //             let result = ai.send_message(&formatted_message, &mut game_state).await;
-    //             let _ = sender.send(Action::AIResponse(Box::new(result)));
-    //         } else {
-    //             let _ = sender.send(Action::AIResponse(Box::new(Err(Error::from(
-    //                 AppError::NoCurrentGame,
-    //             )))));
-    //         }
-    //     });
-    // }
-    // pub async fn handle_ai_response(&mut self, result: Result<GameMessage>) {
-    //     self.stop_spinner();
-    //     self.add_debug_message(format!("Spinner: {:#?}", self.spinner_active));
-    //
-    //     match result {
-    //         Ok(game_message) => {
-    //             self.add_debug_message(format!(
-    //                 "Received game message from AI: {:#?}",
-    //                 game_message
-    //             ));
-    //
-    //             let game_message_json = serde_json::to_string(&game_message).unwrap();
-    //             self.add_debug_message(format!("Game message: {:#?}", game_message_json.clone()));
-    //             self.add_message(Message::new(MessageType::Game, game_message_json.clone()));
-    //
-    //             if self.settings.audio_output_enabled {
-    //                 self.add_debug_message(format!(
-    //                     "generating audio from {:#?}",
-    //                     game_message.fluff.clone()
-    //                 ));
-    //                 if let Some(ai_client) = self.ai_client.clone() {
-    //                     let mut game_message_clone = game_message.clone();
-    //                     let save_name = match self.save_manager.current_save.clone() {
-    //                         Some(game_state) => game_state.save_name,
-    //                         None => "unknown".to_string(),
-    //                     };
-    //                     tokio::spawn(async move {
-    //                         game_message_clone
-    //                             .fluff
-    //                             .speakers
-    //                             .iter_mut()
-    //                             .for_each(|speaker| speaker.assign_voice());
-    //
-    //                         let mut audio_futures = FuturesOrdered::new();
-    //
-    //                         for (index, fluff_line) in
-    //                             game_message_clone.fluff.dialogue.iter_mut().enumerate()
-    //                         {
-    //                             let voice = game_message_clone
-    //                                 .fluff
-    //                                 .speakers
-    //                                 .iter()
-    //                                 .find(|s| s.index == fluff_line.speaker_index)
-    //                                 .and_then(|s| s.voice.clone())
-    //                                 .expect("Voice not found for speaker");
-    //
-    //                             let ai_client = ai_client.clone();
-    //                             let text = fluff_line.text.clone();
-    //                             let save_name = save_name.clone();
-    //
-    //                             // Generate the audio in parallel, keeping track of the index
-    //                             audio_futures.push_back(async move {
-    //                                 let result = audio::generate_audio(
-    //                                     &ai_client.client,
-    //                                     &save_name,
-    //                                     &text,
-    //                                     voice,
-    //                                 )
-    //                                 .await;
-    //                                 (result, index)
-    //                             });
-    //                         }
-    //
-    //                         // Process the results in order
-    //                         while let Some((result, index)) = audio_futures.next().await {
-    //                             if let Ok(path) = result {
-    //                                 game_message_clone.fluff.dialogue[index].audio = Some(path);
-    //                             }
-    //                         }
-    //
-    //                         // Play audio sequentially
-    //                         // TODO: Make sure two messages audio are not played at the same time.
-    //                         for file in game_message_clone.fluff.dialogue.iter() {
-    //                             if let Some(audio_path) = &file.audio {
-    //                                 let _status = play_audio(audio_path.clone());
-    //                             }
-    //                         }
-    //                     });
-    //                 }
-    //             }
-    //
-    //             // Update the UI
-    //             self.cached_game_content = None; // Force recalculation of cached content
-    //             self.cached_content_len = 0;
-    //             self.scroll_to_bottom();
-    //
-    //             if let Some(character_sheet) = game_message.character_sheet {
-    //                 self.add_debug_message("Updating character sheet".to_string());
-    //                 self.update_character_sheet(character_sheet).await;
-    //             }
-    //             self.add_debug_message("Updated character sheet".to_string());
-    //
-    //             if let Err(e) = self.save_current_game().await {
-    //                 self.add_debug_message(format!("Failed to save game: {:#?}", e));
-    //                 self.add_message(Message::new(
-    //                     MessageType::System,
-    //                     format!("Failed to save game after AI response: {:#?}", e),
-    //                 ));
-    //             }
-    //             self.add_debug_message("saved game".to_string());
-    //         }
-    //         Err(e) => {
-    //             self.add_debug_message(format!("Error: {:#?}", e));
-    //             self.add_message(Message::new(
-    //                 MessageType::System,
-    //                 format!("AI Error: {:#?}", e),
-    //             ));
-    //         }
-    //     }
-    // }
 
     // TODO: Make this go to recording component maybe inside an Input component
 
@@ -628,8 +504,87 @@ impl<'a> App<'a> {
 
     // TODO: Make unified and dynamic setting for all settings. cf the Ratatui examples
 
-    pub fn add_message(&self, message: message::Message) {
-        self.console_messages.borrow_mut().push(message);
+    pub fn add_message(&mut self, message: message::Message) {
+        self.messages.push(message);
+    }
+
+    pub async fn handle_ai_response(&mut self, message: GameMessage) {
+        // let game_message_json = serde_json::to_string(&message).unwrap();
+        // self.add_message(Message::new(MessageType::Game, game_message_json.clone()));
+        //
+        // if self.settings.audio_output_enabled {
+        //     if let Some(ai_client) = self.ai_client.clone() {
+        //         let mut game_message_clone = message.clone();
+        //         let save_name = match self.save_manager.current_save.clone() {
+        //             Some(game_state) => game_state.save_name,
+        //             None => "unknown".to_string(),
+        //         };
+        //         tokio::spawn(async move {
+        //             game_message_clone
+        //                 .fluff
+        //                 .speakers
+        //                 .iter_mut()
+        //                 .for_each(|speaker| speaker.assign_voice());
+        //
+        //             let mut audio_futures = FuturesOrdered::new();
+        //
+        //             for (index, fluff_line) in
+        //                 game_message_clone.fluff.dialogue.iter_mut().enumerate()
+        //             {
+        //                 let voice = game_message_clone
+        //                     .fluff
+        //                     .speakers
+        //                     .iter()
+        //                     .find(|s| s.index == fluff_line.speaker_index)
+        //                     .and_then(|s| s.voice.clone())
+        //                     .expect("Voice not found for speaker");
+        //
+        //                 let ai_client = ai_client.clone();
+        //                 let text = fluff_line.text.clone();
+        //                 let save_name = save_name.clone();
+        //
+        //                 // Generate the audio in parallel, keeping track of the index
+        //                 audio_futures.push_back(async move {
+        //                     let result =
+        //                         audio::generate_audio(&ai_client.client, &save_name, &text, voice)
+        //                             .await;
+        //                     (result, index)
+        //                 });
+        //             }
+        //
+        //             // Process the results in order
+        //             while let Some((result, index)) = audio_futures.next().await {
+        //                 if let Ok(path) = result {
+        //                     game_message_clone.fluff.dialogue[index].audio = Some(path);
+        //                 }
+        //             }
+        //
+        //             // Play audio sequentially
+        //             // TODO: Make sure two messages audio are not played at the same time.
+        //             for file in game_message_clone.fluff.dialogue.iter() {
+        //                 if let Some(audio_path) = &file.audio {
+        //                     let _status = play_audio(audio_path.clone());
+        //                 }
+        //             }
+        //         });
+        //     }
+        // }
+
+        // // Update the UI
+        // self.cached_game_content = None; // Force recalculation of cached content
+        // self.cached_content_len = 0;
+        // self.scroll_to_bottom();
+        //
+        // if let Some(character_sheet) = game_message.character_sheet {
+        //     self.update_character_sheet(character_sheet).await;
+        // }
+        //
+        // if let Err(e) = self.save_current_game().await {
+        //     self.add_message(Message::new(
+        //         MessageType::System,
+        //         format!("Failed to save game after AI response: {:#?}", e),
+        //     ));
+        // }
     }
 
     // pub async fn start_new_game(&mut self, save_name: String) -> Result<()> {

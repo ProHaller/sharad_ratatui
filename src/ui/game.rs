@@ -2,13 +2,14 @@ use super::{
     Component, MainMenu, center_rect, chunk_attributes, descriptions::*, draw_character_sheet,
     get_attributes, get_derived, input::Pastable, spinner::Spinner,
 };
-use crate::ai::GameAI;
 use crate::{
+    ai::GameAI,
     app::{Action, InputMode},
     context::Context,
     game_state::GameState,
     imager::load_image_from_file,
     message::{GameMessage, Message, MessageType, UserMessage},
+    message::{UserCompletionRequest, create_user_message},
 };
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -357,7 +358,7 @@ impl InGame {
 
         self.max_width = fluff_area.width.saturating_sub(2) as usize;
         self.max_height = fluff_area.height.saturating_sub(2) as usize;
-        let all_lines = self.parse_game_content();
+        let all_lines = self.parse_full_game_content();
         self.total_lines = all_lines.len();
 
         let visible_lines: Vec<Line> = all_lines
@@ -480,62 +481,70 @@ impl InGame {
         // // Set cursor
     }
 
-    fn parse_game_content(&self) -> Vec<(Line<'static>, Alignment)> {
+    fn parse_full_game_content(&self) -> Vec<(Line<'static>, Alignment)> {
         let mut all_lines = Vec::new();
 
         for message in self.content.iter() {
-            let (content, base_style, alignment) = match message.message_type {
-                MessageType::Game => {
-                    if let Ok(game_message) = serde_json::from_str::<GameMessage>(&message.content)
-                    {
-                        (
-                            format!(
-                                "crunch:\n{}\n\nfluff:\n{}",
-                                game_message.crunch,
-                                game_message.fluff.render()
-                            ),
-                            Style::default().fg(Color::Green),
-                            Alignment::Left,
-                        )
-                    } else {
-                        (
-                            message.content.clone(),
-                            Style::default().fg(Color::Green),
-                            Alignment::Left,
-                        )
-                    }
-                }
-                MessageType::User => {
-                    if let Ok(user_message) = serde_json::from_str::<UserMessage>(&message.content)
-                    {
-                        (
-                            format!("\nPlayer action:\n{}", user_message.player_action),
-                            Style::default().fg(Color::Cyan),
-                            Alignment::Right,
-                        )
-                    } else {
-                        (
-                            message.content.clone(),
-                            Style::default().fg(Color::Cyan),
-                            Alignment::Right,
-                        )
-                    }
-                }
-                MessageType::System => (
-                    message.content.clone(),
-                    Style::default().fg(Color::Yellow),
-                    Alignment::Center,
-                ),
-            };
-
-            let wrapped_lines = textwrap::wrap(&content, self.max_width);
-            for line in wrapped_lines {
-                let parsed_line = parse_markdown(line.to_string(), base_style);
-                all_lines.push((parsed_line, alignment));
-            }
+            all_lines.extend(self.parse_message(message));
         }
 
         all_lines
+    }
+
+    pub fn new_message(&mut self, new_message: &Message) {
+        self.content.push(new_message.clone());
+    }
+
+    fn parse_message(&self, message: &Message) -> Vec<(Line<'static>, Alignment)> {
+        let (content, base_style, alignment) = match message.message_type {
+            MessageType::Game => {
+                if let Ok(game_message) = serde_json::from_str::<GameMessage>(&message.content) {
+                    (
+                        format!(
+                            "crunch:\n{}\n\nfluff:\n{}",
+                            game_message.crunch,
+                            game_message.fluff.render()
+                        ),
+                        Style::default().fg(Color::Green),
+                        Alignment::Left,
+                    )
+                } else {
+                    (
+                        message.content.clone(),
+                        Style::default().fg(Color::Green),
+                        Alignment::Left,
+                    )
+                }
+            }
+            MessageType::User => {
+                if let Ok(user_message) = serde_json::from_str::<UserMessage>(&message.content) {
+                    (
+                        format!("\nPlayer action:\n{}", user_message.player_action),
+                        Style::default().fg(Color::Cyan),
+                        Alignment::Right,
+                    )
+                } else {
+                    (
+                        message.content.clone(),
+                        Style::default().fg(Color::Cyan),
+                        Alignment::Right,
+                    )
+                }
+            }
+            MessageType::System => (
+                message.content.clone(),
+                Style::default().fg(Color::Yellow),
+                Alignment::Center,
+            ),
+        };
+
+        let wrapped_lines = textwrap::wrap(&content, self.max_width);
+        let mut lines = Vec::new();
+        for line in wrapped_lines {
+            let parsed_line = parse_markdown(line.to_string(), base_style);
+            lines.push((parsed_line, alignment));
+        }
+        lines
     }
 
     pub fn handle_edit_input(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
@@ -552,7 +561,7 @@ impl InGame {
         }
     }
 
-    fn handle_normal_input(&mut self, key: KeyEvent, _context: Context) -> Option<Action> {
+    fn handle_normal_input(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
         match key.code {
             KeyCode::Char('e') => Some(Action::SwitchInputMode(InputMode::Editing)),
             KeyCode::Char('r') => {
@@ -571,7 +580,12 @@ impl InGame {
                 Some(Action::SwitchComponent(Box::new(MainMenu::default())))
             }
             KeyCode::Enter if !self.input.value().is_empty() => {
-                Some(Action::SendMessage(self.input.value().into()))
+                let value = self.input.value();
+                self.spinner_active = true;
+                self.new_message(&Message::new(MessageType::User, value.into()));
+                let message = self.build_user_completion_message(&context);
+                self.ai.send_message(message, self.ai.ai_sender.clone());
+                None
             }
             KeyCode::PageUp => {
                 for _ in 0..self.max_height {
@@ -609,6 +623,18 @@ impl InGame {
             }
             _ => None,
         }
+    }
+
+    fn build_user_completion_message(&self, context: &Context) -> UserCompletionRequest {
+        let message = UserCompletionRequest {
+            language: context.settings.language.to_string(),
+            message: create_user_message(
+                &context.settings.language.to_string(),
+                self.input.value().into(),
+            ),
+            state: self.state.clone(),
+        };
+        message
     }
 
     pub fn update_scroll(&mut self) {
@@ -678,7 +704,7 @@ impl InGame {
     }
 
     fn on_creation(&mut self) {
-        self.total_lines = self.parse_game_content().len();
+        self.total_lines = self.parse_full_game_content().len();
         // HACK: This should be set to fluff_area max_height
         self.content_scroll = self.total_lines - 30;
 

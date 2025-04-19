@@ -1,7 +1,6 @@
 // /lib.rs
 
 pub mod ai;
-pub mod ai_response;
 pub mod app;
 pub mod assistant;
 pub mod audio;

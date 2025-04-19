@@ -1,7 +1,6 @@
 use copypasta::ClipboardContext;
 
 use crate::{app::InputMode, message::Message, save::SaveManager, settings::Settings};
-use std::cell::RefCell;
 
 pub struct Context<'a> {
     // TODO: Make the openai_api_key_valid a date
@@ -9,6 +8,6 @@ pub struct Context<'a> {
     pub save_manager: &'a mut SaveManager,
     pub settings: &'a mut Settings,
     pub clipboard: ClipboardContext,
-    pub console_messages: &'a RefCell<Vec<Message>>,
+    pub messages: &'a Vec<Message>,
     pub input_mode: &'a InputMode, // TODO: Move it into Input struct
 }

@@ -118,8 +118,7 @@ impl MainMenu<'_> {
         outer_block.render(console_area, buffer);
 
         let console_message: Option<Paragraph> = context
-            .console_messages
-            .borrow()
+            .messages
             .last()
             .filter(|content| content.message_type == MessageType::System)
             .map(|content| {
