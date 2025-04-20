@@ -586,7 +586,10 @@ impl InGame {
                 self.spinner_active = true;
                 self.new_message(&Message::new(MessageType::User, value.into()));
                 let message = self.build_user_completion_message(&context);
-                self.ai.send_message(message, self.ai.ai_sender.clone());
+                // HACK: How could I avoid to clone this?
+                self.ai
+                    .clone()
+                    .send_message(message, self.ai.ai_sender.clone());
                 None
             }
             KeyCode::PageUp => {
@@ -711,6 +714,8 @@ impl InGame {
         self.content_scroll = self.total_lines - 30;
 
         self.scroll_to_bottom();
+        // HACK: This may work to smooth the image resizing on the first InGame creation
+        let _ = StatefulImage::new();
     }
 }
 

@@ -35,7 +35,7 @@ pub enum ComponentEnum {
 }
 
 impl ComponentEnum {
-    pub fn get_in_game_save_path(&self) -> Option<&PathBuf> {
+    pub fn get_ingame_save_path(&self) -> Option<&PathBuf> {
         if let ComponentEnum::InGame(game) = self {
             if let Some(path) = &game.state.save_path {
                 Some(path)

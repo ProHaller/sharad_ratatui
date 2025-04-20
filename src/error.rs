@@ -18,6 +18,7 @@ pub enum Error {
     IO(std::io::Error),
     RatatuiImage(ratatui_image::errors::Errors),
     Report(color_eyre::eyre::Report),
+    Audio(AudioError),
 }
 
 impl From<&str> for Error {

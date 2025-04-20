@@ -34,7 +34,6 @@ pub enum Action {
     CreateNewGame(String),
     StartGame(InGame),
     ProcessMessage(String),
-    SendMessage(UserCompletionRequest),
     AIResponse(GameMessage),
     // TODO: Probably don't need the transcription target anymore.
     SwitchComponent(ComponentEnum),
@@ -161,15 +160,18 @@ impl<'a> App<'a> {
                 _ => tui.terminal.hide_cursor()?,
             };
 
-            if let Some(event) = tui.next().await {
-                // `tui.next().await` blocks till next event
-                self.handle_tui_event(event)?;
-            };
-            if let Some(ai_message) = self.next_ai_message() {
-                if let Some(action) = self.handle_ai_message(ai_message)? {
-                    self.handle_action(action);
-                };
-            };
+            tokio::select! {
+                Some(event) = tui.next() => {
+                    self.handle_tui_event(event)?;
+                },
+                Some(ai_message) = self.next_ai_message() => {
+                    if let Some(action) = self.handle_ai_message(ai_message)? {
+                        self.handle_action(action)?;
+                    };
+                },
+                else => break,
+
+            }
 
             if !self.running {
                 break;
@@ -296,13 +298,12 @@ impl<'a> App<'a> {
         // }
     }
 
-    pub fn next_ai_message(&mut self) -> Option<AIMessage> {
-        self.ai_receiver.try_recv().ok()
+    pub async fn next_ai_message(&mut self) -> Option<AIMessage> {
+        self.ai_receiver.recv().await
     }
 
     fn handle_ai_message(&mut self, ai_message: AIMessage) -> Result<Option<Action>> {
         let result: Option<Action> = match ai_message {
-            AIMessage::Debug(error_string) => return Err(Error::String(error_string)),
             AIMessage::Game((messages, ai, state)) => {
                 self.component = ComponentEnum::from(InGame::new(
                     state,
@@ -321,23 +322,24 @@ impl<'a> App<'a> {
                 self.get_messages(game_state)?;
                 None
             }
-            AIMessage::Send(user_completion_request) => todo!(),
             AIMessage::Response(game_message) => {
-                self.handle_ai_response(&game_message);
+                self.append_ai_response(&game_message);
                 if self.settings.audio_output_enabled {
-                    self.ai_sender.send(AIMessage::Narrate(game_message.fluff));
                     Some(Action::AudioNarration(AudioNarration::Generating(
                         self.ai_client.clone().unwrap().clone(),
                         game_message.fluff.clone(),
-                        self.component.get_in_game_save_path().unwrap().clone(),
+                        self.component.get_ingame_save_path().unwrap().clone(),
                     )))
                 } else {
                     None
                 }
             }
             AIMessage::NewMessage => None,
-            AIMessage::ActionRequired(run) => todo!(),
-            AIMessage::Narrate(fluff) => todo!(),
+            AIMessage::AudioNarration(audio_narration) => {
+                self.audio_narration = audio_narration;
+                self.audio_narration.handle_audio(self.ai_sender.clone());
+                None
+            }
         };
         Ok(result)
     }
@@ -397,17 +399,13 @@ impl<'a> App<'a> {
             Action::ProcessMessage(_) => {}
             Action::AIResponse(_game_message) => { /*TODO: Handle game_message and pass it to component*/
             }
-            Action::SendMessage(user_completion_request) => {
-                let _ = self
-                    .ai_sender
-                    .send(AIMessage::Send(user_completion_request));
-            }
             Action::StartGame(game) => {
                 // self.game = Some(game);
                 self.component = ComponentEnum::from(game);
             }
             Action::AudioNarration(audio_narration) => {
                 self.audio_narration = audio_narration;
+                self.audio_narration.handle_audio(self.ai_sender.clone())?;
             }
         }
 
@@ -530,35 +528,10 @@ impl<'a> App<'a> {
 
     // TODO: Make unified and dynamic setting for all settings. cf the Ratatui examples
 
-    pub async fn handle_ai_response(&mut self, message: &GameMessage) {
+    pub fn append_ai_response(&mut self, message: &GameMessage) {
         if let ComponentEnum::InGame(game) = &mut self.component {
             let game_message_json = serde_json::to_string(&message).unwrap();
             game.new_message(&Message::new(MessageType::Game, game_message_json.clone()));
-            if self.settings.audio_output_enabled {
-                if let Some(ai_client) = self.ai_client.clone() {
-                    let mut game_message_clone = message.clone();
-                    let save_name = match self.save_manager.current_save.clone() {
-                        Some(game_state) => game_state.save_name,
-                        None => "unknown".to_string(),
-                    };
-                }
-            }
-
-            // Update the UI
-            self.cached_game_content = None; // Force recalculation of cached content
-            self.cached_content_len = 0;
-            self.scroll_to_bottom();
-
-            if let Some(character_sheet) = game_message.character_sheet {
-                self.update_character_sheet(character_sheet).await;
-            }
-
-            if let Err(e) = self.save_current_game().await {
-                self.add_message(Message::new(
-                    MessageType::System,
-                    format!("Failed to save game after AI response: {:#?}", e),
-                ));
-            }
         }
     }
 

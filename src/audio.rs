@@ -1,7 +1,8 @@
 use crate::{
-    Fluff, GameAI,
+    ai::GameAI,
     error::{AIError, AudioError, Result},
-    save::get_save_base_dir,
+    message::AIMessage,
+    message::Fluff,
 };
 use async_openai::{
     Audio,
@@ -10,7 +11,7 @@ use async_openai::{
 };
 use chrono::Local;
 use cpal::{
-    FromSample, Sample,
+    FromSample, Sample, Stream,
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
 use futures::{StreamExt, stream::FuturesOrdered};
@@ -30,29 +31,44 @@ use uuid::Uuid;
 
 pub enum AudioNarration {
     Generating(GameAI, Fluff, PathBuf),
-    Playing,
+    Playing(Fluff),
     Paused,
     Stopped,
 }
 
 impl AudioNarration {
-    pub fn handle_audio(self) -> Result<()> {
+    pub fn handle_audio(
+        &mut self,
+        ai_sender: tokio::sync::mpsc::UnboundedSender<AIMessage>,
+    ) -> Result<()> {
         match &self {
             AudioNarration::Generating(game_ai, fluff, save_path) => {
-                self.generate_narration(game_ai.client.clone(), fluff.clone(), save_path.clone())?;
+                self.generate_narration(
+                    game_ai.client.clone(),
+                    fluff.clone(),
+                    save_path.clone(),
+                    ai_sender,
+                )?;
             }
-            AudioNarration::Playing => todo!(),
-            AudioNarration::Paused => todo!(),
-            AudioNarration::Stopped => todo!(),
+            AudioNarration::Playing(fluff) => {
+                for file in fluff.dialogue.iter() {
+                    if let Some(audio_path) = &file.audio {
+                        play_audio(audio_path.clone())?;
+                    }
+                }
+            }
+            AudioNarration::Paused => todo!("Need to handle the Paused AudioNarration"),
+            AudioNarration::Stopped => {}
         }
         Ok(())
     }
 
     fn generate_narration(
-        &self,
+        &mut self,
         client: async_openai::Client<OpenAIConfig>,
         mut fluff: Fluff,
         save_path: PathBuf,
+        ai_sender: tokio::sync::mpsc::UnboundedSender<AIMessage>,
     ) -> Result<()> {
         tokio::spawn(async move {
             fluff
@@ -90,16 +106,7 @@ impl AudioNarration {
                     fluff.dialogue[index].audio = Some(path);
                 }
             }
-
-            // HACK: This should not be inside the moved thread to avoid  reading two audio at
-            // once. Use the AudioNarration Enum to controle playback.
-            // Play audio sequentially
-            // TODO: Make sure two messages audio are not played at the same time.
-            for file in fluff.dialogue.iter() {
-                if let Some(audio_path) = &file.audio {
-                    let _status = play_audio(audio_path.clone());
-                }
-            }
+            ai_sender.send(AIMessage::AudioNarration(AudioNarration::Playing(fluff)));
         });
         Ok(())
     }
@@ -140,6 +147,7 @@ pub async fn generate_audio(
     Ok(file_path)
 }
 
+// HACK: Still need an interruption method
 pub fn play_audio(file_path: PathBuf) -> Result<()> {
     let (_stream, stream_handle) =
         OutputStream::try_default().expect("Failed to get output stream");
@@ -154,8 +162,6 @@ pub fn play_audio(file_path: PathBuf) -> Result<()> {
     Ok(())
 }
 
-// const PATH: &str = "./sharad/data/recording.wav";
-
 pub fn record_audio(is_recording: Arc<AtomicBool>) -> Result<()> {
     let host = cpal::default_host();
     let device = host
@@ -169,7 +175,7 @@ pub fn record_audio(is_recording: Arc<AtomicBool>) -> Result<()> {
     let spec = wav_spec_from_config(&config);
     let home_dir = dir::home_dir().expect("Failed to get home directory");
     let path = home_dir.join("sharad").join("data").join("recording.wav");
-    let writer = hound::WavWriter::create(path, spec)?;
+    let writer = hound::WavWriter::create(path, spec).map_err(|e| AudioError::Hound(e))?;
     let writer = Arc::new(Mutex::new(Some(writer)));
     let writer_clone = writer.clone();
 
@@ -183,34 +189,39 @@ pub fn record_audio(is_recording: Arc<AtomicBool>) -> Result<()> {
             move |data, _: &_| write_input_data::<i8, i8>(data, &writer_clone),
             err_fn,
             None,
-        )?,
+        ),
         cpal::SampleFormat::I16 => device.build_input_stream(
             &config.into(),
             move |data, _: &_| write_input_data::<i16, i16>(data, &writer_clone),
             err_fn,
             None,
-        )?,
+        ),
         cpal::SampleFormat::I32 => device.build_input_stream(
             &config.into(),
             move |data, _: &_| write_input_data::<i32, i32>(data, &writer_clone),
             err_fn,
             None,
-        )?,
+        ),
         cpal::SampleFormat::F32 => device.build_input_stream(
             &config.into(),
             move |data, _: &_| write_input_data::<f32, f32>(data, &writer_clone),
             err_fn,
             None,
-        )?,
+        ),
         sample_format => {
             return Err(AudioError::AudioRecordingError(format!(
                 "Unsupported sample format '{sample_format}'"
-            )));
+            ))
+            .into());
         }
     };
 
-    // Play the stream (start recording)
-    stream.play()?;
+    let stream = match stream {
+        Ok(stream) => stream,
+        Err(e) => return Err(AudioError::CpalBuildStream(e).into()),
+    };
+
+    stream.play().map_err(AudioError::CpalPlayStream)?;
 
     // Recording loop
     while is_recording.load(Ordering::SeqCst) {
@@ -292,6 +303,6 @@ pub async fn transcribe_audio(client: &async_openai::Client<OpenAIConfig>) -> Re
         .await
     {
         Ok(transcription) => Ok(transcription.text),
-        Err(e) => Err(AudioError::OpenAI(e)),
+        Err(e) => Err(AudioError::OpenAI(e).into()),
     }
 }

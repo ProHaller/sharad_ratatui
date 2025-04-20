@@ -120,33 +120,44 @@ impl GameAI {
     //         *conversation_state = Some(state);
     //     }
     //
-    pub async fn send_message(
-        &self,
+    pub fn send_message(
+        self,
         mut message: UserCompletionRequest,
         ai_sender: mpsc::UnboundedSender<AIMessage>,
     ) -> Result<()> {
-        let formatted_message = serde_json::to_string(&message.message).unwrap();
+        tokio::spawn(async move {
+            let formatted_message = serde_json::to_string(&message.message).unwrap();
 
-        self.add_message_to_thread(&message.state.thread_id, &formatted_message)
-            .await?;
+            self.add_message_to_thread(&message.state.thread_id, &formatted_message)
+                .await;
 
-        let run = self
-            .create_run(&message.state.thread_id, &message.state.assistant_id)
-            .await?;
+            let run = self
+                .create_run(&message.state.thread_id, &message.state.assistant_id)
+                .await
+                .expect("Expected a RunObject");
 
-        match self
-            .wait_for_run_completion(&message.state.thread_id, &run.id)
-            .await?
-        {
-            Some(run) => {
-                self.handle_required_action(&run, message.state).await?;
+            match self
+                .wait_for_run_completion(&message.state.thread_id, &run.id)
+                .await
+                .expect("Expected an Option<RunObject>")
+            {
+                Some(run) => {
+                    self.handle_required_action(&run, message.state)
+                        .await
+                        .expect("Expected a Ok(()) from handle_required_action");
+                }
+                None => {
+                    let response = self
+                        .get_latest_message(&message.state.thread_id)
+                        .await
+                        .expect("Expected an Ok(String)");
+                    let game_message = self
+                        .update_game_state(&mut message.state, &response)
+                        .expect("Expected an Ok(GameMessage)");
+                    ai_sender.send(AIMessage::Response(game_message));
+                }
             }
-            None => {
-                let response = self.get_latest_message(&message.state.thread_id).await?;
-                let game_message = self.update_game_state(&mut message.state, &response)?;
-                ai_sender.send(AIMessage::Response(game_message));
-            }
-        }
+        });
 
         Ok(())
     }
