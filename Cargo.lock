@@ -946,6 +946,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "enum_dispatch"
+version = "0.3.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa18ce2bc66555b3218614519ac839ddb759a7d6720732f979ef8d13be147ecd"
+dependencies = [
+ "once_cell",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.100",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3353,6 +3365,7 @@ dependencies = [
  "ctrlc",
  "derive_more",
  "dir",
+ "enum_dispatch",
  "futures",
  "hound",
  "hyphenation",
@@ -3383,6 +3396,7 @@ dependencies = [
  "tokio-util",
  "tui-input",
  "tui-rain",
+ "tui-textarea",
  "unicode-segmentation",
  "unicode-width 0.2.0",
  "uuid",
@@ -4264,6 +4278,17 @@ dependencies = [
  "rand 0.8.5",
  "rand_pcg",
  "ratatui",
+]
+
+[[package]]
+name = "tui-textarea"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0a5318dd619ed73c52a9417ad19046724effc1287fb75cdcc4eca1d6ac1acbae"
+dependencies = [
+ "crossterm",
+ "ratatui",
+ "unicode-width 0.2.0",
 ]
 
 [[package]]
