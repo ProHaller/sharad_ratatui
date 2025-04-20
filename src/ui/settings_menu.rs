@@ -13,7 +13,7 @@ use ratatui::{
     widgets::*,
 };
 
-use super::{Component, MainMenu, api_key_input::ApiKeyInput, main_menu_fix::*};
+use super::{Component, ComponentEnum, MainMenu, api_key_input::ApiKeyInput, main_menu_fix::*};
 
 #[derive(Debug)]
 pub struct SettingsMenu {
@@ -46,23 +46,25 @@ impl Component for SettingsMenu {
             }
             KeyCode::Right | KeyCode::Enter | KeyCode::Char('l') => {
                 if self.state.selected_setting == 1 {
-                    Some(Action::SwitchComponent(Box::new(ApiKeyInput::new(
-                        &context.settings.openai_api_key,
-                    ))))
+                    Some(Action::SwitchComponent(ComponentEnum::from(
+                        ApiKeyInput::new(&context.settings.openai_api_key),
+                    )))
                 } else {
                     self.change_settings(1);
                     None
                 }
             }
-            KeyCode::Esc => Some(Action::SwitchComponent(Box::new(MainMenu::default()))),
+            KeyCode::Esc => Some(Action::SwitchComponent(ComponentEnum::from(
+                MainMenu::default(),
+            ))),
             KeyCode::Char(c) => {
                 if let Some(digit) = c.to_digit(10) {
                     self.state.selected_setting =
                         ((digit as usize).saturating_sub(1)) % self.state.selected_options.len();
                     match self.state.selected_setting {
-                        1 => Some(Action::SwitchComponent(Box::new(ApiKeyInput::new(
-                            &context.settings.openai_api_key,
-                        )))),
+                        1 => Some(Action::SwitchComponent(ComponentEnum::from(
+                            ApiKeyInput::new(&context.settings.openai_api_key),
+                        ))),
                         _ => {
                             self.change_settings(1);
                             None

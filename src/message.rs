@@ -151,6 +151,7 @@ pub enum AIMessage {
     NewMessage,
     Load(PathBuf),
     Send(UserCompletionRequest),
+    Narrate(Fluff),
     Image(PathBuf),
     ActionRequired(RunObject),
 }

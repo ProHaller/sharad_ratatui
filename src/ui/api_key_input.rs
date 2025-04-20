@@ -20,7 +20,7 @@ use tokio::runtime::Handle;
 use tui_input::Input;
 use tui_input::backend::crossterm::EventHandler;
 
-use super::{Component, SettingsMenu, center_rect, input::Pastable};
+use super::{Component, ComponentEnum, SettingsMenu, center_rect, input::Pastable};
 
 #[derive(Debug)]
 pub struct ApiKeyInput {
@@ -160,9 +160,9 @@ impl ApiKeyInput {
                 if !context.openai_api_key_valid {
                     self.validate_key(&mut context)
                 } else {
-                    Some(Action::SwitchComponent(Box::new(SettingsMenu::new(
-                        context,
-                    ))))
+                    Some(Action::SwitchComponent(ComponentEnum::from(
+                        SettingsMenu::new(context),
+                    )))
                 }
             }
             KeyCode::Char('e') => {
@@ -172,9 +172,9 @@ impl ApiKeyInput {
                     .with_value("Editing this will delete your current key".into());
                 Some(Action::SwitchInputMode(InputMode::Editing))
             }
-            KeyCode::Esc => Some(Action::SwitchComponent(Box::new(SettingsMenu::new(
-                context,
-            )))),
+            KeyCode::Esc => Some(Action::SwitchComponent(ComponentEnum::from(
+                SettingsMenu::new(context),
+            ))),
             KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.input.reset();
                 self.input.paste(context);

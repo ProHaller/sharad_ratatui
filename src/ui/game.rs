@@ -1,6 +1,6 @@
 use super::{
-    Component, MainMenu, center_rect, chunk_attributes, descriptions::*, draw_character_sheet,
-    get_attributes, get_derived, input::Pastable, spinner::Spinner,
+    Component, ComponentEnum, MainMenu, center_rect, chunk_attributes, descriptions::*,
+    draw_character_sheet, get_attributes, get_derived, input::Pastable, spinner::Spinner,
 };
 use crate::{
     ai::GameAI,
@@ -577,7 +577,9 @@ impl InGame {
             KeyCode::Esc => {
                 self.content.clear();
                 self.input.reset();
-                Some(Action::SwitchComponent(Box::new(MainMenu::default())))
+                Some(Action::SwitchComponent(ComponentEnum::from(
+                    MainMenu::default(),
+                )))
             }
             KeyCode::Enter if !self.input.value().is_empty() => {
                 let value = self.input.value();

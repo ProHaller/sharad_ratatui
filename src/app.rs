@@ -1,3 +1,5 @@
+use crate::audio::AudioNarration;
+use crate::ui::ComponentEnum;
 use crate::{ai, error::Error};
 use crate::{message::Message, message::MessageType, message::UserCompletionRequest};
 // /app.rs
@@ -21,10 +23,10 @@ use ratatui::widgets::ListState;
 use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
 use std::any::Any;
 use std::io::Cursor;
+use std::path::PathBuf;
 use std::thread::sleep;
 use std::time::Duration;
-use std::{cell::RefCell, path::PathBuf, sync::Arc};
-use tokio::sync::{Mutex, RwLock, mpsc};
+use tokio::sync::mpsc;
 
 pub enum Action {
     Quit,
@@ -35,8 +37,9 @@ pub enum Action {
     SendMessage(UserCompletionRequest),
     AIResponse(GameMessage),
     // TODO: Probably don't need the transcription target anymore.
-    SwitchComponent(Box<dyn Component>),
+    SwitchComponent(ComponentEnum),
     SwitchInputMode(InputMode),
+    AudioNarration(AudioNarration),
 }
 
 pub enum TranscriptionTarget {
@@ -58,12 +61,13 @@ pub enum InputMode {
 pub struct App<'a> {
     // Application state and control flow
     running: bool,
-    component: Box<dyn Component>,
+    component: ComponentEnum,
     context: Option<Context<'a>>,
     openai_api_key_valid: bool,
     settings: Settings,
     save_manager: SaveManager,
     input_mode: InputMode,
+    audio_narration: AudioNarration,
 
     // --- Global information
     ai_client: Option<GameAI>,
@@ -107,7 +111,7 @@ impl<'a> App<'a> {
 
         Self {
             running: true,
-            component: Box::new(MainMenu::default()),
+            component: ComponentEnum::from(MainMenu::default()),
             ai_client: ai,
             context: None,
             input_mode: InputMode::Normal,
@@ -123,6 +127,7 @@ impl<'a> App<'a> {
             openai_api_key_valid,
             settings,
             save_manager: SaveManager::new(),
+            audio_narration: AudioNarration::Stopped,
         }
     }
     // Asynchronous function to continuously run and update the application.
@@ -144,6 +149,7 @@ impl<'a> App<'a> {
                     clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
                     messages: &self.messages,
                     input_mode: &self.input_mode,
+                    audio_narration: &mut self.audio_narration,
                 };
                 self.component
                     .render(frame.area(), frame.buffer_mut(), &context)
@@ -160,7 +166,9 @@ impl<'a> App<'a> {
                 self.handle_tui_event(event)?;
             };
             if let Some(ai_message) = self.next_ai_message() {
-                self.handle_ai_message(ai_message)?;
+                if let Some(action) = self.handle_ai_message(ai_message)? {
+                    self.handle_action(action);
+                };
             };
 
             if !self.running {
@@ -292,32 +300,46 @@ impl<'a> App<'a> {
         self.ai_receiver.try_recv().ok()
     }
 
-    fn handle_ai_message(&mut self, ai_message: AIMessage) -> Result<()> {
-        match ai_message {
+    fn handle_ai_message(&mut self, ai_message: AIMessage) -> Result<Option<Action>> {
+        let result: Option<Action> = match ai_message {
             AIMessage::Debug(error_string) => return Err(Error::String(error_string)),
             AIMessage::Game((messages, ai, state)) => {
-                self.component = Box::new(InGame::new(
+                self.component = ComponentEnum::from(InGame::new(
                     state,
                     &self.picker.expect("Expected a Picker from app"),
                     ai,
                     messages,
-                ))
+                ));
+                None
             }
             AIMessage::Image(image_path) => {
                 self.image_sender.send(image_path);
+                None
             }
             AIMessage::Load(save_path) => {
                 let game_state = self.load_game_state(&save_path)?;
                 self.get_messages(game_state)?;
+                None
             }
             AIMessage::Send(user_completion_request) => todo!(),
             AIMessage::Response(game_message) => {
-                self.handle_ai_response(game_message);
+                self.handle_ai_response(&game_message);
+                if self.settings.audio_output_enabled {
+                    self.ai_sender.send(AIMessage::Narrate(game_message.fluff));
+                    Some(Action::AudioNarration(AudioNarration::Generating(
+                        self.ai_client.clone().unwrap().clone(),
+                        game_message.fluff.clone(),
+                        self.component.get_in_game_save_path().unwrap().clone(),
+                    )))
+                } else {
+                    None
+                }
             }
-            AIMessage::NewMessage => {}
-            AIMessage::ActionRequired(run) => {}
+            AIMessage::NewMessage => None,
+            AIMessage::ActionRequired(run) => todo!(),
+            AIMessage::Narrate(fluff) => todo!(),
         };
-        Ok(())
+        Ok(result)
     }
     fn handle_tui_event(&mut self, event: TuiEvent) -> Result<()> {
         match event {
@@ -353,6 +375,7 @@ impl<'a> App<'a> {
                 clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
                 messages: &self.messages,
                 input_mode: &self.input_mode,
+                audio_narration: &mut self.audio_narration,
             },
         ) {
             self.handle_action(action)?
@@ -381,7 +404,10 @@ impl<'a> App<'a> {
             }
             Action::StartGame(game) => {
                 // self.game = Some(game);
-                self.component = Box::new(game);
+                self.component = ComponentEnum::from(game);
+            }
+            Action::AudioNarration(audio_narration) => {
+                self.audio_narration = audio_narration;
             }
         }
 
@@ -504,87 +530,36 @@ impl<'a> App<'a> {
 
     // TODO: Make unified and dynamic setting for all settings. cf the Ratatui examples
 
-    pub fn add_message(&mut self, message: message::Message) {
-        self.messages.push(message);
-    }
+    pub async fn handle_ai_response(&mut self, message: &GameMessage) {
+        if let ComponentEnum::InGame(game) = &mut self.component {
+            let game_message_json = serde_json::to_string(&message).unwrap();
+            game.new_message(&Message::new(MessageType::Game, game_message_json.clone()));
+            if self.settings.audio_output_enabled {
+                if let Some(ai_client) = self.ai_client.clone() {
+                    let mut game_message_clone = message.clone();
+                    let save_name = match self.save_manager.current_save.clone() {
+                        Some(game_state) => game_state.save_name,
+                        None => "unknown".to_string(),
+                    };
+                }
+            }
 
-    pub async fn handle_ai_response(&mut self, message: GameMessage) {
-        // let game_message_json = serde_json::to_string(&message).unwrap();
-        // self.add_message(Message::new(MessageType::Game, game_message_json.clone()));
-        //
-        // if self.settings.audio_output_enabled {
-        //     if let Some(ai_client) = self.ai_client.clone() {
-        //         let mut game_message_clone = message.clone();
-        //         let save_name = match self.save_manager.current_save.clone() {
-        //             Some(game_state) => game_state.save_name,
-        //             None => "unknown".to_string(),
-        //         };
-        //         tokio::spawn(async move {
-        //             game_message_clone
-        //                 .fluff
-        //                 .speakers
-        //                 .iter_mut()
-        //                 .for_each(|speaker| speaker.assign_voice());
-        //
-        //             let mut audio_futures = FuturesOrdered::new();
-        //
-        //             for (index, fluff_line) in
-        //                 game_message_clone.fluff.dialogue.iter_mut().enumerate()
-        //             {
-        //                 let voice = game_message_clone
-        //                     .fluff
-        //                     .speakers
-        //                     .iter()
-        //                     .find(|s| s.index == fluff_line.speaker_index)
-        //                     .and_then(|s| s.voice.clone())
-        //                     .expect("Voice not found for speaker");
-        //
-        //                 let ai_client = ai_client.clone();
-        //                 let text = fluff_line.text.clone();
-        //                 let save_name = save_name.clone();
-        //
-        //                 // Generate the audio in parallel, keeping track of the index
-        //                 audio_futures.push_back(async move {
-        //                     let result =
-        //                         audio::generate_audio(&ai_client.client, &save_name, &text, voice)
-        //                             .await;
-        //                     (result, index)
-        //                 });
-        //             }
-        //
-        //             // Process the results in order
-        //             while let Some((result, index)) = audio_futures.next().await {
-        //                 if let Ok(path) = result {
-        //                     game_message_clone.fluff.dialogue[index].audio = Some(path);
-        //                 }
-        //             }
-        //
-        //             // Play audio sequentially
-        //             // TODO: Make sure two messages audio are not played at the same time.
-        //             for file in game_message_clone.fluff.dialogue.iter() {
-        //                 if let Some(audio_path) = &file.audio {
-        //                     let _status = play_audio(audio_path.clone());
-        //                 }
-        //             }
-        //         });
-        //     }
-        // }
+            // Update the UI
+            self.cached_game_content = None; // Force recalculation of cached content
+            self.cached_content_len = 0;
+            self.scroll_to_bottom();
 
-        // // Update the UI
-        // self.cached_game_content = None; // Force recalculation of cached content
-        // self.cached_content_len = 0;
-        // self.scroll_to_bottom();
-        //
-        // if let Some(character_sheet) = game_message.character_sheet {
-        //     self.update_character_sheet(character_sheet).await;
-        // }
-        //
-        // if let Err(e) = self.save_current_game().await {
-        //     self.add_message(Message::new(
-        //         MessageType::System,
-        //         format!("Failed to save game after AI response: {:#?}", e),
-        //     ));
-        // }
+            if let Some(character_sheet) = game_message.character_sheet {
+                self.update_character_sheet(character_sheet).await;
+            }
+
+            if let Err(e) = self.save_current_game().await {
+                self.add_message(Message::new(
+                    MessageType::System,
+                    format!("Failed to save game after AI response: {:#?}", e),
+                ));
+            }
+        }
     }
 
     // pub async fn start_new_game(&mut self, save_name: String) -> Result<()> {

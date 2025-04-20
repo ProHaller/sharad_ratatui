@@ -14,7 +14,7 @@ use ratatui::{
 };
 use tui_input::Input;
 
-use super::{Component, main_menu::MainMenu};
+use super::{Component, ComponentEnum, main_menu::MainMenu};
 
 #[derive(Default, Debug)]
 pub struct SaveName {
@@ -27,7 +27,9 @@ impl Component for SaveName {
             InputMode::Normal => match key.code {
                 KeyCode::Char('e') => Some(Action::SwitchInputMode(InputMode::Editing)),
                 KeyCode::Char('r') => Some(Action::SwitchInputMode(InputMode::Recording)),
-                KeyCode::Esc => Some(Action::SwitchComponent(Box::new(MainMenu::default()))),
+                KeyCode::Esc => Some(Action::SwitchComponent(ComponentEnum::from(
+                    MainMenu::default(),
+                ))),
                 KeyCode::Enter => {
                     if !self.input.value().is_empty() {
                         Some(Action::CreateNewGame(self.input.value().into()))

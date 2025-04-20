@@ -1,5 +1,6 @@
 use crate::{
-    error::{AIError, AudioError},
+    Fluff, GameAI,
+    error::{AIError, AudioError, Result},
     save::get_save_base_dir,
 };
 use async_openai::{
@@ -12,6 +13,7 @@ use cpal::{
     FromSample, Sample,
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
+use futures::{StreamExt, stream::FuturesOrdered};
 use rodio::{Decoder, OutputStream, Sink};
 use std::{
     fs::{self, File},
@@ -26,12 +28,89 @@ use std::{
 };
 use uuid::Uuid;
 
+pub enum AudioNarration {
+    Generating(GameAI, Fluff, PathBuf),
+    Playing,
+    Paused,
+    Stopped,
+}
+
+impl AudioNarration {
+    pub fn handle_audio(self) -> Result<()> {
+        match &self {
+            AudioNarration::Generating(game_ai, fluff, save_path) => {
+                self.generate_narration(game_ai.client.clone(), fluff.clone(), save_path.clone())?;
+            }
+            AudioNarration::Playing => todo!(),
+            AudioNarration::Paused => todo!(),
+            AudioNarration::Stopped => todo!(),
+        }
+        Ok(())
+    }
+
+    fn generate_narration(
+        &self,
+        client: async_openai::Client<OpenAIConfig>,
+        mut fluff: Fluff,
+        save_path: PathBuf,
+    ) -> Result<()> {
+        tokio::spawn(async move {
+            fluff
+                .speakers
+                .iter_mut()
+                .for_each(|speaker| speaker.assign_voice());
+
+            let mut audio_futures = FuturesOrdered::new();
+
+            for (index, fluff_line) in fluff.dialogue.iter_mut().enumerate() {
+                let voice = fluff
+                    .speakers
+                    .iter()
+                    .find(|s| s.index == fluff_line.speaker_index)
+                    .and_then(|s| s.voice.clone())
+                    .expect("Voice not found for speaker");
+
+                let text = fluff_line.text.clone();
+                let save_path = save_path.clone();
+                let client = client.clone();
+
+                // HACK:  That looks like it's concurrent, not parralel, maybe rayon and
+                // for_each_par?
+
+                // Generate the audio in parallel, keeping track of the index
+                audio_futures.push_back(async move {
+                    let result = generate_audio(&client, &save_path, &text, voice).await;
+                    (result, index)
+                });
+            }
+
+            // Process the results in order
+            while let Some((result, index)) = audio_futures.next().await {
+                if let Ok(path) = result {
+                    fluff.dialogue[index].audio = Some(path);
+                }
+            }
+
+            // HACK: This should not be inside the moved thread to avoid  reading two audio at
+            // once. Use the AudioNarration Enum to controle playback.
+            // Play audio sequentially
+            // TODO: Make sure two messages audio are not played at the same time.
+            for file in fluff.dialogue.iter() {
+                if let Some(audio_path) = &file.audio {
+                    let _status = play_audio(audio_path.clone());
+                }
+            }
+        });
+        Ok(())
+    }
+}
+
 pub async fn generate_audio(
     client: &async_openai::Client<OpenAIConfig>,
-    save_name: &str,
+    save_path: &PathBuf,
     text: &str,
     voice: Voice,
-) -> Result<PathBuf, AIError> {
+) -> Result<PathBuf> {
     let audio = Audio::new(client);
 
     let response = audio
@@ -47,9 +126,7 @@ pub async fn generate_audio(
         .await
         .map_err(AIError::OpenAI)?;
 
-    let saves_dir = get_save_base_dir();
-    let save_dir = saves_dir.join(save_name);
-    let logs_dir = save_dir.join("logs");
+    let logs_dir = save_path.join("logs");
     fs::create_dir_all(&logs_dir).map_err(AIError::Io)?;
 
     let uuid = Uuid::new_v4();
@@ -63,7 +140,7 @@ pub async fn generate_audio(
     Ok(file_path)
 }
 
-pub fn play_audio(file_path: PathBuf) -> Result<(), AIError> {
+pub fn play_audio(file_path: PathBuf) -> Result<()> {
     let (_stream, stream_handle) =
         OutputStream::try_default().expect("Failed to get output stream");
     let sink = Sink::try_new(&stream_handle).expect("Failed to create audio sink");
@@ -79,7 +156,7 @@ pub fn play_audio(file_path: PathBuf) -> Result<(), AIError> {
 
 // const PATH: &str = "./sharad/data/recording.wav";
 
-pub fn record_audio(is_recording: Arc<AtomicBool>) -> Result<(), AudioError> {
+pub fn record_audio(is_recording: Arc<AtomicBool>) -> Result<()> {
     let host = cpal::default_host();
     let device = host
         .default_input_device()
@@ -197,9 +274,7 @@ where
     }
 }
 
-pub async fn transcribe_audio(
-    client: &async_openai::Client<OpenAIConfig>,
-) -> Result<String, AudioError> {
+pub async fn transcribe_audio(client: &async_openai::Client<OpenAIConfig>) -> Result<String> {
     let audio = Audio::new(client);
 
     let home_dir = dir::home_dir().expect("Failed to get home directory");

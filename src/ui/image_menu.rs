@@ -15,7 +15,7 @@ use ratatui::{
 };
 use tui_input::{Input, backend::crossterm::EventHandler};
 
-use super::{Component, MainMenu, center_rect};
+use super::{Component, ComponentEnum, MainMenu, center_rect};
 
 #[derive(Default, Debug)]
 pub struct ImageMenu {
@@ -30,7 +30,9 @@ impl Component for ImageMenu {
                 KeyCode::Char('e') => Some(Action::SwitchInputMode(InputMode::Editing)),
 
                 KeyCode::Char('r') => Some(Action::SwitchInputMode(InputMode::Recording)),
-                KeyCode::Esc => Some(Action::SwitchComponent(Box::new(MainMenu::default()))),
+                KeyCode::Esc => Some(Action::SwitchComponent(ComponentEnum::from(
+                    MainMenu::default(),
+                ))),
                 KeyCode::Enter => {
                     // TODO: Fix the image generation
                     //
@@ -44,13 +46,17 @@ impl Component for ImageMenu {
                     //     );
                     //     self.input.reset();
                     // });
-                    Some(Action::SwitchComponent(Box::new(MainMenu::default())))
+                    Some(Action::SwitchComponent(ComponentEnum::from(
+                        MainMenu::default(),
+                    )))
                 }
                 _ => None,
             },
             InputMode::Editing => match key.code {
                 KeyCode::Esc => Some(Action::SwitchInputMode(InputMode::Normal)),
-                KeyCode::Enter => Some(Action::SwitchComponent(Box::new(MainMenu::default()))),
+                KeyCode::Enter => Some(Action::SwitchComponent(ComponentEnum::from(
+                    MainMenu::default(),
+                ))),
                 _ => {
                     self.input.handle_event(&Event::Key(key));
                     None

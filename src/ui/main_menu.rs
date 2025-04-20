@@ -2,7 +2,7 @@
 
 // Import required modules and structs from other parts of the application or external crates.
 use super::{
-    Component, api_key_input::ApiKeyInput, draw::center_rect, image_menu::ImageMenu,
+    Component, ComponentEnum, api_key_input::ApiKeyInput, draw::center_rect, image_menu::ImageMenu,
     load_menu::LoadMenu, main_menu_fix::*, save_name_input::SaveName, settings_menu::SettingsMenu,
     widgets::StatefulList,
 };
@@ -30,11 +30,11 @@ const MAIN_MENU: [&str; 4] = [
 ];
 
 #[derive(Debug)]
-pub struct MainMenu<'a> {
-    state: StatefulList<&'a str>,
+pub struct MainMenu {
+    state: StatefulList<&'static str>,
 }
 
-impl Default for MainMenu<'_> {
+impl Default for MainMenu {
     fn default() -> Self {
         let mut menu = Self {
             state: StatefulList::with_items(Vec::from(MAIN_MENU)),
@@ -44,7 +44,7 @@ impl Default for MainMenu<'_> {
     }
 }
 
-impl Component for MainMenu<'_> {
+impl Component for MainMenu {
     fn on_key(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
         match key.code {
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => self.switch_component(context),
@@ -103,7 +103,7 @@ impl Component for MainMenu<'_> {
     }
 }
 
-impl MainMenu<'_> {
+impl MainMenu {
     fn select_main_menu_by_char(&mut self, c: char) {
         let index = (c as usize - 1) % self.state.items.len();
         self.state.state.select(Some(index));
@@ -175,27 +175,31 @@ impl MainMenu<'_> {
         menu.render(centered_area, buffer);
     }
 
-    fn switch_component(&mut self, context: Context<'_>) -> Option<Action> {
+    pub fn switch_component(&mut self, context: Context<'_>) -> Option<Action> {
         match self.state.state.selected() {
-            Some(0) => Some(Action::SwitchComponent(Box::new(SaveName::default()))),
+            Some(0) => Some(Action::SwitchComponent(ComponentEnum::from(
+                SaveName::default(),
+            ))),
             Some(1) => {
                 // Load Game
-                Some(Action::SwitchComponent(Box::new(LoadMenu::default(
-                    context,
-                ))))
+                Some(Action::SwitchComponent(ComponentEnum::from(
+                    LoadMenu::default(context),
+                )))
             }
             Some(2) => {
                 if context.openai_api_key_valid {
-                    Some(Action::SwitchComponent(Box::new(ImageMenu::default())))
+                    Some(Action::SwitchComponent(ComponentEnum::from(
+                        ImageMenu::default(),
+                    )))
                 } else {
-                    Some(Action::SwitchComponent(Box::new(ApiKeyInput::new(
-                        &context.settings.openai_api_key,
-                    ))))
+                    Some(Action::SwitchComponent(ComponentEnum::from(
+                        ApiKeyInput::new(&context.settings.openai_api_key),
+                    )))
                 }
             }
-            Some(3) => Some(Action::SwitchComponent(Box::new(SettingsMenu::new(
-                context,
-            )))),
+            Some(3) => Some(Action::SwitchComponent(ComponentEnum::from(
+                SettingsMenu::new(context),
+            ))),
             _ => None,
         }
     }

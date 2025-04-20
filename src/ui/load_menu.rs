@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use super::{Component, draw::center_rect, main_menu_fix::*, widgets::StatefulList};
+use super::{Component, ComponentEnum, draw::center_rect, main_menu_fix::*, widgets::StatefulList};
 use crate::{app::Action, context::Context, save, ui::MainMenu};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
@@ -25,9 +25,9 @@ impl Component for LoadMenu {
             KeyCode::Enter | KeyCode::Char('l') => self.state.state.selected().map(|selected| {
                 Action::LoadSave(context.save_manager.available_saves[selected].clone())
             }),
-            KeyCode::Esc | KeyCode::Char('h') => {
-                Some(Action::SwitchComponent(Box::new(MainMenu::default())))
-            }
+            KeyCode::Esc | KeyCode::Char('h') => Some(Action::SwitchComponent(
+                ComponentEnum::from(MainMenu::default()),
+            )),
             KeyCode::Up | KeyCode::Char('k') => {
                 self.backspace_counter = false;
                 self.state.previous();

@@ -1,6 +1,6 @@
 // ui/mod.rs
 
-mod api_key_input;
+pub mod api_key_input;
 pub mod character_sheet;
 pub mod component;
 mod constants;
@@ -8,6 +8,7 @@ pub mod descriptions;
 pub mod draw;
 pub mod game;
 mod image_menu;
+pub mod input;
 mod load_menu;
 pub mod main_menu;
 mod main_menu_fix;
@@ -16,7 +17,6 @@ mod save_name_input;
 mod settings_menu;
 pub mod spinner;
 pub mod widgets;
-pub mod input;
 
 pub use self::character_sheet::*;
 pub use self::component::*;

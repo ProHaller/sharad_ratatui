@@ -6,13 +6,16 @@ use std::{
 use color_eyre::eyre::Result;
 
 use futures::{FutureExt, StreamExt};
-use ratatui::crossterm::{
-    cursor,
-    event::{
-        DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
-        Event as CrosstermEvent, KeyEvent, KeyEventKind, MouseEvent,
+use ratatui::{
+    DefaultTerminal,
+    crossterm::{
+        cursor,
+        event::{
+            DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+            Event as CrosstermEvent, KeyEvent, KeyEventKind, MouseEvent,
+        },
+        terminal::{EnterAlternateScreen, LeaveAlternateScreen},
     },
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::{backend::CrosstermBackend as Backend, buffer::Buffer};
 use ratatui_image::picker::Picker;
@@ -42,7 +45,7 @@ pub enum TuiEvent {
 }
 
 pub struct Tui {
-    pub terminal: ratatui::Terminal<Backend<std::io::Stderr>>,
+    pub terminal: DefaultTerminal,
     pub picker: Picker,
     pub task: JoinHandle<()>,
     pub cancellation_token: CancellationToken,
@@ -58,7 +61,7 @@ impl Tui {
     pub fn new() -> Result<Self> {
         let tick_rate = 4.0;
         let frame_rate = 60.0;
-        let terminal = ratatui::Terminal::new(Backend::new(std::io::stderr()))?;
+        let terminal = ratatui::init();
         let picker = Picker::from_query_stdio()?;
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let cancellation_token = CancellationToken::new();
@@ -195,17 +198,7 @@ impl Tui {
 
     pub fn exit(&mut self) -> Result<()> {
         self.stop()?;
-        if crossterm::terminal::is_raw_mode_enabled()? {
-            self.flush()?;
-            if self.paste {
-                crossterm::execute!(std::io::stderr(), DisableBracketedPaste)?;
-            }
-            if self.mouse {
-                crossterm::execute!(std::io::stderr(), DisableMouseCapture)?;
-            }
-            crossterm::execute!(std::io::stderr(), LeaveAlternateScreen, cursor::Show)?;
-            crossterm::terminal::disable_raw_mode()?;
-        }
+        ratatui::restore();
         Ok(())
     }
 
@@ -242,7 +235,7 @@ impl Tui {
 }
 
 impl Deref for Tui {
-    type Target = ratatui::Terminal<Backend<std::io::Stderr>>;
+    type Target = DefaultTerminal;
 
     fn deref(&self) -> &Self::Target {
         &self.terminal
