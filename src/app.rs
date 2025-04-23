@@ -532,6 +532,7 @@ impl<'a> App<'a> {
         if let ComponentEnum::InGame(game) = &mut self.component {
             let game_message_json = serde_json::to_string(&message).unwrap();
             game.new_message(&Message::new(MessageType::Game, game_message_json.clone()));
+            game.spinner_active = false;
         }
     }
 

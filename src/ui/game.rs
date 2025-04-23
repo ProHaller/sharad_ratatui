@@ -1,6 +1,9 @@
 use super::{
-    Component, ComponentEnum, MainMenu, center_rect, chunk_attributes, descriptions::*,
-    draw_character_sheet, get_attributes, get_derived, input::Pastable, spinner::Spinner,
+    Component, ComponentEnum, MainMenu, center_rect, chunk_attributes,
+    descriptions::*,
+    draw_character_sheet, get_attributes, get_derived,
+    input::Pastable,
+    spinner::{Spinner, spinner_frame},
 };
 use crate::{
     ai::GameAI,
@@ -22,7 +25,7 @@ use ratatui::{
     widgets::*,
 };
 use ratatui_image::{StatefulImage, picker::Picker, protocol::StatefulProtocol};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tui_input::{Input, backend::crossterm::EventHandler};
 
 pub struct InGame {
@@ -44,6 +47,7 @@ pub struct InGame {
     pub last_spinner_update: Instant,
     pub spinner_active: bool,
     pub total_lines: usize,
+    pub all_lines: Vec<(Line<'static>, Alignment)>,
     pub max_height: usize,
     pub max_width: usize,
     pub content_scroll: usize,
@@ -104,6 +108,7 @@ impl Component for InGame {
 
         self.draw_game_content(buffer, context, left_screen[0]);
 
+        self.draw_spinner(buffer, left_screen[0]);
         self.draw_user_input(buffer, context, left_screen[1]);
 
         match &self.state.main_character_sheet {
@@ -160,9 +165,10 @@ impl InGame {
             spinner: Spinner::new(),
             last_spinner_update: Instant::now(),
             spinner_active: false,
+            all_lines: Vec::new(),
             total_lines: 0,
-            max_height: 0,
-            max_width: 0,
+            max_height: 30,
+            max_width: 90,
             content_scroll: 0,
         };
         new_self.on_creation();
@@ -349,8 +355,7 @@ impl InGame {
             } else {
                 format!(" {} ", save_name)
             })
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Green));
+            .borders(Borders::ALL);
 
         let fluff_area = fluff_block.inner(area);
 
@@ -358,10 +363,9 @@ impl InGame {
 
         self.max_width = fluff_area.width.saturating_sub(2) as usize;
         self.max_height = fluff_area.height.saturating_sub(2) as usize;
-        let all_lines = self.parse_full_game_content();
-        self.total_lines = all_lines.len();
 
-        let visible_lines: Vec<Line> = all_lines
+        let visible_lines: Vec<Line> = self
+            .all_lines
             .iter()
             .skip(self.content_scroll)
             .take(self.max_height)
@@ -381,8 +385,6 @@ impl InGame {
             .wrap(Wrap { trim: true });
 
         content.render(fluff_area, buffer);
-
-        // TODO: Make sure the scrolling works
 
         self.update_scroll();
     }
@@ -493,6 +495,11 @@ impl InGame {
 
     pub fn new_message(&mut self, new_message: &Message) {
         self.content.push(new_message.clone());
+        let new_lines = self.parse_message(new_message);
+        self.total_lines += new_lines.len();
+        self.all_lines.extend(new_lines);
+        self.update_scroll();
+        self.scroll_to_bottom();
     }
 
     fn parse_message(&self, message: &Message) -> Vec<(Line<'static>, Alignment)> {
@@ -583,6 +590,7 @@ impl InGame {
             }
             KeyCode::Enter if !self.input.value().is_empty() => {
                 let value = self.input.value();
+                // FIX: The spinner does not start
                 self.spinner_active = true;
                 self.new_message(&Message::new(MessageType::User, value.into()));
                 let message = self.build_user_completion_message(&context);
@@ -590,6 +598,7 @@ impl InGame {
                 self.ai
                     .clone()
                     .send_message(message, self.ai.ai_sender.clone());
+                self.input.reset();
                 None
             }
             KeyCode::PageUp => {
@@ -709,13 +718,40 @@ impl InGame {
     }
 
     fn on_creation(&mut self) {
-        self.total_lines = self.parse_full_game_content().len();
+        self.all_lines = self.parse_full_game_content();
+        self.total_lines = self.all_lines.len();
         // HACK: This should be set to fluff_area max_height
         self.content_scroll = self.total_lines - 30;
 
         self.scroll_to_bottom();
-        // HACK: This may work to smooth the image resizing on the first InGame creation
-        let _ = StatefulImage::new();
+        // TODO: Maybe I could precompute the image here.
+    }
+
+    fn draw_spinner(&mut self, buffer: &mut Buffer, left_screen: Rect) {
+        if !self.spinner_active {
+            return;
+        };
+        self.update_spinner();
+        let spinner_area = Rect::new(
+            left_screen.x,
+            left_screen.bottom() - 1,
+            left_screen.width,
+            1,
+        );
+
+        let spinner_text = spinner_frame(&self.spinner);
+        let spinner_widget = Paragraph::new(spinner_text)
+            .style(Style::default())
+            .alignment(Alignment::Center);
+
+        spinner_widget.render(spinner_area, buffer);
+    }
+
+    pub fn update_spinner(&mut self) {
+        if self.spinner_active && self.last_spinner_update.elapsed() >= Duration::from_millis(100) {
+            self.spinner.next_frame();
+            self.last_spinner_update = Instant::now();
+        }
     }
 }
 
@@ -829,4 +865,3 @@ pub fn parse_markdown(line: String, base_style: Style) -> Line<'static> {
 //     self.input = Input::default();
 //     self.scroll_to_bottom();
 // }
-//

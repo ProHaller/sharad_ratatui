@@ -19,6 +19,7 @@ pub enum Error {
     RatatuiImage(ratatui_image::errors::Errors),
     Report(color_eyre::eyre::Report),
     Audio(AudioError),
+    Unit,
 }
 
 impl From<&str> for Error {

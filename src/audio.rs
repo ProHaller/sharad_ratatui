@@ -19,7 +19,7 @@ use rodio::{Decoder, OutputStream, Sink};
 use std::{
     fs::{self, File},
     io::{BufReader, BufWriter},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -70,7 +70,7 @@ impl AudioNarration {
         save_path: PathBuf,
         ai_sender: tokio::sync::mpsc::UnboundedSender<AIMessage>,
     ) -> Result<()> {
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             fluff
                 .speakers
                 .iter_mut()
@@ -90,10 +90,7 @@ impl AudioNarration {
                 let save_path = save_path.clone();
                 let client = client.clone();
 
-                // HACK:  That looks like it's concurrent, not parralel, maybe rayon and
-                // for_each_par?
-
-                // Generate the audio in parallel, keeping track of the index
+                // Generate the audio concurrently, keeping track of the index
                 audio_futures.push_back(async move {
                     let result = generate_audio(&client, &save_path, &text, voice).await;
                     (result, index)
@@ -106,7 +103,11 @@ impl AudioNarration {
                     fluff.dialogue[index].audio = Some(path);
                 }
             }
-            ai_sender.send(AIMessage::AudioNarration(AudioNarration::Playing(fluff)));
+            if let Err(e) =
+                ai_sender.send(AIMessage::AudioNarration(AudioNarration::Playing(fluff)))
+            {
+                panic!("Err sending AudioNarration: {}", e)
+            };
         });
         Ok(())
     }
@@ -114,7 +115,7 @@ impl AudioNarration {
 
 pub async fn generate_audio(
     client: &async_openai::Client<OpenAIConfig>,
-    save_path: &PathBuf,
+    save_path: &Path,
     text: &str,
     voice: Voice,
 ) -> Result<PathBuf> {
