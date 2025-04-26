@@ -48,6 +48,7 @@ impl Component for LoadMenu {
                                 &context.save_manager.available_saves
                                     [self.state.state.selected().unwrap()]
                                 .clone(),
+                                &context.settings.openai_api_key.clone().unwrap(),
                             )
                             .expect("Expected save deletion");
                     }

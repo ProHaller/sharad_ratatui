@@ -486,7 +486,7 @@ pub enum UpdateOperation<T> {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum CharacterSheetUpdate {
-    UpdateAttribute {
+    Attribute {
         attribute: String,
         operation: UpdateOperation<CharacterValue>,
     },
@@ -496,7 +496,7 @@ pub enum CharacterSheetUpdate {
 #[serde(untagged)]
 pub enum CharacterValue {
     U8(u8),
-    U32(u32),
+    Nuyen(u32),
     String(String),
     Race(Race),
     Skills(Skills),
@@ -510,17 +510,17 @@ pub enum CharacterValue {
 }
 
 impl CharacterSheet {
-    pub fn apply_update(&mut self, update: CharacterSheetUpdate) -> Result<()> {
+    pub fn apply_update(&mut self, update: &CharacterSheetUpdate) -> Result<()> {
         match update {
-            CharacterSheetUpdate::UpdateAttribute {
+            CharacterSheetUpdate::Attribute {
                 attribute,
                 operation,
             } => {
                 match operation {
-                    UpdateOperation::Modify(value) => self.modify_attribute(&attribute, value)?,
-                    UpdateOperation::Add(value) => self.add_to_attribute(&attribute, value)?,
+                    UpdateOperation::Modify(value) => self.modify_attribute(attribute, value)?,
+                    UpdateOperation::Add(value) => self.add_to_attribute(attribute, value)?,
                     UpdateOperation::Remove(value) => {
-                        self.remove_from_attribute(&attribute, value)?
+                        self.remove_from_attribute(attribute, value)?
                     }
                 }
                 self.update_derived_attributes();
@@ -529,7 +529,7 @@ impl CharacterSheet {
         }
     }
 
-    fn modify_attribute(&mut self, attribute: &str, value: CharacterValue) -> Result<()> {
+    fn modify_attribute(&mut self, attribute: &str, value: &CharacterValue) -> Result<()> {
         match (attribute, value.clone()) {
             ("name", CharacterValue::String(v)) => self.name = v,
             ("race", CharacterValue::Race(v)) => {
@@ -550,9 +550,22 @@ impl CharacterSheet {
             ("edge", CharacterValue::U8(v)) => self.attributes.edge = v,
             ("magic", CharacterValue::OptionU8(v)) => self.magic.magic = v,
             ("resonance", CharacterValue::OptionU8(v)) => self.resonance.resonance = v,
-            ("skills", CharacterValue::Skills(v)) => self.skills = v,
-            ("knowledge_skills", CharacterValue::HashMapStringU8(v)) => self.knowledge_skills = v,
-            ("nuyen", CharacterValue::U32(v)) => self.nuyen = v,
+            ("skills", CharacterValue::Skills(v)) => {
+                let Skills {
+                    combat: com,
+                    physical: phy,
+                    social: soc,
+                    technical: tech,
+                } = v;
+                self.skills.combat.extend(com);
+                self.skills.physical.extend(phy);
+                self.skills.social.extend(soc);
+                self.skills.technical.extend(tech);
+            }
+            ("knowledge_skills", CharacterValue::HashMapStringU8(v)) => {
+                self.knowledge_skills.extend(v)
+            }
+            ("nuyen", CharacterValue::Nuyen(v)) => self.nuyen = v,
             ("lifestyle", CharacterValue::String(v)) => self.lifestyle = v,
             ("contacts", CharacterValue::HashMapStringContact(v)) => self.contacts = v,
             ("qualities", CharacterValue::VecQuality(v)) => self.qualities = v,
@@ -584,9 +597,9 @@ impl CharacterSheet {
         Ok(())
     }
 
-    fn add_to_attribute(&mut self, attribute: &str, value: CharacterValue) -> Result<()> {
+    fn add_to_attribute(&mut self, attribute: &str, value: &CharacterValue) -> Result<()> {
         match (attribute, value.clone()) {
-            ("nuyen", CharacterValue::U32(v)) => self.nuyen = self.nuyen.saturating_add(v),
+            ("nuyen", CharacterValue::Nuyen(v)) => self.nuyen = self.nuyen.saturating_add(v),
             ("contacts", CharacterValue::HashMapStringContact(v)) => self.contacts.extend(v),
             ("qualities", CharacterValue::VecQuality(v)) => self.qualities.extend(v),
             ("cyberware", CharacterValue::VecString(v)) => self.cyberware.extend(v),
@@ -611,9 +624,9 @@ impl CharacterSheet {
         Ok(())
     }
 
-    fn remove_from_attribute(&mut self, attribute: &str, value: CharacterValue) -> Result<()> {
+    fn remove_from_attribute(&mut self, attribute: &str, value: &CharacterValue) -> Result<()> {
         match (attribute, value.clone()) {
-            ("nuyen", CharacterValue::U32(v)) => self.nuyen = self.nuyen.saturating_sub(v),
+            ("nuyen", CharacterValue::Nuyen(v)) => self.nuyen = self.nuyen.saturating_sub(v),
             ("contacts", CharacterValue::HashMapStringContact(v)) => {
                 for key in v.keys() {
                     self.contacts.remove(key);

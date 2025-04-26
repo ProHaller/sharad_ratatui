@@ -1,5 +1,10 @@
 // Import the necessary modules and structs from other parts of the application or crates.
-use crate::{ai::GameAI, audio::AudioNarration, character::CharacterSheet, game_state::GameState};
+use crate::{
+    ai::GameAI,
+    audio::AudioNarration,
+    character::{CharacterSheet, CharacterSheetUpdate},
+    game_state::GameState,
+};
 
 use async_openai::types::{RunObject, Voice};
 use serde::{Deserialize, Serialize};
@@ -148,9 +153,11 @@ pub enum AIMessage {
     Game((Vec<Message>, GameAI, GameState)),
     Response(GameMessage),
     NewMessage,
+    Save(GameState),
     Load(PathBuf),
     Image(PathBuf),
     AudioNarration(AudioNarration),
+    RequestCharacterUpdate(CharacterSheetUpdate, String),
 }
 
 // Implementation of Message struct, providing a method to create new messages.

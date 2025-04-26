@@ -9,10 +9,12 @@ use crate::{
     ai::GameAI,
     app::{Action, InputMode},
     context::Context,
+    error::Error,
     game_state::GameState,
     imager::load_image_from_file,
-    message::{GameMessage, Message, MessageType, UserMessage},
-    message::{UserCompletionRequest, create_user_message},
+    message::{
+        GameMessage, Message, MessageType, UserCompletionRequest, UserMessage, create_user_message,
+    },
 };
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -584,6 +586,10 @@ impl InGame {
             KeyCode::Esc => {
                 self.content.clear();
                 self.input.reset();
+                context
+                    .save_manager
+                    .save(&self.state)
+                    .expect("Should have saved from the game");
                 Some(Action::SwitchComponent(ComponentEnum::from(
                     MainMenu::default(),
                 )))
@@ -595,9 +601,11 @@ impl InGame {
                 self.new_message(&Message::new(MessageType::User, value.into()));
                 let message = self.build_user_completion_message(&context);
                 // HACK: How could I avoid to clone this?
-                self.ai
-                    .clone()
-                    .send_message(message, self.ai.ai_sender.clone());
+                let ai = self.ai.clone();
+                tokio::spawn(async move {
+                    ai.send_message(message, ai.ai_sender.clone()).await?;
+                    Ok::<(), Error>(())
+                });
                 self.input.reset();
                 None
             }

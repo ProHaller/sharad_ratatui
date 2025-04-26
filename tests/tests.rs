@@ -201,7 +201,7 @@ fn test_character_sheet_update_from_json() {
     let args = &json_value["function"]["arguments"];
 
     // Step 5: Parse the update arguments
-    let update = CharacterSheetUpdate::UpdateAttribute {
+    let update = CharacterSheetUpdate::Attribute {
         attribute: args["update"]["attribute"]
             .as_str()
             .expect("Expected some String")
@@ -231,7 +231,7 @@ fn test_character_sheet_update_from_json() {
     println!("{:#?}", update);
     // Step 6: Apply the update
     character_sheet
-        .apply_update(update)
+        .apply_update(&update)
         .expect("Failed to apply update");
 
     println!("{:#?}", character_sheet);

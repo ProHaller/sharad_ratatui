@@ -12,7 +12,7 @@ use ratatui::{
     style::{Color, Style},
     widgets::*,
 };
-use tui_input::Input;
+use tui_input::{Input, backend::crossterm::EventHandler};
 
 use super::{Component, ComponentEnum, main_menu::MainMenu};
 
@@ -44,37 +44,15 @@ impl Component for SaveName {
                 KeyCode::Char('v') => {
                     todo!("Centralize the text input handling for paste.")
                 }
+                KeyCode::Enter => Some(Action::SwitchInputMode(InputMode::Normal)),
                 _ => {
-                    todo!("Centralize the text input handling.")
-
-                    // fn handle_save_name_editing(&mut self, key: KeyEvent) {
-                    //     match key.code {
-                    //         KeyCode::Enter => {
-                    //             // Handle save name submission
-                    //             self.input_mode = InputMode::Normal;
-                    //         }
-                    //         KeyCode::Esc => {
-                    //             self.input_mode = InputMode::Normal;
-                    //         }
-                    //         KeyCode::Char('v') => {
-                    //             if key.modifiers.contains(KeyModifiers::CONTROL) {
-                    //                 if let Err(e) = self.handle_paste() {
-                    //                     self.add_debug_message(format!("Failed to paste: {:#?}", e));
-                    //                 }
-                    //             } else {
-                    //                 self.save_name_input.handle_event(&Event::Key(key));
-                    //             }
-                    //         }
-                    //         _ => {
-                    //             self.save_name_input.handle_event(&Event::Key(key));
-                    //         }
-                    //     }
-                    // }
+                    self.input.handle_event(&crossterm::event::Event::Key(key));
+                    None
                 }
             },
             InputMode::Recording if key.code == KeyCode::Esc => {
                 // TODO: Stop recording if not in InputMode::Recording
-                Some(Action::SwitchInputMode(InputMode::Normal))
+                todo!("Need to implement the voice recording");
             }
             _ => None,
         }

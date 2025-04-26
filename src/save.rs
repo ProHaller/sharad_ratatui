@@ -1,11 +1,10 @@
 // /save.rs
-use crate::{error::Result, game_state::GameState};
+use crate::{assistant::delete_assistant, error::Result, game_state::GameState};
 
-use chrono::Local;
+use async_openai::{Client, config::OpenAIConfig};
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::{File, OpenOptions, create_dir_all, read_dir, remove_dir_all, remove_file, write},
-    io::Write,
+    fs::{File, create_dir_all, read_dir, remove_dir_all, remove_file, write},
     path::PathBuf,
 };
 
@@ -22,7 +21,6 @@ pub fn get_save_base_dir() -> PathBuf {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SaveManager {
     pub available_saves: Vec<PathBuf>,
-    // pub current_save: Option<GameState>,
 }
 
 impl Default for SaveManager {
@@ -35,7 +33,6 @@ impl SaveManager {
     pub fn new() -> Self {
         Self {
             available_saves: Self::scan_save_files(),
-            // current_save: None,
         }
     }
 
@@ -75,7 +72,7 @@ impl SaveManager {
         Ok(save)
     }
 
-    pub fn save(self, current_save: GameState) -> Result<()> {
+    pub fn save(&self, current_save: &GameState) -> Result<()> {
         if let Some(save_path) = current_save.save_path.clone() {
             create_dir_all(save_path.parent().expect("Expected a parent path"))?;
             let serialized = serde_json::to_string_pretty(&current_save)
@@ -85,7 +82,7 @@ impl SaveManager {
             let save_dir = get_save_base_dir();
             let game_save_dir = save_dir.join(&current_save.save_name);
             create_dir_all(&game_save_dir)?;
-            let mut current_save = current_save;
+            let mut current_save = current_save.clone();
             current_save.save_path =
                 Some(game_save_dir.join(format!("{}.json", current_save.save_name)));
             let serialized = serde_json::to_string_pretty(&current_save)
@@ -99,7 +96,11 @@ impl SaveManager {
         Ok(())
     }
 
-    pub fn delete_save(mut self, save_path: &PathBuf) -> Result<()> {
+    pub fn delete_save(mut self, save_path: &PathBuf, api_key: &str) -> Result<()> {
+        if let Ok(game) = self.load_from_file(save_path) {
+            let client = Client::with_config(OpenAIConfig::new().with_api_key(api_key));
+            delete_assistant(&client, &game.assistant_id);
+        };
         if let Some(save_dir) = save_path.parent() {
             if save_dir != get_save_base_dir() {
                 remove_dir_all(save_dir)?;

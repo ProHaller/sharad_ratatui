@@ -1,18 +1,15 @@
-use crate::audio::AudioNarration;
-use crate::ui::ComponentEnum;
-use crate::{ai, error::Error};
-use crate::{message::Message, message::MessageType, message::UserCompletionRequest};
-// /app.rs
-use crate::context::{self, Context};
 use crate::{
-    ai::GameAI,
-    error::{AppError, Result, ShadowrunError},
+    ai::{self, GameAI},
+    audio::AudioNarration,
+    character::CharacterSheetUpdate,
+    context::{self, Context},
+    error::{AppError, Error, Result, ShadowrunError},
     game_state::GameState,
-    message::{self, AIMessage, GameMessage},
+    message::{self, AIMessage, GameMessage, Message, MessageType, UserCompletionRequest},
     save::SaveManager,
     settings::Settings,
     tui::{Tui, TuiEvent},
-    ui::{Component, game::InGame, main_menu::MainMenu},
+    ui::{Component, ComponentEnum, game::InGame, main_menu::MainMenu},
 };
 
 use async_openai::types::RunObject;
@@ -21,11 +18,7 @@ use crossterm::cursor;
 use crossterm::event::{KeyEvent, KeyEventKind};
 use ratatui::widgets::ListState;
 use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
-use std::any::Any;
-use std::io::Cursor;
-use std::path::PathBuf;
-use std::thread::sleep;
-use std::time::Duration;
+use std::{any::Any, io::Cursor, path::PathBuf, thread::sleep, time::Duration};
 use tokio::sync::mpsc;
 
 pub enum Action {
@@ -34,7 +27,6 @@ pub enum Action {
     CreateNewGame(String),
     StartGame(InGame),
     ProcessMessage(String),
-    AIResponse(GameMessage),
     // TODO: Probably don't need the transcription target anymore.
     SwitchComponent(ComponentEnum),
     SwitchInputMode(InputMode),
@@ -140,16 +132,16 @@ impl<'a> App<'a> {
         self.picker = Some(picker);
 
         loop {
+            let context = Context {
+                openai_api_key_valid: self.openai_api_key_valid,
+                save_manager: &mut self.save_manager,
+                settings: &mut self.settings,
+                clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
+                messages: &self.messages,
+                input_mode: &self.input_mode,
+                audio_narration: &mut self.audio_narration,
+            };
             tui.draw(|frame| {
-                let context = Context {
-                    openai_api_key_valid: self.openai_api_key_valid,
-                    save_manager: &mut self.save_manager,
-                    settings: &mut self.settings,
-                    clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
-                    messages: &self.messages,
-                    input_mode: &self.input_mode,
-                    audio_narration: &mut self.audio_narration,
-                };
                 self.component
                     .render(frame.area(), frame.buffer_mut(), &context)
             })?;
@@ -337,7 +329,15 @@ impl<'a> App<'a> {
             AIMessage::NewMessage => None,
             AIMessage::AudioNarration(audio_narration) => {
                 self.audio_narration = audio_narration;
-                self.audio_narration.handle_audio(self.ai_sender.clone());
+                self.audio_narration.handle_audio(self.ai_sender.clone())?;
+                None
+            }
+            AIMessage::RequestCharacterUpdate(update, character_name) => {
+                self.apply_update(&update, character_name)?;
+                None
+            }
+            AIMessage::Save(game_state) => {
+                self.save(&game_state)?;
                 None
             }
         };
@@ -393,14 +393,15 @@ impl<'a> App<'a> {
             }
             Action::Quit => self.quit()?,
             Action::LoadSave(save_path) => {
-                self.ai_sender.send(AIMessage::Load(save_path));
+                self.ai_sender.send(AIMessage::Load(save_path))?;
             }
-            Action::CreateNewGame(_) => {}
-            Action::ProcessMessage(_) => {}
-            Action::AIResponse(_game_message) => { /*TODO: Handle game_message and pass it to component*/
+            Action::CreateNewGame(save_name) => {
+                todo!("Need to implemement game creation with {}", save_name)
+            }
+            Action::ProcessMessage(message) => {
+                todo!("Need to ProcessMessage: {}", message)
             }
             Action::StartGame(game) => {
-                // self.game = Some(game);
                 self.component = ComponentEnum::from(game);
             }
             Action::AudioNarration(audio_narration) => {
@@ -445,11 +446,6 @@ impl<'a> App<'a> {
             .as_ref()
             .ok_or(AppError::AIClientNotInitialized)?
             .clone();
-
-        // let ai_sender = self.ai_sender.clone();
-        // let debug_callback = move |message: String| {
-        //     let _ = ai_sender.send(message::AIMessage::Debug(message));
-        // };
 
         self.ai_client =
             Some(GameAI::new(&api_key, self.ai_sender.clone(), self.image_sender.clone()).await?);
@@ -534,6 +530,35 @@ impl<'a> App<'a> {
             game.new_message(&Message::new(MessageType::Game, game_message_json.clone()));
             game.spinner_active = false;
         }
+    }
+    pub fn apply_update(
+        &mut self,
+        update: &CharacterSheetUpdate,
+        character_name: String,
+    ) -> Result<()> {
+        if let ComponentEnum::InGame(game) = &mut self.component {
+            if let Some(character) = game
+                .state
+                .characters
+                .iter_mut()
+                .find(|c| c.name == character_name)
+            {
+                character.apply_update(update)?;
+                if character.main {
+                    game.state.main_character_sheet = Some(character.clone());
+                }
+                self.ai_sender.send(AIMessage::Save(game.state.clone()))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn save(&mut self, game_state: &GameState) -> Result<()> {
+        if let ComponentEnum::InGame(game) = &mut self.component {
+            self.save_manager.save(game_state)?;
+            game.state = game_state.clone();
+        }
+        Ok(())
     }
 
     // pub async fn start_new_game(&mut self, save_name: String) -> Result<()> {

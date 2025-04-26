@@ -2,6 +2,9 @@
 use derive_more::{Display, From};
 use log::error;
 use thiserror::Error;
+use tokio::sync::mpsc::error::SendError;
+
+use crate::message::AIMessage;
 
 // TODO: Add Jeremy Chone Error trick https://www.youtube.com/watch?v=j-VQCYP7wyw
 pub type Result<T> = core::result::Result<T, Error>;
@@ -19,7 +22,7 @@ pub enum Error {
     RatatuiImage(ratatui_image::errors::Errors),
     Report(color_eyre::eyre::Report),
     Audio(AudioError),
-    Unit,
+    AISend(SendError<AIMessage>),
 }
 
 impl From<&str> for Error {
