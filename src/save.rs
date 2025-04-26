@@ -99,7 +99,9 @@ impl SaveManager {
     pub fn delete_save(mut self, save_path: &PathBuf, api_key: &str) -> Result<()> {
         if let Ok(game) = self.load_from_file(save_path) {
             let client = Client::with_config(OpenAIConfig::new().with_api_key(api_key));
-            delete_assistant(&client, &game.assistant_id);
+            tokio::spawn(async move {
+                delete_assistant(&client, &game.assistant_id).await;
+            });
         };
         if let Some(save_dir) = save_path.parent() {
             if save_dir != get_save_base_dir() {
