@@ -1,31 +1,32 @@
 use crate::{
-    ai::{self, GameAI},
+    ai::GameAI,
+    assistant::create_assistant,
     audio::AudioNarration,
     character::CharacterSheetUpdate,
-    context::{self, Context},
-    error::{AppError, Error, Result, ShadowrunError},
+    context::Context,
+    error::{AppError, Error, Result},
     game_state::GameState,
-    message::{self, AIMessage, GameMessage, Message, MessageType, UserCompletionRequest},
-    save::SaveManager,
+    message::{
+        AIMessage, GameMessage, Message, MessageType, UserCompletionRequest, create_user_message,
+    },
+    save::{SaveManager, get_save_base_dir},
     settings::Settings,
     tui::{Tui, TuiEvent},
     ui::{Component, ComponentEnum, game::InGame, main_menu::MainMenu},
 };
 
-use async_openai::types::RunObject;
+use async_openai::{Client, config::OpenAIConfig};
 use copypasta::ClipboardContext;
-use crossterm::cursor;
 use crossterm::event::{KeyEvent, KeyEventKind};
 use ratatui::widgets::ListState;
 use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
-use std::{any::Any, io::Cursor, path::PathBuf, thread::sleep, time::Duration};
+use std::path::PathBuf;
 use tokio::sync::mpsc;
 
 pub enum Action {
     Quit,
     LoadSave(PathBuf),
     CreateNewGame(String),
-    StartGame(InGame),
     ProcessMessage(String),
     // TODO: Probably don't need the transcription target anymore.
     SwitchComponent(ComponentEnum),
@@ -54,14 +55,14 @@ pub struct App<'a> {
     running: bool,
     component: ComponentEnum,
     context: Option<Context<'a>>,
-    openai_api_key_valid: bool,
+    ai_client: Option<Client<OpenAIConfig>>,
     settings: Settings,
     save_manager: SaveManager,
     input_mode: InputMode,
     audio_narration: AudioNarration,
 
     // --- Global information
-    ai_client: Option<GameAI>,
+    game_ai: Option<GameAI>,
 
     // --- Game elements
     game: Option<InGame>,
@@ -88,22 +89,23 @@ impl<'a> App<'a> {
         load_game_menu_state.select(Some(0));
 
         let settings = Settings::load().expect("Could not read settings");
-        let openai_api_key_valid: bool;
-        let mut ai: Option<GameAI> = None;
+        let ai_client;
+        let mut game_ai: Option<GameAI> = None;
         if let Some(api_key) = &settings.openai_api_key {
-            openai_api_key_valid = Settings::validate_api_key(api_key).await;
-            ai = match GameAI::new(api_key, ai_sender.clone(), image_sender.clone()).await {
-                Ok(ai) => Some(ai),
+            ai_client = Settings::validate_ai_client(api_key).await;
+            game_ai = match GameAI::new(api_key, ai_sender.clone(), image_sender.clone()).await {
+                Ok(game_ai) => Some(game_ai),
                 Err(_) => None,
             }
         } else {
-            openai_api_key_valid = false
+            ai_client = None
         };
 
         Self {
             running: true,
             component: ComponentEnum::from(MainMenu::default()),
-            ai_client: ai,
+            ai_client,
+            game_ai,
             context: None,
             input_mode: InputMode::Normal,
             game: None,
@@ -115,7 +117,6 @@ impl<'a> App<'a> {
             image: None,
             image_sender,
             image_receiver,
-            openai_api_key_valid,
             settings,
             save_manager: SaveManager::new(),
             audio_narration: AudioNarration::Stopped,
@@ -133,7 +134,7 @@ impl<'a> App<'a> {
 
         loop {
             let context = Context {
-                openai_api_key_valid: self.openai_api_key_valid,
+                ai_client: self.ai_client.clone(),
                 save_manager: &mut self.save_manager,
                 settings: &mut self.settings,
                 clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
@@ -290,6 +291,31 @@ impl<'a> App<'a> {
         // }
     }
 
+    fn handle_action(&mut self, action: Action) -> Result<()> {
+        match action {
+            Action::SwitchComponent(component) => self.component = component,
+            Action::SwitchInputMode(input_mode) => {
+                self.input_mode = input_mode;
+            }
+            Action::Quit => self.quit()?,
+            Action::LoadSave(save_path) => {
+                self.ai_sender.send(AIMessage::Load(save_path))?;
+            }
+            Action::CreateNewGame(save_name) => {
+                self.ai_sender.send(AIMessage::StartGame(save_name))?;
+            }
+            Action::ProcessMessage(message) => {
+                todo!("Need to ProcessMessage: {}", message)
+            }
+            Action::AudioNarration(audio_narration) => {
+                self.audio_narration = audio_narration;
+                self.audio_narration.handle_audio(self.ai_sender.clone())?;
+            }
+        }
+
+        Ok(())
+    }
+
     pub async fn next_ai_message(&mut self) -> Option<AIMessage> {
         self.ai_receiver.recv().await
     }
@@ -306,7 +332,9 @@ impl<'a> App<'a> {
                 None
             }
             AIMessage::Image(image_path) => {
-                self.image_sender.send(image_path);
+                self.image_sender
+                    .send(image_path)
+                    .map_err(Error::ImageSend)?;
                 None
             }
             AIMessage::Load(save_path) => {
@@ -318,7 +346,7 @@ impl<'a> App<'a> {
                 self.append_ai_response(&game_message);
                 if self.settings.audio_output_enabled {
                     Some(Action::AudioNarration(AudioNarration::Generating(
-                        self.ai_client.clone().unwrap().clone(),
+                        self.game_ai.clone().unwrap().clone(),
                         game_message.fluff.clone(),
                         self.component.get_ingame_save_path().unwrap().clone(),
                     )))
@@ -338,6 +366,14 @@ impl<'a> App<'a> {
             }
             AIMessage::Save(game_state) => {
                 self.save(&game_state)?;
+                None
+            }
+            AIMessage::StartGame(save_name) => {
+                self.start_new_game(save_name)?;
+                None
+            }
+            AIMessage::AddCharacter(character_sheet) => {
+                self.add_character(character_sheet);
                 None
             }
         };
@@ -371,7 +407,7 @@ impl<'a> App<'a> {
             key_event,
             // TODO: Should probably not construct a context here.
             Context {
-                openai_api_key_valid: self.openai_api_key_valid,
+                ai_client: self.ai_client.clone(),
                 save_manager: &mut self.save_manager,
                 settings: &mut self.settings,
                 clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
@@ -385,44 +421,23 @@ impl<'a> App<'a> {
         Ok(())
     }
 
-    fn handle_action(&mut self, action: Action) -> Result<()> {
-        match action {
-            Action::SwitchComponent(component) => self.component = component,
-            Action::SwitchInputMode(input_mode) => {
-                self.input_mode = input_mode;
-            }
-            Action::Quit => self.quit()?,
-            Action::LoadSave(save_path) => {
-                self.ai_sender.send(AIMessage::Load(save_path))?;
-            }
-            Action::CreateNewGame(save_name) => {
-                todo!("Need to implemement game creation with {}", save_name)
-            }
-            Action::ProcessMessage(message) => {
-                todo!("Need to ProcessMessage: {}", message)
-            }
-            Action::StartGame(game) => {
-                self.component = ComponentEnum::from(game);
-            }
-            Action::AudioNarration(audio_narration) => {
-                self.audio_narration = audio_narration;
-                self.audio_narration.handle_audio(self.ai_sender.clone())?;
-            }
-        }
-
-        Ok(())
-    }
-
     fn get_messages(&mut self, game_state: GameState) -> Result<()> {
         let thread_id = game_state.thread_id.clone();
-        let ai = self.ai_client.clone().expect("Expected GameAI");
+        let ai = self.game_ai.clone().expect("Expected GameAI");
         let sender = self.ai_sender.clone();
         tokio::spawn(async move {
-            let messages = ai
+            let all_messages: Vec<Message> = ai
                 .fetch_all_messages(&thread_id)
                 .await
                 .expect("Expected the return of vec messages");
-            sender.send(AIMessage::Game((messages, ai, game_state)));
+            let messages = all_messages[2..].to_vec();
+
+            match sender.send(AIMessage::Game((messages, ai, game_state))) {
+                Ok(_) => {}
+                Err(e) => {
+                    log::error!("Couldn't send the AIMessage: {:#?}", e)
+                }
+            };
         });
 
         Ok(())
@@ -433,12 +448,6 @@ impl<'a> App<'a> {
         Ok(())
     }
 
-    // pub fn update_cached_content(&mut self, max_width: usize) {
-    //     let parsed_content = game::parse_game_content(self, max_width);
-    //     self.cached_game_content = Some(Rc::new(parsed_content));
-    //     self.cached_content_len = self.game_content.borrow().len();
-    // }
-
     pub async fn initialize_ai_client(&mut self) -> Result<()> {
         let api_key = self
             .settings
@@ -447,7 +456,7 @@ impl<'a> App<'a> {
             .ok_or(AppError::AIClientNotInitialized)?
             .clone();
 
-        self.ai_client =
+        self.game_ai =
             Some(GameAI::new(&api_key, self.ai_sender.clone(), self.image_sender.clone()).await?);
 
         Ok(())
@@ -561,127 +570,94 @@ impl<'a> App<'a> {
         Ok(())
     }
 
-    // pub async fn start_new_game(&mut self, save_name: String) -> Result<()> {
-    //     // Initialize AI client if not already initialized
-    //     if self.ai_client.is_none() {
-    //         self.initialize_ai_client().await?;
-    //     }
-    //
-    //     let client = self.ai_client.clone().unwrap().client;
-    //     let assistant = match create_assistant(&client, &self.settings.model, &save_name).await {
-    //         Ok(assistant) => assistant,
-    //         Err(e) => {
-    //             println!("{}", e);
-    //             return Err(e);
-    //         }
-    //     };
-    //     let assistant_id = &assistant.id;
-    //
-    //     if let Some(ai) = &self.ai_client {
-    //         // Start a new conversation
-    //         ai.start_new_conversation(
-    //             assistant_id,
-    //             GameConversationState {
-    //                 assistant_id: assistant_id.to_string(),
-    //                 thread_id: String::new(),
-    //                 character_sheet: None,
-    //             },
-    //         )
-    //         .await?;
-    //
-    //         // Get the thread_id from the conversation state
-    //         let thread_id = ai
-    //             .conversation_state
-    //             .lock()
-    //             .await
-    //             .as_ref()
-    //             .ok_or("Conversation state not initialized".to_string())?
-    //             .thread_id
-    //             .clone();
-    //
-    //         // Create a new game state
-    //         let new_game_state = Arc::new(Mutex::new(GameState {
-    //             assistant_id: assistant_id.to_string(),
-    //             thread_id,
-    //             main_character_sheet: None,
-    //             characters: Vec::new(),
-    //             save_name: save_name.clone(),
-    //             save_path: Some(
-    //                 get_save_base_dir()
-    //                     .join(&save_name)
-    //                     .join(format!("{}.json", &save_name)),
-    //             ),
-    //             image_path: None,
-    //         }));
-    //
-    //         self.current_game = Some(new_game_state);
-    //
-    //         // Save the game
-    //         self.save_current_game().await?;
-    //
-    //         self.state = AppState::InGame;
-    //         self.add_message(message::Message::new(
-    //             message::MessageType::System,
-    //             format!("New game '{}' started!", save_name),
-    //         ));
-    //
-    //         // Start the spinner
-    //         self.start_spinner();
-    //
-    //         // Send initial message to start the game
-    //         self.process_message(format!(
-    //             "Start the game. Respond with the fluff in the following language: {}",
-    //             self.settings.language
-    //         ));
-    //
-    //         Ok(())
-    //     } else {
-    //         Err("AI client not initialized".to_string().into())
-    //     }
-    // }
+    pub fn start_new_game(&self, save_name: String) -> Result<()> {
+        let ai_client = self
+            .ai_client
+            .clone()
+            .ok_or_else(|| Error::from("Missing AI client".to_string()))?;
+        let settings = self.settings.clone();
+        let game_ai = self.game_ai.clone();
+        let ai_sender = self.ai_sender.clone();
+        let save_manager = self.save_manager.clone();
 
-    // pub async fn update_character_sheet(&mut self, character_sheet: CharacterSheet) {
-    //     if let Some(game_state) = &self.current_game {
-    //         let mut game_state = game_state.lock().await;
-    //         if let Some(ai) = &self.ai_client {
-    //             if let Err(e) = ai.update_character_sheet(&mut game_state, character_sheet) {
-    //                 self.add_message(Message::new(
-    //                     MessageType::System,
-    //                     format!("Failed to update character sheet: {:#?}", e),
-    //                 ));
-    //             } else {
-    //                 self.add_debug_message("Character sheet updated successfully".to_string());
-    //             }
-    //         }
-    //     }
-    // }
+        tokio::spawn(async move {
+            let assistant = match create_assistant(&ai_client, &settings.model, &save_name).await {
+                Ok(assistant) => assistant,
+                Err(e) => {
+                    log::error!("Failed to create assistant: {:?}", e);
+                    return;
+                }
+            };
 
-    // TODO: move this to save_manager
-    // pub async fn save_current_game(&mut self) -> Result<()> {
-    //     let game_state = match &self.current_game {
-    //         Some(arc_mutex) => arc_mutex,
-    //         None => return Err(AppError::NoCurrentGame.into()),
-    //     };
-    //
-    //     // Clone the Arc to get a new reference
-    //     let game_state_clone = Arc::clone(game_state);
-    //
-    //     // Clone the save_name to own the data
-    //     let mut save_manager_clone = self.save_manager.clone();
-    //
-    //     // Spawn a new task to handle the saving process
-    //     tokio::spawn(async move {
-    //         // Now we can safely lock the mutex without blocking the main thread
-    //         let game_state = game_state_clone.lock().await;
-    //         save_manager_clone.current_save = Some(game_state.clone());
-    //
-    //         let _ = save_manager_clone.save();
-    //     });
-    //
-    //     // Update self.save_manager.current_save with the current game state
-    //     let game_state = game_state.lock().await;
-    //     self.save_manager.current_save = Some(game_state.clone());
-    //
-    //     Ok(())
-    // }
+            let assistant_id = &assistant.id;
+
+            if let Some(ai) = game_ai {
+                let mut game_state = match ai.start_new_conversation(assistant_id, &save_name).await
+                {
+                    Ok(game_state) => game_state,
+                    Err(e) => {
+                        log::error!(
+                            "Failed to start_new_conversation and get game_state: {:?}",
+                            e
+                        );
+                        return;
+                    }
+                };
+
+                game_state.save_path = Some(
+                    get_save_base_dir()
+                        .join(&save_name)
+                        .join(format!("{}.json", &save_name)),
+                );
+                save_manager
+                    .save(&game_state)
+                    .expect("Expected to save the game");
+
+                if let Err(e) = ai
+                    .send_message(
+                        UserCompletionRequest {
+                            language: settings.language.to_string(),
+                            message: create_user_message(
+                                &settings.language.to_string(),
+                                "Start the Game",
+                            ),
+                            state: game_state.clone(),
+                        },
+                        ai_sender.clone(),
+                    )
+                    .await
+                {
+                    log::error!("Failed to send initial game message: {:?}", e);
+                    return;
+                }
+
+                if let Err(e) = ai_sender.send(AIMessage::Load(game_state.save_path.unwrap())) {
+                    log::error!("Failed to send StartGame message: {:?}", e)
+                }
+            } else {
+                log::error!("Missing game_ai when starting new game");
+            }
+        });
+
+        Ok(())
+    }
+
+    fn add_character(&mut self, character_sheet: crate::CharacterSheet) {
+        if let ComponentEnum::InGame(game) = &mut self.component {
+            if character_sheet.main {
+                game.state.main_character_sheet = Some(character_sheet.clone());
+            }
+
+            if let Some(existing) = game
+                .state
+                .characters
+                .iter_mut()
+                .find(|char| char.name == character_sheet.name)
+            {
+                *existing = character_sheet;
+            } else {
+                game.state.characters.push(character_sheet);
+            }
+        }
+    }
 }

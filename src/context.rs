@@ -1,3 +1,4 @@
+use async_openai::{Client, config::OpenAIConfig};
 use copypasta::ClipboardContext;
 
 use crate::{
@@ -6,7 +7,7 @@ use crate::{
 
 pub struct Context<'a> {
     // TODO: Make the openai_api_key_valid a date
-    pub openai_api_key_valid: bool,
+    pub ai_client: Option<Client<OpenAIConfig>>,
     pub save_manager: &'a mut SaveManager,
     pub settings: &'a mut Settings,
     pub clipboard: ClipboardContext,

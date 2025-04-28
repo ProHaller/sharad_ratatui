@@ -151,5 +151,5 @@ pub fn get_assistant_id(save_name: &PathBuf) -> Result<String> {
 }
 
 pub async fn delete_assistant(client: &Client<OpenAIConfig>, assistant_id: &str) {
-    let _ = client.assistants().delete(assistant_id).await;
+    client.assistants().delete(assistant_id).await;
 }

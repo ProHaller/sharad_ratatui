@@ -54,15 +54,15 @@ impl Component for ApiKeyInput {
             )
             .split(centered_area);
 
-        let (title, normal_style) = match context.openai_api_key_valid {
-            true => {
+        let (title, normal_style) = match context.ai_client {
+            Some(_) => {
                 let title = Paragraph::new(" Your API Key is valid ".bold())
                     .style(Style::default().fg(Color::Green))
                     .alignment(Alignment::Center);
                 let normal_style = Style::default().fg(Color::Green);
                 (title, normal_style)
             }
-            false => {
+            None => {
                 let title = Paragraph::new(" Please input a Valid Api_key ")
                     .style(Style::default().fg(Color::Red))
                     .alignment(Alignment::Center);
@@ -141,11 +141,11 @@ impl ApiKeyInput {
     fn validate_key(&mut self, context: &mut Context<'_>) -> Option<Action> {
         let api_key = self.input.value().to_string();
 
-        context.openai_api_key_valid = tokio::task::block_in_place(|| {
-            Handle::current().block_on(Settings::validate_api_key(&api_key))
+        context.ai_client = tokio::task::block_in_place(|| {
+            Handle::current().block_on(Settings::validate_ai_client(&api_key))
         });
 
-        if context.openai_api_key_valid {
+        if context.ai_client.is_some() {
             context.settings.openai_api_key = Some(api_key.clone());
             Some(Action::SwitchInputMode(InputMode::Normal))
         } else {
@@ -157,7 +157,7 @@ impl ApiKeyInput {
     fn handle_normal_input(&mut self, key: KeyEvent, mut context: Context) -> Option<Action> {
         match key.code {
             KeyCode::Enter => {
-                if !context.openai_api_key_valid {
+                if context.ai_client.is_none() {
                     self.validate_key(&mut context)
                 } else {
                     Some(Action::SwitchComponent(ComponentEnum::from(

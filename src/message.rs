@@ -6,7 +6,7 @@ use crate::{
     game_state::GameState,
 };
 
-use async_openai::types::{RunObject, Voice};
+use async_openai::types::Voice;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::hash_map::DefaultHasher,
@@ -151,6 +151,7 @@ impl std::fmt::Debug for Message {
 // Enumeration for AI-generated messages with different purposes.
 pub enum AIMessage {
     Game((Vec<Message>, GameAI, GameState)),
+    StartGame(String),
     Response(GameMessage),
     NewMessage,
     Save(GameState),
@@ -158,6 +159,7 @@ pub enum AIMessage {
     Image(PathBuf),
     AudioNarration(AudioNarration),
     RequestCharacterUpdate(CharacterSheetUpdate, String),
+    AddCharacter(CharacterSheet),
 }
 
 // Implementation of Message struct, providing a method to create new messages.

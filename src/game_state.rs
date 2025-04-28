@@ -9,11 +9,24 @@ use serde::{Deserialize, Serialize};
 pub struct GameState {
     pub assistant_id: String,
     pub thread_id: String,
-    pub characters: Vec<CharacterSheet>,
     pub save_name: String,
-    pub main_character_sheet: Option<CharacterSheet>,
+    pub characters: Vec<CharacterSheet>,
     pub save_path: Option<PathBuf>,
+    pub main_character_sheet: Option<CharacterSheet>,
     pub image_path: Option<PathBuf>,
+}
+impl GameState {
+    pub fn new(assistant_id: String, thread_id: String, save_name: String) -> Self {
+        Self {
+            assistant_id,
+            thread_id,
+            save_name,
+            characters: Vec::new(),
+            save_path: None,
+            main_character_sheet: None,
+            image_path: None,
+        }
+    }
 }
 
 // Implement the Debug trait manually to control what information is shown when debug printed.
@@ -28,27 +41,3 @@ impl std::fmt::Debug for GameState {
             .finish() // Properly ends the debug struct helper.
     }
 }
-
-// // Additional implementation for GameState to handle file operations.
-// impl GameState {
-//     // Function to load a game state from a specified JSON file.
-//
-//     pub fn update_character_sheet(&mut self, update: CharacterSheetUpdate) -> Result<()> {
-//         if let Some(ref mut sheet) = self.main_character_sheet {
-//             sheet.apply_update(update.clone())?;
-//         }
-//
-//         if let Some(character) = self.characters.iter_mut().find(|c| {
-//             c.name
-//                 == self
-//                     .main_character_sheet
-//                     .as_ref()
-//                     .map(|cs| cs.name.clone())
-//                     .unwrap_or_default()
-//         }) {
-//             character.apply_update(update)?;
-//         }
-//
-//         Ok(())
-//     }
-// }

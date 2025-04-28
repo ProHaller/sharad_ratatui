@@ -70,56 +70,47 @@ impl GameAI {
 
         Ok(Self {
             client,
-            // conversation_state: Arc::new(Mutex::new(None)),
-            // debug_callback: Arc::new(debug_callback),
             ai_sender,
             image_sender,
         })
     }
 
-    // pub async fn start_new_conversation(
-    //     &self,
-    //     assistant_id: &str,
-    //     initial_game_state: GameConversationState,
-    // ) -> Result<()> {
-    //     let thread = self
-    //         .client
-    //         .threads()
-    //         .create(
-    //             CreateThreadRequestArgs::default()
-    //                 .build()
-    //                 .map_err(AIError::OpenAI)?,
-    //         )
-    //         .await
-    //         .map_err(AIError::OpenAI)?;
-    //
-    //     let mut state = self.conversation_state.lock().await;
-    //     *state = Some(GameConversationState {
-    //         assistant_id: assistant_id.to_string(),
-    //         thread_id: thread.id.clone(),
-    //         ..initial_game_state
-    //     });
-    //
-    //     let initial_message = CreateMessageRequestArgs::default()
-    //         .role(MessageRole::User)
-    //         .content("Start the game by assisting the player to create a character. Answer in valid json")
-    //         .build().map_err(AIError::OpenAI)?;
-    //
-    //     self.client
-    //         .threads()
-    //         .messages(&thread.id)
-    //         .create(initial_message)
-    //         .await
-    //         .map_err(AIError::OpenAI)?;
-    //
-    //     Ok(())
-    // }
+    pub async fn start_new_conversation(
+        &self,
+        assistant_id: &str,
+        save_name: &str,
+    ) -> Result<GameState> {
+        let thread = self
+            .client
+            .threads()
+            .create(
+                CreateThreadRequestArgs::default()
+                    .build()
+                    .map_err(AIError::OpenAI)?,
+            )
+            .await
+            .map_err(AIError::OpenAI)?;
 
-    //     pub async fn load_conversation(&mut self, state: GameConversationState) {
-    //         let mut conversation_state = self.conversation_state.lock().await;
-    //         *conversation_state = Some(state);
-    //     }
-    //
+        let game_state = GameState::new(
+            assistant_id.to_string(),
+            thread.id.to_string(),
+            save_name.to_string(),
+        );
+
+        let initial_message = CreateMessageRequestArgs::default()
+            .role(MessageRole::User)
+            .content("Start the game by assisting the player to create a character. Answer in valid json")
+            .build().map_err(AIError::OpenAI)?;
+
+        self.client
+            .threads()
+            .messages(&thread.id)
+            .create(initial_message)
+            .await
+            .map_err(AIError::OpenAI)?;
+
+        Ok(game_state)
+    }
 
     pub async fn send_message(
         &self,
@@ -272,10 +263,7 @@ impl GameAI {
 
         for tool_call in required_action.submit_tool_outputs.tool_calls {
             let output = match tool_call.function.name.as_str() {
-                "create_character_sheet" => {
-                    self.handle_create_character_sheet(&tool_call, &mut game_state)
-                        .await?
-                }
+                "create_character_sheet" => self.handle_create_character_sheet(&tool_call).await?,
                 "perform_dice_roll" => {
                     self.handle_perform_dice_roll(&tool_call, &mut game_state)?
                 }
@@ -306,24 +294,17 @@ impl GameAI {
             .await
     }
     //
-    async fn handle_create_character_sheet(
-        &self,
-        tool_call: &RunToolCallObject,
-        game_state: &mut GameState,
-    ) -> Result<String> {
+    async fn handle_create_character_sheet(&self, tool_call: &RunToolCallObject) -> Result<String> {
         let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)?;
         let character_sheet = match self.create_character(&args).await {
             Ok(sheet) => sheet,
-            Err(e) => self.create_dummy_character(),
+            Err(e) => {
+                log::error!("Could not create character: {:#?}", e);
+                self.create_dummy_character()
+            }
         };
-
-        if character_sheet.main {
-            game_state.main_character_sheet = Some(character_sheet.clone());
-        }
-        game_state.characters.push(character_sheet.clone());
-
-        game_state.main_character_sheet = Some(character_sheet.clone());
-
+        self.ai_sender
+            .send(AIMessage::AddCharacter(character_sheet.clone()))?;
         Ok(serde_json::to_string(&character_sheet)?)
     }
 

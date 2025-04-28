@@ -136,7 +136,7 @@ impl Component for InGame {
                     .block(center_block.padding(Padding {
                         left: 0,
                         right: 0,
-                        top: 1,
+                        top: 0,
                         bottom: 0,
                     }));
                 no_character.render(center_rect, buffer);
@@ -596,7 +596,6 @@ impl InGame {
             }
             KeyCode::Enter if !self.input.value().is_empty() => {
                 let value = self.input.value();
-                // FIX: The spinner does not start
                 self.spinner_active = true;
                 self.new_message(&Message::new(MessageType::User, value.into()));
                 let message = self.build_user_completion_message(&context);
@@ -729,7 +728,7 @@ impl InGame {
         self.all_lines = self.parse_full_game_content();
         self.total_lines = self.all_lines.len();
         // HACK: This should be set to fluff_area max_height
-        self.content_scroll = self.total_lines - 30;
+        self.content_scroll = self.total_lines.saturating_sub(30);
 
         self.scroll_to_bottom();
         // TODO: Maybe I could precompute the image here.

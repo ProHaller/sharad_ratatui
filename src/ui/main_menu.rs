@@ -187,7 +187,7 @@ impl MainMenu {
                 )))
             }
             Some(2) => {
-                if context.openai_api_key_valid {
+                if context.ai_client.is_some() {
                     Some(Action::SwitchComponent(ComponentEnum::from(
                         ImageMenu::default(),
                     )))

@@ -77,12 +77,12 @@ impl Settings {
     }
 
     // Asynchronously validate an API key with OpenAI's services.
-    pub async fn validate_api_key(api_key: &str) -> bool {
+    pub async fn validate_ai_client(api_key: &str) -> Option<Client<OpenAIConfig>> {
         let client = Client::with_config(OpenAIConfig::new().with_api_key(api_key)); // Configure the OpenAI client with the API key.
         match client.models().list().await {
-            Ok(_) => true,
-            Err(OpenAIError::Reqwest(_)) => false,
-            _ => false,
+            Ok(_) => Some(client),
+            Err(OpenAIError::Reqwest(_)) => None,
+            _ => None,
         }
     }
 }

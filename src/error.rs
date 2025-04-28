@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 // /error.rs
 use derive_more::{Display, From};
 use log::error;
@@ -23,6 +25,7 @@ pub enum Error {
     Report(color_eyre::eyre::Report),
     Audio(AudioError),
     AISend(SendError<AIMessage>),
+    ImageSend(SendError<PathBuf>),
 }
 
 impl From<&str> for Error {
