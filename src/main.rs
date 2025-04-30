@@ -25,6 +25,7 @@ mod dice;
 mod error;
 mod game_state;
 mod imager;
+mod logging;
 mod message;
 mod save;
 mod settings;
@@ -35,6 +36,10 @@ mod ui;
 // Entry point for the Tokio runtime.
 #[tokio::main]
 async fn main() -> io::Result<()> {
+    if let Err(log_error) = logging::init() {
+        println!("{log_error:#?}");
+    }
+    log::info!("Sharad started: {}", chrono::Local::now());
     let update_result = tokio::task::spawn_blocking(check_for_updates).await?;
     if let Err(e) = update_result {
         eprintln!("Failed to check for updates: {}", e);
@@ -104,6 +109,7 @@ pub fn init_panic_hook() {
         // intentionally ignore errors here since we're already in a panic
         let _ = restore_tui();
         original_hook(panic_info);
+        log::error!("Sharad panicked: {:#?}", panic_info);
     }));
 }
 pub fn restore_tui() -> io::Result<()> {

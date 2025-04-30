@@ -151,5 +151,7 @@ pub fn get_assistant_id(save_name: &PathBuf) -> Result<String> {
 }
 
 pub async fn delete_assistant(client: &Client<OpenAIConfig>, assistant_id: &str) {
-    client.assistants().delete(assistant_id).await;
+    if let Err(e) = client.assistants().delete(assistant_id).await {
+        log::error!("Failed to delete_assistant : {e:#?}");
+    }
 }
