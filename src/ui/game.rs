@@ -113,11 +113,13 @@ impl Component for InGame {
         self.draw_spinner(buffer, left_screen[0]);
         self.draw_user_input(buffer, context, left_screen[1]);
 
+        let image_present = self.state.image_path.is_some();
         match &self.state.main_character_sheet {
             Some(sheet) => {
                 draw_character_sheet(
                     buffer,
                     sheet,
+                    image_present,
                     screen_split_layout[1],
                     &self.highlighted_section,
                 );
@@ -151,7 +153,10 @@ impl InGame {
         let image = match &state.image_path {
             Some(image_path) => match load_image_from_file(picker, image_path) {
                 Ok(image) => Some(image),
-                Err(_) => None,
+                Err(e) => {
+                    log::error!("Couldn't load_image_from_file: {e:#?}");
+                    None
+                }
             },
             None => None,
         };
@@ -651,7 +656,7 @@ impl InGame {
             language: context.settings.language.to_string(),
             message: create_user_message(
                 &context.settings.language.to_string(),
-                self.input.value().into(),
+                self.input.value(),
             ),
             state: self.state.clone(),
         };

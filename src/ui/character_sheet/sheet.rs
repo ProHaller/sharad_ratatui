@@ -16,6 +16,7 @@ use super::{draw_augmentations, draw_inventory, draw_qualities, draw_resources};
 pub fn draw_character_sheet(
     buffer: &mut Buffer,
     sheet: &CharacterSheet,
+    image_present: bool,
     area: Rect,
     highlighted: &HighlightedSection,
 ) {
@@ -31,7 +32,7 @@ pub fn draw_character_sheet(
         .split(area);
 
     // Drawing individual sections of the character sheet.
-    draw_basic_info(buffer, sheet, chunks[0], highlighted);
+    draw_basic_info(buffer, sheet, image_present, chunks[0], highlighted);
     draw_attributes_and_derived(buffer, sheet, chunks[1], highlighted);
     draw_skills_qualities_and_other(buffer, sheet, chunks[2], highlighted);
     draw_contacts(buffer, sheet, chunks[3], highlighted);
@@ -41,10 +42,11 @@ pub fn draw_character_sheet(
 fn draw_basic_info(
     buffer: &mut Buffer,
     sheet: &CharacterSheet,
+    image_present: bool,
     area: Rect,
     highlighted: &HighlightedSection,
 ) {
-    let info = vec![
+    let mut info = vec![
         Span::styled(
             "Name: ",
             Style::default()
@@ -69,6 +71,13 @@ fn draw_basic_info(
         ),
         Span::raw(&sheet.gender),
     ];
+
+    if image_present {
+        info.extend([
+            Span::raw(" | "),
+            Span::styled("\u{ed19}", Style::default().fg(Color::Yellow)),
+        ])
+    }
     let basic_info = Paragraph::new(Line::from(info))
         .block(
             Block::default()
