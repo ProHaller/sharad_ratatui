@@ -7,12 +7,7 @@ use super::{
     widgets::StatefulList,
 };
 
-use crate::{
-    app::Action,
-    context::{self, Context},
-    message::MessageType,
-    settings_state::SettingsState,
-};
+use crate::{app::Action, context::Context, message::MessageType};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     buffer::Buffer,
@@ -104,11 +99,6 @@ impl Component for MainMenu {
 }
 
 impl MainMenu {
-    fn select_main_menu_by_char(&mut self, c: char) {
-        let index = (c as usize - 1) % self.state.items.len();
-        self.state.state.select(Some(index));
-    }
-
     // Function to render the console section of the menu.
     fn render_console(&self, buffer: &mut Buffer, context: &Context, area: Rect) {
         let outer_block = Block::default()
@@ -189,7 +179,7 @@ impl MainMenu {
             Some(2) => {
                 if context.ai_client.is_some() {
                     Some(Action::SwitchComponent(ComponentEnum::from(
-                        ImageMenu::default(),
+                        ImageMenu::new(context.image_sender.clone()),
                     )))
                 } else {
                     Some(Action::SwitchComponent(ComponentEnum::from(

@@ -1,46 +1,31 @@
 use crate::{
-    app::Action,
-    assistant,
     character::{
         CharacterSheet, CharacterSheetBuilder, CharacterSheetUpdate, CharacterValue, Contact, Item,
         MatrixAttributes, Quality, Race, Skills, UpdateOperation,
     },
-    dice::{DiceRollRequest, DiceRollResponse, perform_dice_roll},
-    error::{AIError, AppError, Error, GameError, Result, ShadowrunError},
+    dice::{DiceRollRequest, perform_dice_roll},
+    error::{AIError, AppError, Error, Result, ShadowrunError},
     game_state::GameState,
     imager::generate_and_save_image,
     message::AIMessage,
     message::UserCompletionRequest,
-    message::{self, Message, MessageType, create_user_message},
+    message::{self, Message, MessageType},
 };
 use async_openai::{
     Client,
     config::OpenAIConfig,
     types::{
         CreateMessageRequestArgs, CreateRunRequestArgs, CreateThreadRequestArgs, MessageContent,
-        MessageRole, RequiredAction, RunObject, RunStatus, RunToolCallObject,
-        SubmitToolOutputsRunRequest, ToolsOutputs,
+        MessageRole, RunObject, RunStatus, RunToolCallObject, SubmitToolOutputsRunRequest,
+        ToolsOutputs,
     },
 };
-use serde::{Deserialize, Serialize};
-use serde_json::{Value, from_str};
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use serde_json::Value;
+use std::{collections::HashMap, path::PathBuf};
 use tokio::{
-    sync::{Mutex, mpsc},
+    sync::mpsc,
     time::{Duration, Instant},
 };
-
-// TODO: Create a character_sheet_updater routine that verifies the character sheet is updated
-// based on in-game events.
-// TODO: Create an error channel that will display all error/debug information throughout the app
-
-// #[derive(Debug, Clone, Serialize, Deserialize)]
-// pub struct GameConversationState {
-//     pub assistant_id: String,
-//     pub thread_id: String,
-//     pub character_sheet: Option<CharacterSheet>,
-// }
-//
 
 #[derive(Debug)]
 pub struct GameAI {
@@ -257,16 +242,14 @@ impl GameAI {
         }
     }
     //
-    async fn handle_tool_outputs(&self, run: &RunObject, mut game_state: GameState) -> Result<()> {
+    async fn handle_tool_outputs(&self, run: &RunObject, game_state: GameState) -> Result<()> {
         let mut tool_outputs = Vec::new();
         let required_action = run.required_action.clone().unwrap();
 
         for tool_call in required_action.submit_tool_outputs.tool_calls {
             let output = match tool_call.function.name.as_str() {
-                "create_character_sheet" => self.handle_create_character_sheet(&tool_call).await?,
-                "perform_dice_roll" => {
-                    self.handle_perform_dice_roll(&tool_call, &mut game_state)?
-                }
+                "create_character_sheet" => self.handle_create_character_sheet(&tool_call)?,
+                "perform_dice_roll" => self.handle_perform_dice_roll(&tool_call, &game_state)?,
                 "generate_character_image" => self.handle_generate_character_image(&tool_call)?,
                 "update_basic_attributes" => self.handle_update_basic_attributes(&tool_call)?,
                 "update_skills" => self.handle_update_skills(&tool_call)?,
@@ -294,9 +277,9 @@ impl GameAI {
             .await
     }
     //
-    async fn handle_create_character_sheet(&self, tool_call: &RunToolCallObject) -> Result<String> {
+    fn handle_create_character_sheet(&self, tool_call: &RunToolCallObject) -> Result<String> {
         let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)?;
-        let character_sheet = match self.create_character(&args).await {
+        let character_sheet = match self.create_character(&args) {
             Ok(sheet) => sheet,
             Err(e) => {
                 log::error!("Could not create character: {:#?}", e);
@@ -311,22 +294,19 @@ impl GameAI {
     fn handle_perform_dice_roll(
         &self,
         tool_call: &RunToolCallObject,
-        game_state: &mut GameState,
+        game_state: &GameState,
     ) -> Result<String> {
         let args: DiceRollRequest = serde_json::from_str(&tool_call.function.arguments)?;
         let response = match perform_dice_roll(args, game_state) {
-            Ok(response) => response,
-            Err(e) => DiceRollResponse {
-                hits: 0,
-                glitch: false,
-                critical_glitch: false,
-                critical_success: false,
-                dice_results: vec![],
-                success: false,
-            },
+            Ok(response) => serde_json::to_string(&response)?,
+            Err(e) => {
+                let err = format!("Failed to perform_dice_roll: {e:#?}");
+                log::error!("{err}");
+                err
+            }
         };
 
-        Ok(serde_json::to_string(&response)?)
+        Ok(response)
     }
 
     fn handle_generate_character_image(&self, tool_call: &RunToolCallObject) -> Result<String> {
@@ -334,11 +314,16 @@ impl GameAI {
             .map_err(|e| Error::Shadowrun(ShadowrunError::Serialization(e.to_string())))?;
 
         let image_sender = self.image_sender.clone();
+        let client = self.client.clone();
+        log::info!("handle_generate_character_image: {tool_call:#?}");
         tokio::spawn(async move {
-            let path = generate_and_save_image(&args["image_generation_prompt"].to_string())
-                .await
-                .expect("Something went wrong generating image");
-            let _ = image_sender.send(path);
+            let path =
+                generate_and_save_image(client, &args["image_generation_prompt"].to_string())
+                    .await
+                    .expect("Something went wrong generating image");
+            if let Err(e) = image_sender.send(path) {
+                log::error!("Failed to send the Image path: {e:#?}");
+            }
         });
 
         Ok("Generating image...".to_string())
@@ -883,7 +868,7 @@ impl GameAI {
     }
 
     // Asynchronous method to create a character based on provided arguments, handling attributes and skills.
-    pub async fn create_character(&self, args: &Value) -> Result<CharacterSheet> {
+    pub fn create_character(&self, args: &Value) -> Result<CharacterSheet> {
         // Helper function to extract a string
         fn extract_str(args: &Value, field: &str) -> Result<String> {
             let args_string = args

@@ -1,7 +1,4 @@
-use crate::{
-    error::{Error, Result},
-    settings::Settings,
-};
+use crate::error::{Error, Result};
 use async_openai::{
     Client,
     config::OpenAIConfig,
@@ -10,17 +7,12 @@ use async_openai::{
 use futures::TryFutureExt;
 use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
 use std::{path::PathBuf, process::Command};
-use tokio::time::{Duration, timeout};
 
-pub async fn generate_and_save_image(prompt: &str) -> Result<PathBuf> {
-    let settings = Settings::load()?;
-    let api_key = match settings.openai_api_key {
-        Some(key) => key,
-        None => return Err(Error::from("No API key provided.")),
-    };
-
-    let openai_config = OpenAIConfig::new().with_api_key(api_key);
-    let client = Client::with_config(openai_config);
+pub async fn generate_and_save_image(
+    client: Client<OpenAIConfig>,
+    prompt: &str,
+) -> Result<PathBuf> {
+    log::debug!("generate_and_save_image: {prompt}");
     let request = CreateImageRequestArgs::default()
         .prompt(prompt)
         .model(ImageModel::DallE3)
@@ -30,18 +22,19 @@ pub async fn generate_and_save_image(prompt: &str) -> Result<PathBuf> {
         .build()
         .map_err(|e| Error::AI(e.into()))?;
 
-    let response: ImagesResponse =
-        match timeout(Duration::from_secs(120), client.images().create(request)).await {
-            Ok(res) => res.map_err(|e| Error::AI(e.into()))?,
-            Err(_) => return Err("Request timed out.".into()),
-        };
+    let response: ImagesResponse = match client.images().create(request).await {
+        Ok(res) => res,
+        Err(e) => return Err(Error::AI(e.into())),
+    };
 
     if response.data.is_empty() {
+        log::error!("Image creation response is empty.");
         return Err("No image URLs received.".into());
     }
 
     let home_dir = dir::home_dir().expect("Failed to get home directory");
     let path = home_dir.join("sharad").join("data");
+    log::debug!("Saving the image here: {path:#?}");
     let paths: Vec<PathBuf> = response.save(path).map_err(|e| Error::AI(e.into())).await?;
     if let Some(path) = paths.first() {
         // Convert the path to a string
@@ -78,7 +71,6 @@ pub fn load_image_from_file(picker: &Picker, path: &PathBuf) -> Result<StatefulP
 
 #[cfg(test)]
 mod tests {
-    use ratatui_image::picker;
 
     use super::*;
 

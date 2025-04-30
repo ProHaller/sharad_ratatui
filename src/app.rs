@@ -2,10 +2,11 @@ use crate::{
     ai::GameAI,
     assistant::create_assistant,
     audio::AudioNarration,
-    character::CharacterSheetUpdate,
+    character::{CharacterSheet, CharacterSheetUpdate},
     context::Context,
     error::{AppError, Error, Result},
     game_state::GameState,
+    imager::load_image_from_file,
     message::{
         AIMessage, GameMessage, Message, MessageType, UserCompletionRequest, create_user_message,
     },
@@ -50,11 +51,10 @@ pub enum InputMode {
 
 // TODO: Verify that there is a valid connection internet, else request the user to take action
 // after conneecting.
-pub struct App<'a> {
+pub struct App {
     // Application state and control flow
     running: bool,
     component: ComponentEnum,
-    context: Option<Context<'a>>,
     ai_client: Option<Client<OpenAIConfig>>,
     settings: Settings,
     save_manager: SaveManager,
@@ -65,7 +65,6 @@ pub struct App<'a> {
     game_ai: Option<GameAI>,
 
     // --- Game elements
-    game: Option<InGame>,
     messages: Vec<Message>,
 
     ai_sender: mpsc::UnboundedSender<AIMessage>,
@@ -78,7 +77,7 @@ pub struct App<'a> {
     image_receiver: mpsc::UnboundedReceiver<PathBuf>,
 }
 
-impl<'a> App<'a> {
+impl App {
     pub async fn new() -> Self {
         // Set up unbounded channel for AI messages.
         let (ai_sender, ai_receiver) = mpsc::unbounded_channel::<AIMessage>();
@@ -106,9 +105,7 @@ impl<'a> App<'a> {
             component: ComponentEnum::from(MainMenu::default()),
             ai_client,
             game_ai,
-            context: None,
             input_mode: InputMode::Normal,
-            game: None,
             messages: Vec::new(),
             ai_sender,
             ai_receiver,
@@ -124,6 +121,7 @@ impl<'a> App<'a> {
     }
     // Asynchronous function to continuously run and update the application.
     pub async fn run(&mut self) -> Result<()> {
+        log::info!("Started the app");
         let mut tui = Tui::new()?
             .tick_rate(4.0) // 4 ticks per second
             .frame_rate(30.0); // 30 frames per second
@@ -131,10 +129,12 @@ impl<'a> App<'a> {
         tui.enter()?; // Starts event handler, enters raw mode, enters alternate screen
         let picker = tui.picker;
         self.picker = Some(picker);
+        log::info!("Entered terminal");
 
         loop {
             let context = Context {
                 ai_client: self.ai_client.clone(),
+                image_sender: self.image_sender.clone(),
                 save_manager: &mut self.save_manager,
                 settings: &mut self.settings,
                 clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
@@ -142,6 +142,7 @@ impl<'a> App<'a> {
                 input_mode: &self.input_mode,
                 audio_narration: &mut self.audio_narration,
             };
+
             tui.draw(|frame| {
                 self.component
                     .render(frame.area(), frame.buffer_mut(), &context)
@@ -152,15 +153,21 @@ impl<'a> App<'a> {
                 InputMode::Editing => tui.terminal.show_cursor()?,
                 _ => tui.terminal.hide_cursor()?,
             };
-
+            let ai_receiver = &mut self.ai_receiver;
+            let image_receiver = &mut self.image_receiver;
             tokio::select! {
                 Some(event) = tui.next() => {
                     self.handle_tui_event(event)?;
                 },
-                Some(ai_message) = self.next_ai_message() => {
+                Some(ai_message) = ai_receiver.recv() => {
+                    log::info!("Received ai_message: {ai_message:#?}");
                     if let Some(action) = self.handle_ai_message(ai_message)? {
                         self.handle_action(action)?;
                     };
+                },
+                Some(image_path) = image_receiver.recv() => {
+                    log::info!("Received path: {image_path:#?}");
+                    self.handle_image(image_path)?;
                 },
                 else => break,
 
@@ -171,124 +178,7 @@ impl<'a> App<'a> {
             }
         }
 
-        tui.exit()?; // stops event handler, exits raw mode, exits alternate screen
         Ok(())
-
-        // loop {
-        //     tokio::select! {
-        //         event_result = tokio::task::spawn_blocking(|| crossterm::event::poll(Duration::from_millis(1))) => {
-        //         match event_result {
-        //             Ok(Ok(true)) => {
-        //                 match crossterm::event::read() {
-        //                     Ok(Event::Key(key)) if key.kind == KeyEventKind::Press => {
-        //                         self.handle_crossterm_events()?
-        //                     }
-        //                     Ok(_) => {}, // Ignore non-key events and non-press key events
-        //                     Err(e) => {
-        //                         eprintln!("Error reading event: {:#?}", e);
-        //                     }
-        //                 }
-        //             }
-        //             Ok(Ok(false)) => {}, // No event available
-        //             Ok(Err(e)) => {
-        //                 eprintln!("Error polling for event: {:#?}", e);
-        //             }
-        //             Err(e) => {
-        //                 eprintln!("Task join error: {:#?}", e);
-        //             }
-        //         }
-        //     }
-        //         Some(action) = self.action_receiver.recv() => {
-        //             match action {
-        //                 Action::ProcessMessage(message) => {
-        //                     self.scroll_to_bottom();
-        //                 },
-        //                 Action::AIResponse(result) => {
-        //                     // self.handle_ai_response(*result).await;
-        //                     self.scroll_to_bottom();
-        //                 },
-        //                 Action::LoadGame(save_path) => {
-        //                     // if let Err(e) = self.load_game(&save_path).await {
-        //                         // self.add_message(Message::new( MessageType::System, format!("Failed to load game: {:#?}", e)));
-        //                     // }
-        //                 },
-        //                 Action::StartNewGame(save_name) => {
-        //                     // if let Err(e) = app.lock().await.start_new_game(save_name).await {
-        //                     //     app.lock().await.add_message(Message::new( MessageType::System, format!("Failed to start new game: {:#?}", e)));
-        //                     // };
-        //                 },
-        //                 Action::ApiKeyValidationResult(is_valid) => {
-        //                     self.handle_api_key_validation_result(is_valid);
-        //                 }
-        //                 Action::TranscriptionResult(transcription, target) => {
-        //                     match target {
-        //                         self::TranscriptionTarget::UserInput => {
-        //                             // for ch in transcription.chars() {
-        //                             //     self.user_input.handle(tui_input::InputRequest::InsertChar(ch));
-        //                             // }
-        //                         }
-        //                         self::TranscriptionTarget::SaveNameInput => {
-        //                             // for ch in transcription.chars() {
-        //                             //     self.save_name_input.handle(tui_input::InputRequest::InsertChar(ch));
-        //                             // }
-        //                         }
-        //                         self::TranscriptionTarget::ImagePrompt => {
-        //                             // for ch in transcription.chars() {
-        //                             //     self.image_prompt.handle(tui_input::InputRequest::InsertChar(ch));
-        //                             // }
-        //                         }
-        //                     }
-        //                     self.add_debug_message(format!("Transcription successful: {}", transcription));
-        //                 }
-        //                 Action::TranscriptionError(error) => {
-        //                     self.add_message(Message::new(
-        //                         MessageType::System,
-        //                         format!("Failed to transcribe audio: {}", error),
-        //                     ));
-        //                     self.add_debug_message(format!("Transcription error: {}", error));
-        //                 }
-        //                 Action::SwitchComponent(component) => {self.component = component},
-        //                 Action::SwitchInputMode(input_mode) => {self.input_mode = input_mode},
-        //             }
-        //         },
-        //             Some(ai_message) = self.ai_receiver.recv() => {
-        //         match ai_message {
-        //             AIMessage::Debug(debug_message) => {
-        //                 self.add_debug_message(debug_message);
-        //             },
-        //         }
-        //     }
-        //         Some(image_path) = self.image_receiver.recv() => {
-        //             let image_name = image_path.file_name().expect("Expected a Valid path");
-        //             let current = self.current_game.clone().expect("Expected a Clone of current_game");
-        //             let mut game_state = current.lock().await;
-        //             let save_dir = game_state.save_path.clone().expect("Expected a valid path").parent().expect("Expected a parent path").to_path_buf();
-        //             let new_image_path = save_dir.join(image_name);
-        //             copy(image_path, &new_image_path).await?;
-        //             tokio::time::sleep(Duration::from_millis(100)).await;
-        //             game_state.image_path = Some(new_image_path.clone().to_path_buf());
-        //             self.current_game = Some(Arc::new(Mutex::new(game_state.clone())));
-        //             // self.save_current_game().await?;
-        //
-        //             let _ = self.load_image_from_file(new_image_path);
-        //         }
-        //     }
-        //
-        //     self.terminal.draw(|frame| {
-        //         let context = Context {
-        //             openai_api_key_valid: self.openai_api_key_valid,
-        //             save_manager: &self.save_manager,
-        //             save_name: "",
-        //             ai_client: &self.ai_client,
-        //             settings: &self.settings,
-        //             clipboard: &self.clipboard,
-        //             console_messages: &self.game_content,
-        //             input_mode: &self.input_mode,
-        //         };
-        //         self.component
-        //             .render(frame.area(), frame.buffer_mut(), &context)
-        //     })?;
-        // }
     }
 
     fn handle_action(&mut self, action: Action) -> Result<()> {
@@ -316,10 +206,6 @@ impl<'a> App<'a> {
         Ok(())
     }
 
-    pub async fn next_ai_message(&mut self) -> Option<AIMessage> {
-        self.ai_receiver.recv().await
-    }
-
     fn handle_ai_message(&mut self, ai_message: AIMessage) -> Result<Option<Action>> {
         let result: Option<Action> = match ai_message {
             AIMessage::Game((messages, ai, state)) => {
@@ -329,12 +215,6 @@ impl<'a> App<'a> {
                     ai,
                     messages,
                 ));
-                None
-            }
-            AIMessage::Image(image_path) => {
-                self.image_sender
-                    .send(image_path)
-                    .map_err(Error::ImageSend)?;
                 None
             }
             AIMessage::Load(save_path) => {
@@ -354,7 +234,6 @@ impl<'a> App<'a> {
                     None
                 }
             }
-            AIMessage::NewMessage => None,
             AIMessage::AudioNarration(audio_narration) => {
                 self.audio_narration = audio_narration;
                 self.audio_narration.handle_audio(self.ai_sender.clone())?;
@@ -401,6 +280,13 @@ impl<'a> App<'a> {
         }
         Ok(())
     }
+    fn handle_image(&mut self, path: PathBuf) -> Result<()> {
+        self.image = Some(load_image_from_file(&self.picker.unwrap(), &path)?);
+        if let ComponentEnum::InGame(game) = &mut self.component {
+            game.image = Some(load_image_from_file(&self.picker.unwrap(), &path)?);
+        }
+        Ok(())
+    }
 
     fn on_key(&mut self, key_event: KeyEvent) -> Result<()> {
         if let Some(action) = self.component.on_key(
@@ -408,6 +294,7 @@ impl<'a> App<'a> {
             // TODO: Should probably not construct a context here.
             Context {
                 ai_client: self.ai_client.clone(),
+                image_sender: self.image_sender.clone(),
                 save_manager: &mut self.save_manager,
                 settings: &mut self.settings,
                 clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
@@ -445,20 +332,6 @@ impl<'a> App<'a> {
 
     fn quit(&mut self) -> Result<()> {
         self.running = false;
-        Ok(())
-    }
-
-    pub async fn initialize_ai_client(&mut self) -> Result<()> {
-        let api_key = self
-            .settings
-            .openai_api_key
-            .as_ref()
-            .ok_or(AppError::AIClientNotInitialized)?
-            .clone();
-
-        self.game_ai =
-            Some(GameAI::new(&api_key, self.ai_sender.clone(), self.image_sender.clone()).await?);
-
         Ok(())
     }
 
@@ -642,7 +515,7 @@ impl<'a> App<'a> {
         Ok(())
     }
 
-    fn add_character(&mut self, character_sheet: crate::CharacterSheet) {
+    fn add_character(&mut self, character_sheet: CharacterSheet) {
         if let ComponentEnum::InGame(game) = &mut self.component {
             if character_sheet.main {
                 game.state.main_character_sheet = Some(character_sheet.clone());

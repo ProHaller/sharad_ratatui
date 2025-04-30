@@ -1,26 +1,66 @@
 use std::path::PathBuf;
 
 use crate::{
-    app::{Action, App, InputMode},
+    app::{Action, InputMode},
     context::Context,
     imager,
 };
 use crossterm::event::{Event, KeyCode, KeyEvent};
 use ratatui::{
-    Frame,
-    layout::{Constraint, Direction, Flex::Center, Layout, Position},
+    layout::{Constraint, Direction, Layout},
     prelude::{Alignment, Buffer, Rect},
     style::{Color, Style},
     widgets::*,
 };
+use tokio::sync::mpsc;
 use tui_input::{Input, backend::crossterm::EventHandler};
 
-use super::{Component, ComponentEnum, MainMenu, center_rect};
+use super::{Component, ComponentEnum, MainMenu, api_key_input::ApiKeyInput, center_rect};
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct ImageMenu {
     input: Input,
-    path: Vec<PathBuf>,
+    image_sender: mpsc::UnboundedSender<PathBuf>,
+}
+
+impl ImageMenu {
+    pub fn new(image_sender: mpsc::UnboundedSender<PathBuf>) -> Self {
+        Self {
+            input: Default::default(),
+            image_sender,
+        }
+    }
+
+    fn request_image(&mut self, context: Context<'_>) -> Option<Action> {
+        if self.input.value().is_empty() {
+            return Some(Action::SwitchInputMode(InputMode::Editing));
+        }
+        let prompt = self.input.value().to_string();
+        let image_sender = self.image_sender.clone();
+        log::info!("Requested image creation with context: {context:#?}");
+        if let Some(client) = context.ai_client {
+            log::debug!("Spawning  the image generation");
+            tokio::spawn(async move {
+                log::debug!("Spawned  the image generation");
+                let path = imager::generate_and_save_image(client, &prompt)
+                    .await
+                    .expect("Expected a valid image path");
+
+                if let Err(e) = image_sender.send(path) {
+                    log::error!("Failed to send path: {:#?}", e)
+                }
+            });
+
+            self.input.reset();
+            Some(Action::SwitchComponent(ComponentEnum::from(
+                MainMenu::default(),
+            )))
+        } else {
+            Some(Action::SwitchComponent(ComponentEnum::from(
+                ApiKeyInput::new(&context.settings.openai_api_key),
+            )))
+        }
+    }
 }
 
 impl Component for ImageMenu {
@@ -33,30 +73,12 @@ impl Component for ImageMenu {
                 KeyCode::Esc => Some(Action::SwitchComponent(ComponentEnum::from(
                     MainMenu::default(),
                 ))),
-                KeyCode::Enter => {
-                    // TODO: Fix the image generation
-                    //
-                    // let prompt = self.input.value().into();
-                    // let image_sender = self.image_sender.clone();
-                    // tokio::spawn(async move {
-                    //     self.path.push(
-                    //         imager::generate_and_save_image(&prompt)
-                    //             .await
-                    //             .expect("Expected a valid image path"),
-                    //     );
-                    //     self.input.reset();
-                    // });
-                    Some(Action::SwitchComponent(ComponentEnum::from(
-                        MainMenu::default(),
-                    )))
-                }
+                KeyCode::Enter => self.request_image(context),
                 _ => None,
             },
             InputMode::Editing => match key.code {
                 KeyCode::Esc => Some(Action::SwitchInputMode(InputMode::Normal)),
-                KeyCode::Enter => Some(Action::SwitchComponent(ComponentEnum::from(
-                    MainMenu::default(),
-                ))),
+                KeyCode::Enter => self.request_image(context),
                 _ => {
                     self.input.handle_event(&Event::Key(key));
                     None
