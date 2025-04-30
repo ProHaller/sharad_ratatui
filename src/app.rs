@@ -3,7 +3,7 @@ use crate::{
     assistant::create_assistant,
     audio::AudioNarration,
     character::{CharacterSheet, CharacterSheetUpdate},
-    context::Context,
+    context::{self, Context},
     error::{AppError, Error, Result},
     game_state::GameState,
     imager::load_image_from_file,
@@ -21,7 +21,10 @@ use copypasta::ClipboardContext;
 use crossterm::event::{KeyEvent, KeyEventKind};
 use ratatui::widgets::ListState;
 use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
-use std::path::PathBuf;
+use std::{
+    fs::{self, create_dir_all},
+    path::PathBuf,
+};
 use tokio::sync::mpsc;
 
 pub enum Action {
@@ -280,11 +283,30 @@ impl App {
         }
         Ok(())
     }
+
     fn handle_image(&mut self, path: PathBuf) -> Result<()> {
-        self.image = Some(load_image_from_file(&self.picker.unwrap(), &path)?);
+        // Load and store image in self
+        let picker = self.picker.expect("Expected a Picker");
+        self.image = Some(load_image_from_file(&picker, &path)?);
+
+        // Handle game-specific image loading and saving
         if let ComponentEnum::InGame(game) = &mut self.component {
-            game.image = Some(load_image_from_file(&self.picker.unwrap(), &path)?);
+            if let Some(save_path) = &game.state.save_path {
+                if let Some(save_dir) = save_path.parent() {
+                    let images_dir = save_dir.join("images");
+                    create_dir_all(&images_dir)?;
+
+                    if let Some(file_name) = path.file_name() {
+                        let img_path = images_dir.join(file_name);
+                        fs::copy(&path, &img_path)?;
+                        game.image = Some(load_image_from_file(&picker, &img_path)?);
+                        game.state.image_path = Some(img_path);
+                        self.ai_sender.send(AIMessage::Save(game.state.clone()))?;
+                    }
+                }
+            }
         }
+
         Ok(())
     }
 
