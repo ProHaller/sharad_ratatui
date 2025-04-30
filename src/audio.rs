@@ -29,6 +29,7 @@ use std::{
 };
 use uuid::Uuid;
 
+#[derive(Debug)]
 pub enum AudioNarration {
     Generating(GameAI, Fluff, PathBuf),
     Playing(Fluff),
@@ -176,7 +177,7 @@ pub fn record_audio(is_recording: Arc<AtomicBool>) -> Result<()> {
     let spec = wav_spec_from_config(&config);
     let home_dir = dir::home_dir().expect("Failed to get home directory");
     let path = home_dir.join("sharad").join("data").join("recording.wav");
-    let writer = hound::WavWriter::create(path, spec).map_err(|e| AudioError::Hound(e))?;
+    let writer = hound::WavWriter::create(path, spec).map_err(AudioError::Hound)?;
     let writer = Arc::new(Mutex::new(Some(writer)));
     let writer_clone = writer.clone();
 

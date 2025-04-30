@@ -88,7 +88,7 @@ pub fn dice_roll(
     threshold: Option<u8>,
     edge_action: Option<EdgeAction>,
 ) -> DiceRoll {
-    let mut rng = rand::thread_rng(); // Random number generator.
+    let mut rng = rand::rng(); // Random number generator.
     let mut dice_results = Vec::new(); // Store results of each die roll.
     let mut hits = 0; // Count of successful hits (dice results of 5 or 6).
     let mut ones = 0; // Count of dice results that are 1, which might indicate a glitch.
@@ -149,7 +149,7 @@ pub fn dice_roll(
 
 // Helper function to roll a single die.
 fn roll_die(rng: &mut impl Rng) -> u8 {
-    rng.gen_range(1..=6)
+    rng.random_range(1..=6)
 }
 
 // Enum to represent possible edge actions during a dice roll.

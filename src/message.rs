@@ -149,14 +149,13 @@ impl std::fmt::Debug for Message {
 }
 
 // Enumeration for AI-generated messages with different purposes.
+#[derive(Debug)]
 pub enum AIMessage {
     Game((Vec<Message>, GameAI, GameState)),
     StartGame(String),
     Response(GameMessage),
-    NewMessage,
     Save(GameState),
     Load(PathBuf),
-    Image(PathBuf),
     AudioNarration(AudioNarration),
     RequestCharacterUpdate(CharacterSheetUpdate, String),
     AddCharacter(CharacterSheet),

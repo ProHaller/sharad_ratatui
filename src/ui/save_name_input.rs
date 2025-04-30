@@ -1,13 +1,12 @@
 // /ui/save_name_input.rs
 use crate::{
-    app::{Action, App, InputMode},
+    app::{Action, InputMode},
     context::Context,
 };
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
-    Frame,
     buffer::Buffer,
-    layout::{Constraint, Direction, Layout, Position, Rect},
+    layout::{Constraint, Direction, Layout, Rect},
     prelude::Alignment,
     style::{Color, Style},
     widgets::*,

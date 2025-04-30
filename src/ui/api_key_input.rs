@@ -1,19 +1,15 @@
 // ui/api_key_input.rs
 
-use std::thread;
-
 use crate::{
-    app::{Action, App, InputMode},
-    context::{self, Context},
+    app::{Action, InputMode},
+    context::Context,
     settings::Settings,
 };
-use copypasta::{ClipboardContext, ClipboardProvider};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
-    Frame,
-    layout::{Constraint, Direction, Layout, Position},
+    layout::{Constraint, Direction, Layout},
     prelude::{Alignment, Buffer, Rect},
-    style::{Color, Modifier, Style, Stylize},
+    style::{Color, Style, Stylize},
     widgets::*,
 };
 use tokio::runtime::Handle;
@@ -188,7 +184,7 @@ impl ApiKeyInput {
 pub fn api_input_default(api_key: &Option<String>) -> Input {
     match api_key {
         None => Input::new("Please input a valid API key".into()),
-        Some(api_key) => Input::new(hide_api(&api_key)),
+        Some(api_key) => Input::new(hide_api(api_key)),
     }
 }
 fn hide_api(s: &str) -> String {
