@@ -16,6 +16,7 @@ mod rain;
 mod save_name_input;
 mod settings_menu;
 pub mod spinner;
+pub mod textarea;
 pub mod widgets;
 
 pub use self::character_sheet::*;

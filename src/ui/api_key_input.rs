@@ -5,6 +5,7 @@ use crate::{
     context::Context,
     settings::Settings,
 };
+use copypasta::ClipboardProvider;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::{Constraint, Direction, Layout},
@@ -15,12 +16,17 @@ use ratatui::{
 use tokio::runtime::Handle;
 use tui_input::Input;
 use tui_input::backend::crossterm::EventHandler;
+use tui_textarea::TextArea;
 
-use super::{Component, ComponentEnum, SettingsMenu, center_rect, input::Pastable};
+use super::{
+    Component, ComponentEnum, SettingsMenu, center_rect,
+    input::Pastable,
+    textarea::{Mode, Vim},
+};
 
 #[derive(Debug)]
 pub struct ApiKeyInput {
-    input: Input,
+    input: TextArea,
 }
 
 impl Component for ApiKeyInput {
@@ -71,15 +77,9 @@ impl Component for ApiKeyInput {
             InputMode::Editing => Style::default().fg(Color::Yellow),
             InputMode::Recording => Style::default().bg(Color::Red),
         };
-        let input_field = Paragraph::new(self.input.value())
-            .style(Style::new().fg(Color::DarkGray))
-            .block(
-                Block::default()
-                    .border_type(BorderType::Rounded)
-                    .borders(Borders::ALL)
-                    .border_style(style)
-                    .title(" API Key "),
-            );
+
+        self.input.set_block(Mode::Normal.block());
+        let input_field = self.input;
         title.render(chunks[0], buffer);
         input_field.render(chunks[1], buffer);
 
@@ -124,7 +124,12 @@ impl ApiKeyInput {
             }
             KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.input.reset();
-                self.input.paste(context);
+                self.input.insert_str(
+                    context
+                        .clipboard
+                        .get_contents()
+                        .expect("Expected the clipboard contents"),
+                );
                 None
             }
             _ => {
@@ -173,7 +178,12 @@ impl ApiKeyInput {
             ))),
             KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.input.reset();
-                self.input.paste(context);
+                self.input.insert_str(
+                    context
+                        .clipboard
+                        .get_contents()
+                        .expect("Expected the clipboard contents"),
+                );
                 None
             }
             _ => None,
