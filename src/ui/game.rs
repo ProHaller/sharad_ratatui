@@ -583,6 +583,10 @@ impl InGame {
                 // Some(Action::SwitchInputMode(InputMode::Recording))
                 None
             }
+            KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.input.paste(context);
+                None
+            }
             // HACK: This should be a different key handling for the detail section
             KeyCode::Esc if (self.highlighted_section != HighlightedSection::None) => {
                 self.highlighted_section = HighlightedSection::None;
