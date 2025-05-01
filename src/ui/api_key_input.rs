@@ -29,7 +29,9 @@ impl Component for ApiKeyInput {
             InputMode::Normal => self.handle_normal_input(key, context),
             InputMode::Editing => self.handle_editing_input(key, context),
             // TODO: handle the voice recording
-            InputMode::Recording => Some(Action::SwitchInputMode(InputMode::Normal)),
+            InputMode::Recording(_) => {
+                unreachable!()
+            }
         }
     }
 
@@ -69,7 +71,7 @@ impl Component for ApiKeyInput {
         let style = match context.input_mode {
             InputMode::Normal => normal_style,
             InputMode::Editing => Style::default().fg(Color::Yellow),
-            InputMode::Recording => Style::default().bg(Color::Red),
+            InputMode::Recording(_) => Style::default().bg(Color::Red),
         };
         let input_field = Paragraph::new(self.input.value())
             .style(Style::new().fg(Color::DarkGray))

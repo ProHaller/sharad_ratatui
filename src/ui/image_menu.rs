@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use crate::{
     app::{Action, InputMode},
+    audio::Transcription,
     context::Context,
     imager,
 };
@@ -12,7 +13,7 @@ use ratatui::{
     style::{Color, Style},
     widgets::*,
 };
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{self, UnboundedReceiver};
 use tui_input::{Input, backend::crossterm::EventHandler};
 
 use super::{Component, ComponentEnum, MainMenu, api_key_input::ApiKeyInput, center_rect};
@@ -20,6 +21,7 @@ use super::{Component, ComponentEnum, MainMenu, api_key_input::ApiKeyInput, cent
 #[derive(Debug)]
 pub struct ImageMenu {
     input: Input,
+    receiver: Option<UnboundedReceiver<String>>,
     image_sender: mpsc::UnboundedSender<PathBuf>,
 }
 
@@ -27,7 +29,18 @@ impl ImageMenu {
     pub fn new(image_sender: mpsc::UnboundedSender<PathBuf>) -> Self {
         Self {
             input: Default::default(),
+            receiver: None,
             image_sender,
+        }
+    }
+
+    fn check_transcription(&mut self) {
+        if let Some(receiver) = &mut self.receiver {
+            if let Ok(transcription) = receiver.try_recv() {
+                let input_value = format!("{} {}", self.input.value(), transcription);
+                self.input = Input::with_value(self.input.clone(), input_value);
+                self.receiver = None;
+            }
         }
     }
 
@@ -69,7 +82,16 @@ impl Component for ImageMenu {
             InputMode::Normal => match key.code {
                 KeyCode::Char('e') => Some(Action::SwitchInputMode(InputMode::Editing)),
 
-                KeyCode::Char('r') => Some(Action::SwitchInputMode(InputMode::Recording)),
+                KeyCode::Char('r') => {
+                    if let Ok((receiver, transcription)) =
+                        Transcription::new(None, context.ai_client?.clone())
+                    {
+                        self.receiver = Some(receiver);
+                        Some(Action::SwitchInputMode(InputMode::Recording(transcription)))
+                    } else {
+                        Some(Action::SwitchInputMode(InputMode::Editing))
+                    }
+                }
                 KeyCode::Esc => Some(Action::SwitchComponent(ComponentEnum::from(
                     MainMenu::default(),
                 ))),
@@ -84,12 +106,13 @@ impl Component for ImageMenu {
                     None
                 }
             },
-            InputMode::Recording => Some(Action::SwitchInputMode(InputMode::Normal)),
+            InputMode::Recording(_) => Some(Action::EndRecording),
         }
     }
 
     // TODO: Implement an image viewer here.
     fn render(&mut self, area: Rect, buffer: &mut Buffer, context: &Context) {
+        self.check_transcription();
         let centered_area =
             center_rect(area, Constraint::Percentage(70), Constraint::Percentage(50));
         let chunks = Layout::default()
@@ -120,12 +143,12 @@ impl Component for ImageMenu {
                     .title(match context.input_mode {
                         InputMode::Normal => " Press 'e' to edit or 'r' to record",
                         InputMode::Editing => " Editing ",
-                        InputMode::Recording => " Recording… Press 'Esc' to stop",
+                        InputMode::Recording(_) => " Recording… Press 'Esc' to stop",
                     })
                     .border_style(Style::default().fg(match context.input_mode {
                         InputMode::Normal => Color::DarkGray,
                         InputMode::Editing => Color::Yellow,
-                        InputMode::Recording => Color::Red,
+                        InputMode::Recording(_) => Color::Red,
                     })),
             );
         input.render(chunks[1], buffer);
@@ -133,7 +156,7 @@ impl Component for ImageMenu {
         let mode_indicator = match context.input_mode {
             InputMode::Normal => " NORMAL ",
             InputMode::Editing => " EDITING ",
-            InputMode::Recording => " RECORDING ",
+            InputMode::Recording(_) => " RECORDING ",
         };
         let instructions =
             Paragraph::new(format!("{} | Enter: confirm | Esc: cancel", mode_indicator))

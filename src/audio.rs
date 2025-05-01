@@ -1,11 +1,10 @@
 use crate::{
     ai::GameAI,
-    error::{AIError, AudioError, Result},
-    message::AIMessage,
-    message::Fluff,
+    error::{AIError, AudioError, Error, Result},
+    message::{AIMessage, Fluff},
 };
 use async_openai::{
-    Audio,
+    Audio, Client,
     config::OpenAIConfig,
     types::{CreateSpeechRequestArgs, CreateTranscriptionRequestArgs, SpeechModel, Voice},
 };
@@ -14,10 +13,11 @@ use cpal::{
     FromSample, Sample,
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
-use futures::{StreamExt, stream::FuturesOrdered};
+use dir::home_dir;
+use futures::{StreamExt, channel::mpsc::Receiver, stream::FuturesOrdered};
 use rodio::{Decoder, OutputStream, Sink};
 use std::{
-    fs::{self, File},
+    fs::{self, File, create_dir_all},
     io::{BufReader, BufWriter},
     path::{Path, PathBuf},
     sync::{
@@ -27,7 +27,7 @@ use std::{
     thread,
     time::Duration,
 };
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use uuid::Uuid;
 
 #[derive(Debug)]
@@ -184,7 +184,142 @@ pub fn play_audio(file_path: PathBuf) -> Result<()> {
     Ok(())
 }
 
-pub fn record_audio(is_recording: Arc<AtomicBool>) -> Result<()> {
+#[derive(Debug, Clone)]
+pub enum AudioDir {
+    GameDir(PathBuf),
+    TempDir(PathBuf),
+}
+
+impl AudioDir {
+    fn path(&self) -> &PathBuf {
+        match self {
+            AudioDir::GameDir(path_buf) => path_buf,
+            AudioDir::TempDir(path_buf) => path_buf,
+        }
+    }
+}
+
+impl TryFrom<Option<PathBuf>> for AudioDir {
+    fn try_from(path: Option<PathBuf>) -> Result<Self> {
+        match path {
+            Some(p) => {
+                let save_path_parent = p.parent().expect("Expected a save_path");
+                let logs_path = save_path_parent.join("logs");
+                create_dir_all(&logs_path)?;
+                return Ok(AudioDir::GameDir(logs_path));
+            }
+            None => match home_dir() {
+                Some(path) => {
+                    let logs_path = path.join("sharad").join("data").join("temp_logs");
+                    create_dir_all(&logs_path)?;
+                    Ok(AudioDir::TempDir(logs_path))
+                }
+                None => Err("Couldn't get a home_dir".into()),
+            },
+        }
+    }
+
+    type Error = Error;
+}
+
+#[derive(Debug)]
+pub struct Transcription {
+    is_recording: Arc<AtomicBool>,
+    client: Client<OpenAIConfig>,
+    dir: AudioDir,
+    recording_path: Option<PathBuf>,
+    sender: UnboundedSender<String>,
+    receiver: Option<UnboundedReceiver<PathBuf>>,
+    pub transcription: String,
+}
+
+impl Transcription {
+    pub fn new(
+        path: Option<PathBuf>,
+        client: Client<OpenAIConfig>,
+    ) -> Result<(UnboundedReceiver<String>, Transcription)> {
+        let (t_sender, t_receiver) = unbounded_channel();
+        let mut transcription = Self {
+            is_recording: Arc::new(AtomicBool::new(true)),
+            client,
+            dir: AudioDir::try_from(path)?,
+            recording_path: None,
+            sender: t_sender,
+            receiver: None,
+            transcription: String::new(),
+        };
+
+        transcription.start_recording();
+        Ok((t_receiver, transcription))
+    }
+
+    pub fn start_recording(&mut self) {
+        let dir = self.dir.clone();
+        let is_recording = self.is_recording.clone();
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<PathBuf>();
+        thread::spawn(move || match record_audio(dir, is_recording) {
+            Ok(path) => {
+                if let Err(e) = sender.send(path) {
+                    log::error!("Failed to send the transcription path: {e:#?}");
+                }
+            }
+            Err(e) => {
+                log::error!("Error recording audio: {:?}", e);
+            }
+        });
+        self.receiver = Some(receiver);
+    }
+
+    fn stop(&mut self) {
+        self.is_recording.fetch_not(Ordering::SeqCst);
+    }
+
+    pub async fn transcribe_audio(&mut self) {
+        let audio = Audio::new(&self.client);
+
+        let recording_path = self
+            .recording_path
+            .clone()
+            .expect("Expected a recording path");
+
+        match audio
+            .transcribe(
+                CreateTranscriptionRequestArgs::default()
+                    .file(recording_path)
+                    .model("whisper-1")
+                    .build()
+                    .map_err(|e| {
+                        log::error!("Failed to build the CreateTranscriptionRequestArgs: {e:#?}");
+                    })
+                    .expect("Expected to CreateTranscriptionRequestArgs"),
+            )
+            .await
+        {
+            Ok(transcription) => self.transcription = transcription.text,
+            Err(e) => log::error!("Failed to transcribe: {e:#?}"),
+        };
+    }
+
+    pub async fn input(mut self) {
+        self.stop();
+        if let Some(path) = self
+            .receiver
+            .as_mut()
+            .expect("Expected a receiver")
+            .recv()
+            .await
+        {
+            self.recording_path = Some(path);
+        }
+
+        self.transcribe_audio().await;
+        if let Err(e) = self.sender.send(self.transcription) {
+            log::error!("Failed to send the transcription: {e:#?}");
+        }
+    }
+}
+
+pub fn record_audio(dir: AudioDir, is_recording: Arc<AtomicBool>) -> Result<PathBuf> {
     let host = cpal::default_host();
     let device = host
         .default_input_device()
@@ -195,9 +330,13 @@ pub fn record_audio(is_recording: Arc<AtomicBool>) -> Result<()> {
         .map_err(|e| AudioError::AudioRecordingError(e.to_string()))?;
 
     let spec = wav_spec_from_config(&config);
-    let home_dir = dir::home_dir().expect("Failed to get home directory");
-    let path = home_dir.join("sharad").join("data").join("recording.wav");
-    let writer = hound::WavWriter::create(path, spec).map_err(AudioError::Hound)?;
+    let time = chrono::Local::now().format("%y_%m_%d_%h_%m_%s");
+    let recording_path = match &dir {
+        AudioDir::TempDir(p) | AudioDir::GameDir(p) => p.join(format!("{}_recording.wav", time)),
+    };
+    log::info!("recording_path: {recording_path:#?}");
+
+    let writer = hound::WavWriter::create(&recording_path, spec).map_err(AudioError::Hound)?;
     let writer = Arc::new(Mutex::new(Some(writer)));
     let writer_clone = writer.clone();
 
@@ -260,17 +399,8 @@ pub fn record_audio(is_recording: Arc<AtomicBool>) -> Result<()> {
         }
     }
 
-    Ok(())
-}
-
-pub fn start_recording(is_recording: &Arc<AtomicBool>) {
-    let is_recording_clone = is_recording.clone();
-
-    thread::spawn(move || {
-        if let Err(e) = record_audio(is_recording_clone) {
-            eprintln!("Error recording audio: {:?}", e);
-        }
-    });
+    // TODO:  I would probably need to change that to stream the audio
+    Ok(recording_path)
 }
 
 fn sample_format(format: cpal::SampleFormat) -> hound::SampleFormat {
@@ -304,27 +434,5 @@ where
                 writer.write_sample(sample).ok();
             }
         }
-    }
-}
-
-pub async fn transcribe_audio(client: &async_openai::Client<OpenAIConfig>) -> Result<String> {
-    let audio = Audio::new(client);
-
-    let home_dir = dir::home_dir().expect("Failed to get home directory");
-    let path = home_dir.join("sharad").join("data").join("recording.wav");
-    let recording_path = path;
-
-    match audio
-        .transcribe(
-            CreateTranscriptionRequestArgs::default()
-                .file(recording_path)
-                .model("whisper-1")
-                .build()
-                .map_err(AudioError::OpenAI)?,
-        )
-        .await
-    {
-        Ok(transcription) => Ok(transcription.text),
-        Err(e) => Err(AudioError::OpenAI(e).into()),
     }
 }

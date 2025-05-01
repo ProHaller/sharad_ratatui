@@ -8,6 +8,7 @@ use super::{
 use crate::{
     ai::GameAI,
     app::{Action, InputMode},
+    audio::Transcription,
     context::Context,
     error::Error,
     game_state::GameState,
@@ -28,6 +29,7 @@ use ratatui::{
 };
 use ratatui_image::{StatefulImage, picker::Picker, protocol::StatefulProtocol};
 use std::time::{Duration, Instant};
+use tokio::sync::mpsc::UnboundedReceiver;
 use tui_input::{Input, backend::crossterm::EventHandler};
 
 pub struct InGame {
@@ -41,6 +43,7 @@ pub struct InGame {
 
     // User actions:
     pub input: Input,
+    pub receiver: Option<UnboundedReceiver<String>>,
     pub highlighted_section: HighlightedSection,
 
     // UI state:
@@ -92,11 +95,12 @@ impl Component for InGame {
             InputMode::Normal => self.handle_normal_input(key, context),
             InputMode::Editing => self.handle_edit_input(key, context),
             // TODO: handle the voice recording
-            InputMode::Recording => Some(Action::SwitchInputMode(InputMode::Normal)),
+            InputMode::Recording(_) => Some(Action::EndRecording),
         }
     }
 
     fn render(&mut self, area: Rect, buffer: &mut Buffer, context: &Context) {
+        self.check_transcription();
         let screen_split_layout = Layout::default()
             .direction(Direction::Horizontal)
             .flex(ratatui::layout::Flex::Center)
@@ -168,6 +172,7 @@ impl InGame {
             image,
             // TODO: Input should be autonomous with info about its size and scroll
             input: Input::default(),
+            receiver: None,
             highlighted_section: HighlightedSection::None,
             spinner: Spinner::new(),
             last_spinner_update: Instant::now(),
@@ -180,6 +185,16 @@ impl InGame {
         };
         new_self.on_creation();
         new_self
+    }
+
+    fn check_transcription(&mut self) {
+        if let Some(receiver) = &mut self.receiver {
+            if let Ok(transcription) = receiver.try_recv() {
+                let input_value = format!("{} {}", self.input.value(), transcription);
+                self.input = Input::with_value(self.input.clone(), input_value);
+                self.receiver = None;
+            }
+        }
     }
 
     pub fn draw_detailed_info(&mut self, area: Rect, buffer: &mut Buffer, _context: &Context) {
@@ -410,14 +425,14 @@ impl InGame {
                     " Press 'e' to edit, 'r' to record, and ' Tab ' to see character sheet details "
                 }
                 InputMode::Editing => " Editing ",
-                InputMode::Recording => " Recording… Press 'Esc' to stop ",
+                InputMode::Recording(_) => " Recording… Press 'Esc' to stop ",
             })
             .title_bottom(Line::from(lines.as_str()))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(match context.input_mode {
                 InputMode::Normal => Color::DarkGray,
                 InputMode::Editing => Color::White,
-                InputMode::Recording => Color::Red,
+                InputMode::Recording(_) => Color::Red,
             }));
 
         // let max_width = area.width as usize - 2;
@@ -471,7 +486,7 @@ impl InGame {
             .style(Style::default().fg(match context.input_mode {
                 InputMode::Normal => Color::DarkGray,
                 InputMode::Editing => Color::Yellow,
-                InputMode::Recording => Color::Red,
+                InputMode::Recording(_) => Color::Red,
             }))
             .alignment(Alignment::Left)
             .wrap(Wrap { trim: false })
@@ -579,9 +594,15 @@ impl InGame {
         match key.code {
             KeyCode::Char('e') => Some(Action::SwitchInputMode(InputMode::Editing)),
             KeyCode::Char('r') => {
-                // TODO: Handle Recording
-                // Some(Action::SwitchInputMode(InputMode::Recording))
-                None
+                if let Ok((receiver, transcription)) = Transcription::new(
+                    Some(self.state.save_path.clone().expect("Expected save_path")),
+                    context.ai_client?.clone(),
+                ) {
+                    self.receiver = Some(receiver);
+                    Some(Action::SwitchInputMode(InputMode::Recording(transcription)))
+                } else {
+                    Some(Action::SwitchInputMode(InputMode::Editing))
+                }
             }
             KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.input.paste(context);

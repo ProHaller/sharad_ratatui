@@ -1,7 +1,7 @@
 use crate::{
     ai::GameAI,
     assistant::create_assistant,
-    audio::AudioNarration,
+    audio::{AudioNarration, Transcription},
     character::{CharacterSheet, CharacterSheetUpdate},
     context::{self, Context},
     error::{AppError, Error, Result},
@@ -23,9 +23,14 @@ use ratatui::widgets::ListState;
 use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
 use std::{
     fs::{self, create_dir_all},
+    mem,
     path::PathBuf,
+    time::Duration,
 };
-use tokio::sync::mpsc;
+use tokio::{
+    sync::{broadcast::Receiver, mpsc},
+    time::sleep,
+};
 
 pub enum Action {
     Quit,
@@ -35,6 +40,7 @@ pub enum Action {
     // TODO: Probably don't need the transcription target anymore.
     SwitchComponent(ComponentEnum),
     SwitchInputMode(InputMode),
+    EndRecording,
     AudioNarration(AudioNarration),
 }
 
@@ -44,12 +50,12 @@ pub enum TranscriptionTarget {
     ImagePrompt,
 }
 
-#[derive(Debug, Default, PartialEq, Eq, Clone)]
+#[derive(Debug, Default)]
 pub enum InputMode {
     #[default]
     Normal,
     Editing,
-    Recording,
+    Recording(Transcription),
 }
 
 // TODO: Verify that there is a valid connection internet, else request the user to take action
@@ -206,6 +212,15 @@ impl App {
                 log::info!("Action::AudioNarration: {audio_narration:#?}");
                 self.audio_narration = audio_narration;
                 self.audio_narration.handle_audio(self.ai_sender.clone())?;
+            }
+            Action::EndRecording => {
+                if let InputMode::Recording(transcription) =
+                    mem::replace(&mut self.input_mode, InputMode::Editing)
+                {
+                    tokio::spawn(async move {
+                        transcription.input().await;
+                    });
+                }
             }
         }
 
