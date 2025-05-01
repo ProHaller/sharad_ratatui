@@ -11,7 +11,7 @@ use async_openai::{
 };
 use chrono::Local;
 use cpal::{
-    FromSample, Sample, Stream,
+    FromSample, Sample,
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
 use futures::{StreamExt, stream::FuturesOrdered};
@@ -27,6 +27,7 @@ use std::{
     thread,
     time::Duration,
 };
+use tokio::sync::mpsc;
 use uuid::Uuid;
 
 #[derive(Debug)]
@@ -44,6 +45,7 @@ impl AudioNarration {
     ) -> Result<()> {
         match &self {
             AudioNarration::Generating(game_ai, fluff, save_path) => {
+                log::info!("AudioNarration::Generating: {fluff:#?}");
                 self.generate_narration(
                     game_ai.client.clone(),
                     fluff.clone(),
@@ -52,11 +54,17 @@ impl AudioNarration {
                 )?;
             }
             AudioNarration::Playing(fluff) => {
-                for file in fluff.dialogue.iter() {
-                    if let Some(audio_path) = &file.audio {
-                        play_audio(audio_path.clone())?;
+                log::info!("AudioNarration::Playing: {fluff:#?}");
+                let fluff = fluff.clone();
+                tokio::spawn(async move {
+                    for file in fluff.dialogue.iter() {
+                        if let Some(audio_path) = &file.audio {
+                            if let Err(e) = play_audio(audio_path.clone()) {
+                                log::error!("Failed to read audio: {e:#?}");
+                            };
+                        }
                     }
-                }
+                });
             }
             AudioNarration::Paused => todo!("Need to handle the Paused AudioNarration"),
             AudioNarration::Stopped => {}
@@ -71,11 +79,13 @@ impl AudioNarration {
         save_path: PathBuf,
         ai_sender: tokio::sync::mpsc::UnboundedSender<AIMessage>,
     ) -> Result<()> {
-        let handle = tokio::spawn(async move {
+        tokio::spawn(async move {
             fluff
                 .speakers
                 .iter_mut()
                 .for_each(|speaker| speaker.assign_voice());
+
+            log::info!("Before audio generation: {fluff:#?}");
 
             let mut audio_futures = FuturesOrdered::new();
 
@@ -98,12 +108,16 @@ impl AudioNarration {
                 });
             }
 
+            log::info!("generate_audio done");
             // Process the results in order
             while let Some((result, index)) = audio_futures.next().await {
+                log::info!("generate_audio results: {result:#?}");
                 if let Ok(path) = result {
                     fluff.dialogue[index].audio = Some(path);
                 }
             }
+
+            log::info!("After audio generation: {fluff:#?}");
             if let Err(e) =
                 ai_sender.send(AIMessage::AudioNarration(AudioNarration::Playing(fluff)))
             {
@@ -135,7 +149,12 @@ pub async fn generate_audio(
         .await
         .map_err(AIError::OpenAI)?;
 
-    let logs_dir = save_path.join("logs");
+    let logs_dir = save_path
+        .parent()
+        .expect("Expected the save_path parent dir")
+        .join("logs");
+
+    log::info!("generate_audio logs_dir: {logs_dir:#?}");
     fs::create_dir_all(&logs_dir).map_err(AIError::Io)?;
 
     let uuid = Uuid::new_v4();
@@ -151,6 +170,7 @@ pub async fn generate_audio(
 
 // HACK: Still need an interruption method
 pub fn play_audio(file_path: PathBuf) -> Result<()> {
+    log::info!("Playing: {file_path:#?}");
     let (_stream, stream_handle) =
         OutputStream::try_default().expect("Failed to get output stream");
     let sink = Sink::try_new(&stream_handle).expect("Failed to create audio sink");
