@@ -8,6 +8,7 @@ use futures::TryFutureExt;
 use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
 use std::{path::PathBuf, process::Command};
 
+// TODO: implement an image correction/edition method.
 pub async fn generate_and_save_image(
     client: Client<OpenAIConfig>,
     prompt: &str,

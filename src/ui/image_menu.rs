@@ -88,6 +88,7 @@ impl Component for ImageMenu {
         }
     }
 
+    // TODO: Implement an image viewer here.
     fn render(&mut self, area: Rect, buffer: &mut Buffer, context: &Context) {
         let centered_area =
             center_rect(area, Constraint::Percentage(70), Constraint::Percentage(50));

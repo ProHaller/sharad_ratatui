@@ -53,7 +53,7 @@ pub enum InputMode {
 }
 
 // TODO: Verify that there is a valid connection internet, else request the user to take action
-// after conneecting.
+// after conecting.
 pub struct App {
     // Application state and control flow
     running: bool,
@@ -192,15 +192,18 @@ impl App {
             }
             Action::Quit => self.quit()?,
             Action::LoadSave(save_path) => {
+                log::info!("Action::LoadSave: {save_path:#?}");
                 self.ai_sender.send(AIMessage::Load(save_path))?;
             }
             Action::CreateNewGame(save_name) => {
+                log::info!("Action::CreateNewGame: {save_name:#?}");
                 self.ai_sender.send(AIMessage::StartGame(save_name))?;
             }
             Action::ProcessMessage(message) => {
                 todo!("Need to ProcessMessage: {}", message)
             }
             Action::AudioNarration(audio_narration) => {
+                log::info!("Action::AudioNarration: {audio_narration:#?}");
                 self.audio_narration = audio_narration;
                 self.audio_narration.handle_audio(self.ai_sender.clone())?;
             }
@@ -284,6 +287,7 @@ impl App {
         Ok(())
     }
 
+    // TODO: should implement an image generation spinner
     fn handle_image(&mut self, path: PathBuf) -> Result<()> {
         // Load and store image in self
         let picker = self.picker.expect("Expected a Picker");

@@ -102,6 +102,8 @@ impl Fluff {
     }
 }
 
+// TODO: Implement the new voices
+// TODO: Implement tone specifiers
 impl Speaker {
     pub fn assign_voice(&mut self) {
         let gender_name_tuple = (self.gender.clone(), self.name.clone());
@@ -110,6 +112,9 @@ impl Speaker {
         let mut hasher = DefaultHasher::new();
         gender_name_tuple.hash(&mut hasher);
         let hash = hasher.finish();
+        // let female_voice = [Voice::Shimmer, Voice::Alloy, Voice::Coral, Voice::Sage];
+        // let male_voice = [Voice::Ash, Voice::Onyx, Voice::Echo, Voice::Verse];
+        // let neutral_voice = [Voice::Ballad, Voice::Nova, Voice::Fable];
 
         match self.gender {
             Gender::NonBinary => {
