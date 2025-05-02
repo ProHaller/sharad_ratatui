@@ -2,13 +2,13 @@ use super::{
     Component, ComponentEnum, MainMenu, center_rect, chunk_attributes,
     descriptions::*,
     draw_character_sheet, get_attributes, get_derived,
-    input::Pastable,
     spinner::{Spinner, spinner_frame},
+    textarea::{Mode, Transition, Vim},
 };
 use crate::{
     ai::GameAI,
     app::{Action, InputMode},
-    context::Context,
+    context::{self, Context},
     error::Error,
     game_state::GameState,
     imager::load_image_from_file,
@@ -29,6 +29,7 @@ use ratatui::{
 use ratatui_image::{StatefulImage, picker::Picker, protocol::StatefulProtocol};
 use std::time::{Duration, Instant};
 use tui_input::{Input, backend::crossterm::EventHandler};
+use tui_textarea::TextArea;
 
 pub struct InGame {
     // GamePlay state:
@@ -40,7 +41,8 @@ pub struct InGame {
     pub ai: GameAI,
 
     // User actions:
-    pub input: Input,
+    pub textarea: TextArea<'static>,
+    pub vim: Vim,
     pub highlighted_section: HighlightedSection,
 
     // UI state:
@@ -72,6 +74,17 @@ impl std::fmt::Debug for InGame {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SectionMove {
+    Next,
+    Previous,
+    Section(HighlightedSection),
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HighlightedSection {
     None,
     Backstory,
@@ -88,11 +101,63 @@ pub enum HighlightedSection {
 
 impl Component for InGame {
     fn on_key(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
-        match context.input_mode {
-            InputMode::Normal => self.handle_normal_input(key, context),
-            InputMode::Editing => self.handle_edit_input(key, context),
-            // TODO: handle the voice recording
-            InputMode::Recording => Some(Action::SwitchInputMode(InputMode::Normal)),
+        match self.vim.transition(key.into(), &mut self.textarea) {
+            Transition::Mode(mode) if self.vim.mode != mode => {
+                self.textarea
+                    .set_block(mode.block().border_type(BorderType::Rounded));
+                self.textarea.set_cursor_style(mode.cursor_style());
+                self.vim.mode = mode;
+                match mode {
+                    Mode::Recording => {
+                        log::debug!("Strated the recording");
+                        Some(Action::SwitchInputMode(InputMode::Recording))
+                    }
+                    Mode::Normal => Some(Action::SwitchInputMode(InputMode::Normal)),
+                    Mode::Insert => Some(Action::SwitchInputMode(InputMode::Editing)),
+                    Mode::Visual => Some(Action::SwitchInputMode(InputMode::Normal)),
+                    Mode::Operator(_) => None,
+                }
+            }
+            Transition::Nop | Transition::Mode(_) => None,
+            Transition::Pending(input) => {
+                self.vim.pending = input;
+                None
+            }
+            Transition::Validation if self.textarea.lines().concat().len() > 1 => {
+                let value = self.textarea.lines().join("\n");
+                self.spinner_active = true;
+                self.new_message(&Message::new(MessageType::User, value));
+                let message = self.build_user_completion_message(&context);
+                let ai = self.ai.clone();
+                tokio::spawn(async move {
+                    ai.send_message(message, ai.ai_sender.clone()).await?;
+                    Ok::<(), Error>(())
+                });
+                self.textarea = new_textarea();
+                None
+            }
+            Transition::Validation => {
+                self.vim.mode = Mode::Insert;
+                None
+            }
+            Transition::Exit if self.highlighted_section == HighlightedSection::None => {
+                self.content.clear();
+                context
+                    .save_manager
+                    .save(&self.state)
+                    .expect("Should have saved from the game");
+                Some(Action::SwitchComponent(ComponentEnum::from(
+                    MainMenu::default(),
+                )))
+            }
+            Transition::Exit => {
+                self.highlighted_section = HighlightedSection::None;
+                None
+            }
+            Transition::Detail(section_move) => {
+                self.handle_section_move(section_move);
+                None
+            }
         }
     }
 
@@ -161,13 +226,15 @@ impl InGame {
             None => None,
         };
 
+        let textarea = new_textarea();
         let mut new_self = Self {
             ai: game_ai,
             state,
             content,
             image,
             // TODO: Input should be autonomous with info about its size and scroll
-            input: Input::default(),
+            textarea,
+            vim: Vim::new(Mode::Normal),
             highlighted_section: HighlightedSection::None,
             spinner: Spinner::new(),
             last_spinner_update: Instant::now(),
@@ -396,98 +463,30 @@ impl InGame {
         self.update_scroll();
     }
 
-    // FIX:  the cursor is not currently displayed properly. cf: https://github.com/ratatui/ratatui/discussions/872
-    fn draw_user_input(&self, buffer: &mut Buffer, context: &Context, area: Rect) {
-        let lines = &format!(
-            "Total lines: {}, visible_lines: {}, content_scroll: {}, ",
-            self.total_lines, self.max_height, self.content_scroll
-        )
-        .clone();
+    fn draw_user_input(&mut self, buffer: &mut Buffer, context: &Context, area: Rect) {
         let block = Block::default()
             .border_type(BorderType::Rounded)
             .title(match context.input_mode {
                 InputMode::Normal => {
-                    " Press 'e' to edit, 'r' to record, and ' Tab ' to see character sheet details "
+                    " Press 'i' to edit, 'r' to record, and ' Tab ' to see character sheet details "
                 }
                 InputMode::Editing => " Editing ",
                 InputMode::Recording => " Recording… Press 'Esc' to stop ",
             })
-            .title_bottom(Line::from(lines.as_str()))
+            .title_bottom(Line::from(format!(
+                "Total lines: {}, visible_lines: {}, content_scroll: {}, ",
+                self.total_lines, self.max_height, self.content_scroll
+            )))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(match context.input_mode {
-                InputMode::Normal => Color::DarkGray,
-                InputMode::Editing => Color::White,
+                InputMode::Normal => Color::White,
+                InputMode::Editing => Color::LightYellow,
                 InputMode::Recording => Color::Red,
             }));
 
-        // let max_width = area.width as usize - 2;
-        //
-        // let text = self.input.value();
-        //
-        // // Wrap the text manually, considering grapheme clusters and their widths
-        // let mut wrapped_lines = Vec::new();
-        // let mut current_line = String::new();
-        // let mut current_width = 0;
-        //
-        // for grapheme in text.graphemes(true) {
-        //     let grapheme_width = grapheme.width();
-        //     if current_width + grapheme_width > max_width {
-        //         wrapped_lines.push(current_line);
-        //         current_line = String::new();
-        //         current_width = 0;
-        //     }
-        //     current_line.push_str(grapheme);
-        //     current_width += grapheme_width;
-        // }
-        // if !current_line.is_empty() {
-        //     wrapped_lines.push(current_line);
-        // }
-        //
-        // // Calculate cursor position
-        // let cursor_position = self.input.visual_cursor();
-        // let mut cursor_x = 0;
-        // let mut cursor_y = 0;
-        // let mut total_width = 0;
-        //
-        // for (line_idx, line) in wrapped_lines.iter().enumerate() {
-        //     let line_width: usize = line.width();
-        //     if total_width + line_width >= cursor_position {
-        //         cursor_y = line_idx;
-        //         cursor_x = cursor_position - total_width;
-        //         break;
-        //     }
-        //     total_width += line_width;
-        //     cursor_y = line_idx + 1;
-        // }
-        //
-        // // Ensure cursor_x doesn't exceed the line width
-        // if cursor_y < wrapped_lines.len() {
-        //     cursor_x = cursor_x.min(wrapped_lines[cursor_y].width());
-        // }
-        //
-        // let joined_lines = wrapped_lines.join("\n");
+        self.textarea.set_block(self.vim.mode.block());
 
-        let input = Paragraph::new(self.input.value())
-            .style(Style::default().fg(match context.input_mode {
-                InputMode::Normal => Color::DarkGray,
-                InputMode::Editing => Color::Yellow,
-                InputMode::Recording => Color::Red,
-            }))
-            .alignment(Alignment::Left)
-            .wrap(Wrap { trim: false })
-            .block(block);
-
-        input.render(area, buffer);
-
-        // TODO: Verify the position of the cursor in the input field
-
-        // // Adjust cursor position if it's beyond the visible area
-        // let visible_lines = inner_area.height.saturating_sub(1) as usize;
-        // if cursor_y >= visible_lines {
-        //     cursor_y = visible_lines.saturating_sub(1);
-        // }
-        //
-        // // Set cursor
+        self.textarea.render(area, buffer);
     }
 
     fn parse_full_game_content(&self) -> Vec<(Line<'static>, Alignment)> {
@@ -561,106 +560,92 @@ impl InGame {
         lines
     }
 
-    pub fn handle_edit_input(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
-        match key.code {
-            KeyCode::Enter | KeyCode::Esc => Some(Action::SwitchInputMode(InputMode::Normal)),
-            KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.input.paste(context);
-                None
-            }
-            _ => {
-                self.input.handle_event(&crossterm::event::Event::Key(key));
-                None
-            }
-        }
-    }
-
-    fn handle_normal_input(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
-        match key.code {
-            KeyCode::Char('e') => Some(Action::SwitchInputMode(InputMode::Editing)),
-            KeyCode::Char('r') => {
-                // TODO: Handle Recording
-                // Some(Action::SwitchInputMode(InputMode::Recording))
-                None
-            }
-            KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.input.paste(context);
-                None
-            }
-            // HACK: This should be a different key handling for the detail section
-            KeyCode::Esc if (self.highlighted_section != HighlightedSection::None) => {
-                self.highlighted_section = HighlightedSection::None;
-                None
-            }
-            KeyCode::Esc => {
-                self.content.clear();
-                self.input.reset();
-                context
-                    .save_manager
-                    .save(&self.state)
-                    .expect("Should have saved from the game");
-                Some(Action::SwitchComponent(ComponentEnum::from(
-                    MainMenu::default(),
-                )))
-            }
-            KeyCode::Enter if !self.input.value().is_empty() => {
-                let value = self.input.value();
-                self.spinner_active = true;
-                self.new_message(&Message::new(MessageType::User, value.into()));
-                let message = self.build_user_completion_message(&context);
-                // HACK: How could I avoid to clone this?
-                let ai = self.ai.clone();
-                tokio::spawn(async move {
-                    ai.send_message(message, ai.ai_sender.clone()).await?;
-                    Ok::<(), Error>(())
-                });
-                self.input.reset();
-                None
-            }
-            KeyCode::PageUp => {
-                for _ in 0..self.max_height {
-                    self.scroll_up();
-                }
-                None
-            }
-            KeyCode::PageDown => {
-                for _ in 0..self.max_height {
-                    self.scroll_down();
-                }
-                None
-            }
-            KeyCode::Up | KeyCode::Char('k') => {
-                self.scroll_up();
-                None
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
-                self.scroll_down();
-                None
-            }
-
-            KeyCode::Tab => {
-                self.cycle_highlighted_section();
-                None
-            }
-
-            KeyCode::Home => {
-                self.content_scroll = 0;
-                None
-            }
-            KeyCode::End => {
-                self.scroll_to_bottom();
-                None
-            }
-            _ => None,
-        }
-    }
+    // fn handle_normal_input(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
+    //     match key.code {
+    //         KeyCode::Char('e') => Some(Action::SwitchInputMode(InputMode::Editing)),
+    //         KeyCode::Char('r') => {
+    //             // TODO: Handle Recording
+    //             // Some(Action::SwitchInputMode(InputMode::Recording))
+    //             None
+    //         }
+    //         KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+    //             self.input.paste(context);
+    //             None
+    //         }
+    //         // HACK: This should be a different key handling for the detail section
+    //         KeyCode::Esc if (self.highlighted_section != HighlightedSection::None) => {
+    //             self.highlighted_section = HighlightedSection::None;
+    //             None
+    //         }
+    //         KeyCode::Esc => {
+    //             self.content.clear();
+    //             self.input.reset();
+    //             context
+    //                 .save_manager
+    //                 .save(&self.state)
+    //                 .expect("Should have saved from the game");
+    //             Some(Action::SwitchComponent(ComponentEnum::from(
+    //                 MainMenu::default(),
+    //             )))
+    //         }
+    //         KeyCode::Enter if !self.input.value().is_empty() => {
+    //             let value = self.input.value();
+    //             self.spinner_active = true;
+    //             self.new_message(&Message::new(MessageType::User, value.into()));
+    //             let message = self.build_user_completion_message(&context);
+    //             // HACK: How could I avoid to clone this?
+    //             let ai = self.ai.clone();
+    //             tokio::spawn(async move {
+    //                 ai.send_message(message, ai.ai_sender.clone()).await?;
+    //                 Ok::<(), Error>(())
+    //             });
+    //             self.input.reset();
+    //             None
+    //         }
+    //         KeyCode::PageUp => {
+    //             for _ in 0..self.max_height {
+    //                 self.scroll_up();
+    //             }
+    //             None
+    //         }
+    //         KeyCode::PageDown => {
+    //             for _ in 0..self.max_height {
+    //                 self.scroll_down();
+    //             }
+    //             None
+    //         }
+    //         KeyCode::Up | KeyCode::Char('k') => {
+    //             self.scroll_up();
+    //             None
+    //         }
+    //         KeyCode::Down | KeyCode::Char('j') => {
+    //             self.scroll_down();
+    //             None
+    //         }
+    //
+    //         KeyCode::Tab => {
+    //             self.handle_section_move();
+    //             None
+    //         }
+    //
+    //         KeyCode::Home => {
+    //             self.content_scroll = 0;
+    //             None
+    //         }
+    //         KeyCode::End => {
+    //             self.scroll_to_bottom();
+    //             None
+    //         }
+    //         _ => None,
+    //     }
+    // }
 
     fn build_user_completion_message(&self, context: &Context) -> UserCompletionRequest {
         let message = UserCompletionRequest {
             language: context.settings.language.to_string(),
             message: create_user_message(
                 &context.settings.language.to_string(),
-                self.input.value(),
+                &self.textarea.lines().join("\n"),
             ),
             state: self.state.clone(),
         };
@@ -689,32 +674,75 @@ impl InGame {
         self.content_scroll = self.total_lines.saturating_sub(self.max_height);
     }
 
-    fn cycle_highlighted_section(&mut self) {
-        let Some(character_sheet) = &mut self.state.main_character_sheet else {
+    fn handle_section_move(&mut self, _section_move: SectionMove) {
+        use HighlightedSection as HS;
+        let Some(character_sheet) = &self.state.main_character_sheet else {
             return;
         };
 
+        // TODO: implement a 2d navigation
+
+        // let mut sections: Vec<Vec<HS>> = vec![
+        //     vec![HS::Backstory],                                           // line 1
+        //     vec![HS::Attributes(1), HS::Attributes(2), HS::Attributes(3)], // line 2
+        //     vec![HS::Derived(1), HS::Derived(2)],                          // line 3
+        //     vec![HS::Skills],                                              // line 4
+        // ];
+        //
+        // // line 5
+        // sections.push({
+        //     let mut line = vec![HS::Qualities];
+        //     if !character_sheet.cyberware.is_empty() {
+        //         line.push(HS::Cyberware);
+        //     }
+        //     if !character_sheet.bioware.is_empty() {
+        //         line.push(HS::Bioware);
+        //     }
+        //     if line.len() == 1 {
+        //         line.push(HS::Inventory);
+        //     }
+        //     line
+        // });
+        //
+        // // line 6
+        // sections.push({
+        //     let mut line = vec![HS::Resources];
+        //     if !character_sheet.cyberware.is_empty() {
+        //         line.push(HS::Cyberware);
+        //     }
+        //     if !character_sheet.bioware.is_empty() {
+        //         line.push(HS::Bioware);
+        //     }
+        //     if line.len() == 1 {
+        //         line.push(HS::Inventory);
+        //     }
+        //     line
+        // });
+        //
+        // // line 7
+        // sections.push(vec![HS::Contact]);
+
         let available_sections = [
-            Some(HighlightedSection::Backstory),
-            Some(HighlightedSection::Attributes(0)),
-            Some(HighlightedSection::Attributes(1)),
-            Some(HighlightedSection::Attributes(2)),
-            Some(HighlightedSection::Derived(0)),
-            Some(HighlightedSection::Derived(1)),
-            Some(HighlightedSection::Skills),
-            Some(HighlightedSection::Qualities),
-            (!character_sheet.cyberware.is_empty()).then_some(HighlightedSection::Cyberware),
-            (!character_sheet.bioware.is_empty()).then_some(HighlightedSection::Bioware),
-            Some(HighlightedSection::Resources),
-            (!character_sheet.inventory.is_empty()).then_some(HighlightedSection::Inventory),
-            (!character_sheet.contacts.is_empty()).then_some(HighlightedSection::Contact),
+            Some(HS::Backstory),
+            Some(HS::Attributes(0)),
+            Some(HS::Attributes(1)),
+            Some(HS::Attributes(2)),
+            Some(HS::Derived(0)),
+            Some(HS::Derived(1)),
+            Some(HS::Skills),
+            Some(HS::Qualities),
+            (!character_sheet.cyberware.is_empty()).then_some(HS::Cyberware),
+            (!character_sheet.bioware.is_empty()).then_some(HS::Bioware),
+            Some(HS::Resources),
+            (!character_sheet.inventory.is_empty()).then_some(HS::Inventory),
+            (!character_sheet.contacts.is_empty()).then_some(HS::Contact),
         ]
         .into_iter()
         .flatten()
         .collect::<Vec<_>>();
 
         if available_sections.is_empty() {
-            self.highlighted_section = HighlightedSection::None;
+            self.highlighted_section = HS::None;
             return;
         }
 
@@ -729,7 +757,7 @@ impl InGame {
         self.highlighted_section = if next_index < available_sections.len() {
             available_sections[next_index].clone()
         } else {
-            HighlightedSection::None
+            HS::None
         };
     }
 
@@ -855,6 +883,14 @@ pub fn parse_markdown(line: String, base_style: Style) -> Line<'static> {
     }
 
     Line::from(spans)
+}
+
+fn new_textarea() -> TextArea<'static> {
+    let mut textarea = TextArea::default();
+    textarea.set_placeholder_text("Input text to play");
+    textarea.set_cursor_line_style(Style::default());
+    textarea.set_placeholder_style(Style::default().fg(Color::DarkGray));
+    textarea
 }
 
 // TODO: add this to the game component

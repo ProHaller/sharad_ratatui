@@ -27,7 +27,6 @@ use std::{
     thread,
     time::Duration,
 };
-use tokio::sync::mpsc;
 use uuid::Uuid;
 
 #[derive(Debug)]
@@ -268,7 +267,7 @@ pub fn start_recording(is_recording: &Arc<AtomicBool>) {
 
     thread::spawn(move || {
         if let Err(e) = record_audio(is_recording_clone) {
-            eprintln!("Error recording audio: {:?}", e);
+            log::error!("Failed to record_audio: {e:#?}");
         }
     });
 }

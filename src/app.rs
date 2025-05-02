@@ -3,8 +3,8 @@ use crate::{
     assistant::create_assistant,
     audio::AudioNarration,
     character::{CharacterSheet, CharacterSheetUpdate},
-    context::{self, Context},
-    error::{AppError, Error, Result},
+    context::Context,
+    error::{Error, Result},
     game_state::GameState,
     imager::load_image_from_file,
     message::{
@@ -140,7 +140,6 @@ impl App {
                 image_sender: self.image_sender.clone(),
                 save_manager: &mut self.save_manager,
                 settings: &mut self.settings,
-                clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
                 messages: &self.messages,
                 input_mode: &self.input_mode,
                 audio_narration: &mut self.audio_narration,
@@ -152,10 +151,6 @@ impl App {
             })?;
 
             // TODO: improve input cursor position
-            match self.input_mode {
-                InputMode::Editing => tui.terminal.show_cursor()?,
-                _ => tui.terminal.hide_cursor()?,
-            };
             let ai_receiver = &mut self.ai_receiver;
             let image_receiver = &mut self.image_receiver;
             tokio::select! {
@@ -234,7 +229,10 @@ impl App {
                     Some(Action::AudioNarration(AudioNarration::Generating(
                         self.game_ai.clone().unwrap().clone(),
                         game_message.fluff.clone(),
-                        self.component.get_ingame_save_path().unwrap().clone(),
+                        self.component
+                            .get_ingame_save_path()
+                            .expect("Expected a valid save_path")
+                            .clone(),
                     )))
                 } else {
                     None
@@ -323,7 +321,6 @@ impl App {
                 image_sender: self.image_sender.clone(),
                 save_manager: &mut self.save_manager,
                 settings: &mut self.settings,
-                clipboard: ClipboardContext::new().expect("Failed to initialize clipboard"),
                 messages: &self.messages,
                 input_mode: &self.input_mode,
                 audio_narration: &mut self.audio_narration,
@@ -343,7 +340,7 @@ impl App {
                 .fetch_all_messages(&thread_id)
                 .await
                 .expect("Expected the return of vec messages");
-            let messages = all_messages[2..].to_vec();
+            let messages = all_messages[1..].to_vec();
 
             match sender.send(AIMessage::Game((messages, ai, game_state))) {
                 Ok(_) => {}
@@ -512,6 +509,12 @@ impl App {
                     .save(&game_state)
                     .expect("Expected to save the game");
 
+                if let Err(e) =
+                    ai_sender.send(AIMessage::Load(game_state.save_path.clone().unwrap()))
+                {
+                    log::error!("Failed to send StartGame message: {:?}", e)
+                }
+
                 if let Err(e) = ai
                     .send_message(
                         UserCompletionRequest {
@@ -528,10 +531,6 @@ impl App {
                 {
                     log::error!("Failed to send initial game message: {:?}", e);
                     return;
-                }
-
-                if let Err(e) = ai_sender.send(AIMessage::Load(game_state.save_path.unwrap())) {
-                    log::error!("Failed to send StartGame message: {:?}", e)
                 }
             } else {
                 log::error!("Missing game_ai when starting new game");

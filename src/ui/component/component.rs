@@ -18,7 +18,7 @@ pub trait Component: Debug {
     // TODO: Implement KeyHints
     // fn key_hints(&mut self, key: KeyEvent, ) -> KeyHints
     // HACK: Could return a cursor postition?
-    // TODO: Switch to Ratatui Textarea
+    // TODO: Switch to tui-textarea
     fn render(&mut self, area: Rect, buffer: &mut Buffer, context: &Context);
 }
 

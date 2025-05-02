@@ -5,8 +5,7 @@ use crate::{
     context::Context,
     settings::Settings,
 };
-use copypasta::ClipboardProvider;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::KeyEvent;
 use ratatui::{
     layout::{Constraint, Direction, Layout},
     prelude::{Alignment, Buffer, Rect},
@@ -14,28 +13,53 @@ use ratatui::{
     widgets::*,
 };
 use tokio::runtime::Handle;
-use tui_input::Input;
-use tui_input::backend::crossterm::EventHandler;
 use tui_textarea::TextArea;
 
 use super::{
-    Component, ComponentEnum, SettingsMenu, center_rect,
-    input::Pastable,
-    textarea::{Mode, Vim},
+    Component, ComponentEnum, MainMenu, SettingsMenu, center_rect,
+    textarea::{Mode, Transition, Vim},
 };
 
 #[derive(Debug)]
 pub struct ApiKeyInput {
-    input: TextArea,
+    textarea: TextArea<'static>,
+    vim: Vim,
 }
 
 impl Component for ApiKeyInput {
-    fn on_key(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
-        match context.input_mode {
-            InputMode::Normal => self.handle_normal_input(key, context),
-            InputMode::Editing => self.handle_editing_input(key, context),
-            // TODO: handle the voice recording
-            InputMode::Recording => Some(Action::SwitchInputMode(InputMode::Normal)),
+    fn on_key(&mut self, key: KeyEvent, mut context: Context) -> Option<Action> {
+        match self.vim.transition(key.into(), &mut self.textarea) {
+            Transition::Mode(mode) if self.vim.mode != mode => {
+                self.textarea
+                    .set_block(mode.block().border_type(BorderType::Rounded));
+                self.textarea.set_cursor_style(mode.cursor_style());
+                self.vim.mode = mode;
+                match mode {
+                    Mode::Recording => None,
+                    Mode::Normal => Some(Action::SwitchInputMode(InputMode::Normal)),
+                    Mode::Insert => Some(Action::SwitchInputMode(InputMode::Editing)),
+                    Mode::Visual => Some(Action::SwitchInputMode(InputMode::Normal)),
+                    Mode::Operator(_) => None,
+                }
+            }
+            Transition::Nop | Transition::Mode(_) => None,
+            Transition::Pending(input) => {
+                self.vim.pending = input;
+                None
+            }
+            Transition::Validation => {
+                if context.ai_client.is_none() {
+                    self.validate_key(&mut context)
+                } else {
+                    Some(Action::SwitchComponent(ComponentEnum::from(
+                        SettingsMenu::new(context),
+                    )))
+                }
+            }
+            Transition::Exit => Some(Action::SwitchComponent(ComponentEnum::from(
+                MainMenu::default(),
+            ))),
+            Transition::Detail(_section_move) => None,
         }
     }
 
@@ -78,10 +102,9 @@ impl Component for ApiKeyInput {
             InputMode::Recording => Style::default().bg(Color::Red),
         };
 
-        self.input.set_block(Mode::Normal.block());
-        let input_field = self.input;
+        self.textarea.set_block(Mode::Normal.block().style(style));
         title.render(chunks[0], buffer);
-        input_field.render(chunks[1], buffer);
+        self.textarea.render(chunks[1], buffer);
 
         let instructions = Paragraph::new(" Press e to edit, Enter to confirm, Esc to cancel ")
             .style(Style::default().fg(Color::Gray))
@@ -98,49 +121,25 @@ impl Component for ApiKeyInput {
 
 impl ApiKeyInput {
     pub fn new(api_key: &Option<String>) -> Self {
-        Self {
-            input: api_input_default(api_key),
+        let mut api_key_input = Self {
+            textarea: TextArea::default(),
+            vim: Vim::new(Mode::Normal),
+        };
+        if let Some(api_key) = api_key {
+            api_key_input.textarea.set_placeholder_text(api_key);
+            api_key_input.textarea.set_mask_char('*');
+            api_key_input
+                .textarea
+                .set_cursor_line_style(Style::default());
+            api_key_input
+                .textarea
+                .set_placeholder_style(Style::default().fg(Color::DarkGray));
         }
-    }
-
-    fn handle_editing_input(&mut self, key: KeyEvent, mut context: Context) -> Option<Action> {
-        // HACK: I should make this into a more robust check for the different cases. maybe an
-        // enum
-        if self.input.value().contains(' ') {
-            self.input.reset();
-        }
-
-        match key.code {
-            KeyCode::Enter => {
-                if !self.input.value().is_empty() {
-                    self.validate_key(&mut context)
-                } else {
-                    Some(Action::SwitchInputMode(InputMode::Editing))
-                }
-            }
-            KeyCode::Esc => {
-                self.input = api_input_default(&context.settings.openai_api_key);
-                Some(Action::SwitchInputMode(InputMode::Normal))
-            }
-            KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.input.reset();
-                self.input.insert_str(
-                    context
-                        .clipboard
-                        .get_contents()
-                        .expect("Expected the clipboard contents"),
-                );
-                None
-            }
-            _ => {
-                self.input.handle_event(&crossterm::event::Event::Key(key));
-                None
-            }
-        }
+        api_key_input
     }
 
     fn validate_key(&mut self, context: &mut Context<'_>) -> Option<Action> {
-        let api_key = self.input.value().to_string();
+        let api_key = self.textarea.lines()[0].to_string();
 
         context.ai_client = tokio::task::block_in_place(|| {
             Handle::current().block_on(Settings::validate_ai_client(&api_key))
@@ -150,63 +149,9 @@ impl ApiKeyInput {
             context.settings.openai_api_key = Some(api_key.clone());
             Some(Action::SwitchInputMode(InputMode::Normal))
         } else {
-            self.input.reset();
-            self.input = Input::new("This key is invalid".into());
+            self.textarea = TextArea::default();
+            self.textarea.set_placeholder_text("This key is invalid");
             None
         }
     }
-    fn handle_normal_input(&mut self, key: KeyEvent, mut context: Context) -> Option<Action> {
-        match key.code {
-            KeyCode::Enter => {
-                if context.ai_client.is_none() {
-                    self.validate_key(&mut context)
-                } else {
-                    Some(Action::SwitchComponent(ComponentEnum::from(
-                        SettingsMenu::new(context),
-                    )))
-                }
-            }
-            KeyCode::Char('e') => {
-                self.input = self
-                    .input
-                    .clone()
-                    .with_value("Editing this will delete your current key".into());
-                Some(Action::SwitchInputMode(InputMode::Editing))
-            }
-            KeyCode::Esc => Some(Action::SwitchComponent(ComponentEnum::from(
-                SettingsMenu::new(context),
-            ))),
-            KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.input.reset();
-                self.input.insert_str(
-                    context
-                        .clipboard
-                        .get_contents()
-                        .expect("Expected the clipboard contents"),
-                );
-                None
-            }
-            _ => None,
-        }
-    }
-}
-
-pub fn api_input_default(api_key: &Option<String>) -> Input {
-    match api_key {
-        None => Input::new("Please input a valid API key".into()),
-        Some(api_key) => Input::new(hide_api(api_key)),
-    }
-}
-fn hide_api(s: &str) -> String {
-    let head_len = 7;
-    let tail_len = 3;
-
-    if s.len() < head_len + tail_len + 3 {
-        return s.to_string();
-    }
-
-    let head = &s[..head_len];
-    let tail = &s[s.len() - tail_len..];
-
-    format!("{}...{}", head, tail)
 }

@@ -8,7 +8,6 @@ pub mod descriptions;
 pub mod draw;
 pub mod game;
 mod image_menu;
-pub mod input;
 mod load_menu;
 pub mod main_menu;
 mod main_menu_fix;
