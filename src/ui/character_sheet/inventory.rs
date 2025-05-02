@@ -1,6 +1,5 @@
 // /ui/sheet/inventory.rs
 use ratatui::{
-    Frame,
     buffer::Buffer,
     layout::{Constraint, Rect},
     style::{Color, Style},

@@ -64,7 +64,7 @@ impl SaveManager {
 
     pub fn load_from_file(&self, save_path: &PathBuf) -> Result<GameState> {
         let file = File::open(save_path).map_err(|e| {
-            eprintln!("Failed to open file: {}", e);
+            log::error!("Failed to open file: {e:#?}");
             e
         })?;
 

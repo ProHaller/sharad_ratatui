@@ -123,7 +123,7 @@ impl MainMenu {
     }
 
     // Function to render the interactive menu section of the main menu.
-    fn render_menu(&self, buffer: &mut Buffer, context: &Context, area: Rect) {
+    fn render_menu(&self, buffer: &mut Buffer, _context: &Context, area: Rect) {
         // Define menu items to be displayed.
         let menu_items = MAIN_MENU;
 

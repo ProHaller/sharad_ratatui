@@ -3,12 +3,13 @@ use super::{
     descriptions::*,
     draw_character_sheet, get_attributes, get_derived,
     spinner::{Spinner, spinner_frame},
-    textarea::{Mode, Transition, Vim},
+    textarea::{Mode, Transition, Vim, new_textarea},
 };
 use crate::{
     ai::GameAI,
     app::{Action, InputMode},
-    context::{self, Context},
+    audio::Transcription,
+    context::Context,
     error::Error,
     game_state::GameState,
     imager::load_image_from_file,
@@ -17,7 +18,7 @@ use crate::{
     },
 };
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::KeyEvent;
 use derive_more::Debug;
 use ratatui::{
     buffer::Buffer,
@@ -29,7 +30,6 @@ use ratatui::{
 use ratatui_image::{StatefulImage, picker::Picker, protocol::StatefulProtocol};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::UnboundedReceiver;
-use tui_input::{Input, backend::crossterm::EventHandler};
 use tui_textarea::TextArea;
 
 pub struct InGame {
@@ -44,6 +44,7 @@ pub struct InGame {
     // User actions:
     pub textarea: TextArea<'static>,
     pub vim: Vim,
+    pub receiver: Option<UnboundedReceiver<String>>,
     pub highlighted_section: HighlightedSection,
 
     // UI state:
@@ -74,6 +75,7 @@ impl std::fmt::Debug for InGame {
     }
 }
 
+// TODO: Implement the 2d navigation logic
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SectionMove {
     Next,
@@ -111,7 +113,14 @@ impl Component for InGame {
                 match mode {
                     Mode::Recording => {
                         log::debug!("Strated the recording");
-                        Some(Action::SwitchInputMode(InputMode::Recording))
+                        if let Ok((receiver, transcription)) =
+                            Transcription::new(None, context.ai_client?.clone())
+                        {
+                            self.receiver = Some(receiver);
+                            Some(Action::SwitchInputMode(InputMode::Recording(transcription)))
+                        } else {
+                            None
+                        }
                     }
                     Mode::Normal => Some(Action::SwitchInputMode(InputMode::Normal)),
                     Mode::Insert => Some(Action::SwitchInputMode(InputMode::Editing)),
@@ -134,7 +143,7 @@ impl Component for InGame {
                     ai.send_message(message, ai.ai_sender.clone()).await?;
                     Ok::<(), Error>(())
                 });
-                self.textarea = new_textarea();
+                self.textarea = new_textarea("Input text to play");
                 None
             }
             Transition::Validation => {
@@ -159,11 +168,39 @@ impl Component for InGame {
                 self.handle_section_move(section_move);
                 None
             }
+            Transition::EndRecording => {
+                log::debug!("Transition::EndRecording");
+                self.vim.mode = Mode::Normal;
+                Some(Action::EndRecording)
+            }
+            Transition::ScrollTop => {
+                self.scroll_to_top();
+                None
+            }
+            Transition::ScrollBottom => {
+                self.scroll_to_bottom();
+                None
+            }
+            Transition::PageUp => {
+                self.page_up();
+                None
+            }
+            Transition::PageDown => {
+                self.page_down();
+                None
+            }
+            Transition::ScrollUp => {
+                self.scroll_up();
+                None
+            }
+            Transition::ScrollDown => {
+                self.scroll_down();
+                None
+            }
         }
     }
 
     fn render(&mut self, area: Rect, buffer: &mut Buffer, context: &Context) {
-        self.check_transcription();
         let screen_split_layout = Layout::default()
             .direction(Direction::Horizontal)
             .flex(ratatui::layout::Flex::Center)
@@ -228,7 +265,7 @@ impl InGame {
             None => None,
         };
 
-        let textarea = new_textarea();
+        let textarea = new_textarea("Input text to play");
         let mut new_self = Self {
             ai: game_ai,
             state,
@@ -237,6 +274,7 @@ impl InGame {
             // TODO: Input should be autonomous with info about its size and scroll
             textarea,
             vim: Vim::new(Mode::Normal),
+            receiver: None,
             highlighted_section: HighlightedSection::None,
             spinner: Spinner::new(),
             last_spinner_update: Instant::now(),
@@ -254,8 +292,8 @@ impl InGame {
     fn check_transcription(&mut self) {
         if let Some(receiver) = &mut self.receiver {
             if let Ok(transcription) = receiver.try_recv() {
-                let input_value = format!("{} {}", self.input.value(), transcription);
-                self.input = Input::with_value(self.input.clone(), input_value);
+                self.textarea.set_yank_text(transcription);
+                self.textarea.paste();
                 self.receiver = None;
             }
         }
@@ -436,11 +474,7 @@ impl InGame {
         let save_name = &self.state.save_name;
         let fluff_block = Block::default()
             .border_type(BorderType::Rounded)
-            .title(if save_name.is_empty() {
-                " Game will start momentarily ".to_string()
-            } else {
-                format!(" {} ", save_name)
-            })
+            .title(format!(" {} ", save_name))
             .borders(Borders::ALL);
 
         let fluff_area = fluff_block.inner(area);
@@ -475,29 +509,9 @@ impl InGame {
         self.update_scroll();
     }
 
-    fn draw_user_input(&mut self, buffer: &mut Buffer, context: &Context, area: Rect) {
-        let block = Block::default()
-            .border_type(BorderType::Rounded)
-            .title(match context.input_mode {
-                InputMode::Normal => {
-                    " Press 'i' to edit, 'r' to record, and ' Tab ' to see character sheet details "
-                }
-                InputMode::Editing => " Editing ",
-                InputMode::Recording(_) => " Recording… Press 'Esc' to stop ",
-            })
-            .title_bottom(Line::from(format!(
-                "Total lines: {}, visible_lines: {}, content_scroll: {}, ",
-                self.total_lines, self.max_height, self.content_scroll
-            )))
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(match context.input_mode {
-                InputMode::Normal => Color::White,
-                InputMode::Editing => Color::LightYellow,
-                InputMode::Recording => Color::Red,
-            }));
-
+    fn draw_user_input(&mut self, buffer: &mut Buffer, _context: &Context, area: Rect) {
         self.textarea.set_block(self.vim.mode.block());
-
+        self.check_transcription();
         self.textarea.render(area, buffer);
     }
 
@@ -572,86 +586,6 @@ impl InGame {
         lines
     }
 
-    // fn handle_normal_input(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
-    //     match key.code {
-    //         KeyCode::Char('e') => Some(Action::SwitchInputMode(InputMode::Editing)),
-    //         KeyCode::Char('r') => {
-    //             // TODO: Handle Recording
-    //             // Some(Action::SwitchInputMode(InputMode::Recording))
-    //             None
-    //         }
-    //         KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-    //             self.input.paste(context);
-    //             None
-    //         }
-    //         // HACK: This should be a different key handling for the detail section
-    //         KeyCode::Esc if (self.highlighted_section != HighlightedSection::None) => {
-    //             self.highlighted_section = HighlightedSection::None;
-    //             None
-    //         }
-    //         KeyCode::Esc => {
-    //             self.content.clear();
-    //             self.input.reset();
-    //             context
-    //                 .save_manager
-    //                 .save(&self.state)
-    //                 .expect("Should have saved from the game");
-    //             Some(Action::SwitchComponent(ComponentEnum::from(
-    //                 MainMenu::default(),
-    //             )))
-    //         }
-    //         KeyCode::Enter if !self.input.value().is_empty() => {
-    //             let value = self.input.value();
-    //             self.spinner_active = true;
-    //             self.new_message(&Message::new(MessageType::User, value.into()));
-    //             let message = self.build_user_completion_message(&context);
-    //             // HACK: How could I avoid to clone this?
-    //             let ai = self.ai.clone();
-    //             tokio::spawn(async move {
-    //                 ai.send_message(message, ai.ai_sender.clone()).await?;
-    //                 Ok::<(), Error>(())
-    //             });
-    //             self.input.reset();
-    //             None
-    //         }
-    //         KeyCode::PageUp => {
-    //             for _ in 0..self.max_height {
-    //                 self.scroll_up();
-    //             }
-    //             None
-    //         }
-    //         KeyCode::PageDown => {
-    //             for _ in 0..self.max_height {
-    //                 self.scroll_down();
-    //             }
-    //             None
-    //         }
-    //         KeyCode::Up | KeyCode::Char('k') => {
-    //             self.scroll_up();
-    //             None
-    //         }
-    //         KeyCode::Down | KeyCode::Char('j') => {
-    //             self.scroll_down();
-    //             None
-    //         }
-    //
-    //         KeyCode::Tab => {
-    //             self.handle_section_move();
-    //             None
-    //         }
-    //
-    //         KeyCode::Home => {
-    //             self.content_scroll = 0;
-    //             None
-    //         }
-    //         KeyCode::End => {
-    //             self.scroll_to_bottom();
-    //             None
-    //         }
-    //         _ => None,
-    //     }
-    // }
-
     fn build_user_completion_message(&self, context: &Context) -> UserCompletionRequest {
         let message = UserCompletionRequest {
             language: context.settings.language.to_string(),
@@ -669,6 +603,7 @@ impl InGame {
         self.content_scroll = self.content_scroll.min(max_scroll);
     }
 
+    // TODO: implement scrolling controls
     pub fn scroll_up(&mut self) {
         if self.content_scroll > 0 {
             self.content_scroll -= 1;
@@ -679,6 +614,17 @@ impl InGame {
         if self.content_scroll < self.total_lines.saturating_sub(self.max_height) {
             self.content_scroll += 1;
         }
+    }
+    pub fn page_up(&mut self) {
+        self.content_scroll.saturating_sub(self.max_height - 3);
+    }
+    pub fn page_down(&mut self) {
+        self.content_scroll.saturating_add(self.max_height - 3);
+    }
+
+    pub fn scroll_to_top(&mut self) {
+        // Update the scroll position
+        self.content_scroll = 0;
     }
 
     pub fn scroll_to_bottom(&mut self) {
@@ -896,36 +842,3 @@ pub fn parse_markdown(line: String, base_style: Style) -> Line<'static> {
 
     Line::from(spans)
 }
-
-fn new_textarea() -> TextArea<'static> {
-    let mut textarea = TextArea::default();
-    textarea.set_placeholder_text("Input text to play");
-    textarea.set_cursor_line_style(Style::default());
-    textarea.set_placeholder_style(Style::default().fg(Color::DarkGray));
-    textarea
-}
-
-// TODO: add this to the game component
-
-// fn submit_user_input(&mut self) {
-//     let input = self.input.value().trim().to_string();
-//     self.start_spinner();
-//
-//     if input.is_empty() {
-//         return;
-//     }
-//
-//     self.add_message(Message::new(MessageType::User, input.clone()));
-//
-//     // Send a command to process the message
-//     if let Err(e) = self.action_sender.send(Action::ProcessMessage(input)) {
-//         self.add_message(Message::new(
-//             MessageType::System,
-//             format!("Error sending message command: {:#?}", e),
-//         ));
-//     }
-//
-//     // Clear the user input
-//     self.input = Input::default();
-//     self.scroll_to_bottom();
-// }

@@ -4,7 +4,7 @@ use crate::{
     audio::Transcription,
     context::Context,
 };
-use crossterm::event::{Event, KeyCode, KeyEvent};
+use crossterm::event::KeyEvent;
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Direction, Layout, Rect},
@@ -12,14 +12,16 @@ use ratatui::{
     style::{Color, Style},
     widgets::*,
 };
+use tokio::sync::mpsc::UnboundedReceiver;
 use tui_textarea::TextArea;
 
-use super::{Component, ComponentEnum, game::SectionMove, main_menu::MainMenu, textarea::*};
+use super::{Component, ComponentEnum, main_menu::MainMenu, textarea::*};
 
 #[derive(Default, Debug)]
 pub struct SaveName {
     textarea: TextArea<'static>,
     vim: Vim,
+    receiver: Option<UnboundedReceiver<String>>,
 }
 
 impl SaveName {
@@ -45,7 +47,16 @@ impl Component for SaveName {
                 self.textarea.set_cursor_style(mode.cursor_style());
                 self.vim.mode = mode;
                 match mode {
-                    Mode::Recording => Some(Action::SwitchInputMode(InputMode::Recording)),
+                    Mode::Recording => {
+                        if let Ok((receiver, transcription)) =
+                            Transcription::new(None, context.ai_client?.clone())
+                        {
+                            self.receiver = Some(receiver);
+                            Some(Action::SwitchInputMode(InputMode::Recording(transcription)))
+                        } else {
+                            None
+                        }
+                    }
                     Mode::Normal => Some(Action::SwitchInputMode(InputMode::Normal)),
                     Mode::Insert => Some(Action::SwitchInputMode(InputMode::Editing)),
                     Mode::Visual => Some(Action::SwitchInputMode(InputMode::Normal)),
@@ -68,11 +79,22 @@ impl Component for SaveName {
                 MainMenu::default(),
             ))),
             Transition::Detail(_section_move) => None,
+            Transition::EndRecording => {
+                log::debug!("Transition::EndRecording");
+                self.vim.mode = Mode::Normal;
+                Some(Action::EndRecording)
+            }
+            Transition::ScrollTop => None,
+            Transition::ScrollBottom => None,
+            Transition::PageUp => None,
+            Transition::PageDown => None,
+            Transition::ScrollUp => None,
+            Transition::ScrollDown => None,
         }
     }
     fn render(&mut self, area: Rect, buffer: &mut Buffer, context: &Context) {
-        self.textarea.set_block(Mode::Normal.block());
-        self.textarea.set_cursor_style(Mode::Normal.cursor_style());
+        self.textarea.set_block(self.vim.mode.block());
+        self.check_transcription();
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -114,8 +136,8 @@ impl SaveName {
     fn check_transcription(&mut self) {
         if let Some(receiver) = &mut self.receiver {
             if let Ok(transcription) = receiver.try_recv() {
-                let input_value = format!("{} {}", self.input.value(), transcription);
-                self.input = Input::with_value(self.input.clone(), input_value);
+                self.textarea.set_yank_text(transcription);
+                self.textarea.paste();
                 self.receiver = None;
             }
         }

@@ -17,7 +17,6 @@ use crate::{
 };
 
 use async_openai::{Client, config::OpenAIConfig};
-use copypasta::ClipboardContext;
 use crossterm::event::{KeyEvent, KeyEventKind};
 use ratatui::widgets::ListState;
 use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
@@ -25,12 +24,8 @@ use std::{
     fs::{self, create_dir_all},
     mem,
     path::PathBuf,
-    time::Duration,
 };
-use tokio::{
-    sync::{broadcast::Receiver, mpsc},
-    time::sleep,
-};
+use tokio::sync::mpsc;
 
 pub enum Action {
     Quit,
@@ -210,12 +205,13 @@ impl App {
             }
             Action::EndRecording => {
                 if let InputMode::Recording(transcription) =
-                    mem::replace(&mut self.input_mode, InputMode::Editing)
+                    mem::replace(&mut self.input_mode, InputMode::Normal)
                 {
                     tokio::spawn(async move {
                         transcription.input().await;
                     });
                 }
+                log::debug!("Replaced self.input_mode: {:#?}", self.input_mode);
             }
         }
 
@@ -377,71 +373,6 @@ impl App {
         self.save_manager.load_from_file(save_path)
     }
 
-    // TODO: should probably go to game, or ai sections
-
-    // TODO: Make this go to recording component maybe inside an Input component
-
-    // pub fn start_recording(&mut self) {
-    //     self.is_recording.store(true, Ordering::SeqCst);
-    //     audio::start_recording(&self.is_recording);
-    //     self.input_mode = InputMode::Recording;
-    // }
-    //
-    // pub fn stop_recording(&mut self) {
-    //     self.is_recording.store(false, Ordering::SeqCst);
-    //
-    //     // Wait a bit to ensure the recording has stopped
-    //     std::thread::sleep(Duration::from_millis(100));
-    //
-    //     self.input_mode = InputMode::Normal;
-    //
-    //     if self.ai_client.is_none() {
-    //         self.add_message(Message::new(
-    //             MessageType::System,
-    //             "AI client not initialized. Cannot transcribe audio.".to_string(),
-    //         ));
-    //         self.add_debug_message("Transcription failed: AI client not initialized".to_string());
-    //         return;
-    //     }
-    //
-    //     let ai_client = self.ai_client.clone();
-    //     let state = self.state.clone();
-    //     let sender = self.command_sender.clone();
-    //
-    //     tokio::spawn(async move {
-    //         if let Some(ai_client) = ai_client {
-    //             match audio::transcribe_audio(&ai_client.client).await {
-    //                 Ok(transcription) => {
-    //                     let command = match state {
-    //                         AppState::InGame => Action::TranscriptionResult(
-    //                             transcription,
-    //                             TranscriptionTarget::UserInput,
-    //                         ),
-    //                         AppState::InputSaveName => Action::TranscriptionResult(
-    //                             transcription,
-    //                             TranscriptionTarget::SaveNameInput,
-    //                         ),
-    //                         AppState::CreateImage => Action::TranscriptionResult(
-    //                             transcription,
-    //                             TranscriptionTarget::ImagePrompt,
-    //                         ),
-    //                         _ => return,
-    //                     };
-    //                     let _ = sender.send(command);
-    //                 }
-    //                 Err(e) => {
-    //                     let _ = sender.send(Action::TranscriptionError(format!("{}", e)));
-    //                 }
-    //             }
-    //         }
-    //     });
-    // }
-
-    // pub async fn update_save_name(&self, new_name: String) {
-    //     let mut save_name = self.current_save_name.write().await;
-    //     *save_name = new_name;
-    // }
-
     // TODO: Make unified and dynamic setting for all settings. cf the Ratatui examples
 
     pub fn append_ai_response(&mut self, message: &GameMessage) {
@@ -544,8 +475,7 @@ impl App {
                     )
                     .await
                 {
-                    log::error!("Failed to send initial game message: {:?}", e);
-                    return;
+                    log::error!("Failed to send initial game message: {:?}", e)
                 }
             } else {
                 log::error!("Missing game_ai when starting new game");

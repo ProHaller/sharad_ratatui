@@ -60,6 +60,17 @@ impl Component for ApiKeyInput {
                 MainMenu::default(),
             ))),
             Transition::Detail(_section_move) => None,
+            Transition::EndRecording => {
+                log::debug!("Transition::EndRecording");
+                self.vim.mode = Mode::Normal;
+                Some(Action::EndRecording)
+            }
+            Transition::ScrollTop => None,
+            Transition::ScrollBottom => None,
+            Transition::PageUp => None,
+            Transition::PageDown => None,
+            Transition::ScrollUp => None,
+            Transition::ScrollDown => None,
         }
     }
 

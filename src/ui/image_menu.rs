@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, thread::sleep, time::Duration};
 
 use crate::{
     app::{Action, InputMode},
@@ -6,21 +6,27 @@ use crate::{
     context::Context,
     imager,
 };
-use crossterm::event::{Event, KeyCode, KeyEvent};
+use crossterm::event::KeyEvent;
 use ratatui::{
     layout::{Constraint, Direction, Layout},
     prelude::{Alignment, Buffer, Rect},
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     widgets::*,
 };
 use tokio::sync::mpsc::{self, UnboundedReceiver};
-use tui_input::{Input, backend::crossterm::EventHandler};
+use tui_textarea::TextArea;
 
-use super::{Component, ComponentEnum, MainMenu, api_key_input::ApiKeyInput, center_rect};
+use super::{
+    Component, ComponentEnum, MainMenu,
+    api_key_input::ApiKeyInput,
+    center_rect,
+    textarea::{Mode, Transition, Vim, new_textarea},
+};
 
 #[derive(Debug)]
 pub struct ImageMenu {
-    input: Input,
+    textarea: TextArea<'static>,
+    vim: Vim,
     receiver: Option<UnboundedReceiver<String>>,
     image_sender: mpsc::UnboundedSender<PathBuf>,
 }
@@ -28,7 +34,8 @@ pub struct ImageMenu {
 impl ImageMenu {
     pub fn new(image_sender: mpsc::UnboundedSender<PathBuf>) -> Self {
         Self {
-            input: Default::default(),
+            textarea: new_textarea("Input a prompt to generate your image"),
+            vim: Vim::new(Mode::Normal),
             receiver: None,
             image_sender,
         }
@@ -37,18 +44,18 @@ impl ImageMenu {
     fn check_transcription(&mut self) {
         if let Some(receiver) = &mut self.receiver {
             if let Ok(transcription) = receiver.try_recv() {
-                let input_value = format!("{} {}", self.input.value(), transcription);
-                self.input = Input::with_value(self.input.clone(), input_value);
+                self.textarea.set_yank_text(transcription);
+                self.textarea.paste();
                 self.receiver = None;
             }
         }
     }
 
     fn request_image(&mut self, context: Context<'_>) -> Option<Action> {
-        if self.input.value().is_empty() {
+        if self.textarea.lines().concat().len() < 2 {
             return Some(Action::SwitchInputMode(InputMode::Editing));
         }
-        let prompt = self.input.value().to_string();
+        let prompt = self.textarea.lines().join("\n");
         let image_sender = self.image_sender.clone();
         log::info!("Requested image creation with context: {context:#?}");
         if let Some(client) = context.ai_client {
@@ -64,7 +71,14 @@ impl ImageMenu {
                 }
             });
 
-            self.input.reset();
+            self.textarea =
+                new_textarea("Your Image is being generated, it will open when ready...");
+            self.textarea.set_placeholder_style(
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::SLOW_BLINK),
+            );
+            sleep(Duration::from_secs(3));
             Some(Action::SwitchComponent(ComponentEnum::from(
                 MainMenu::default(),
             )))
@@ -78,40 +92,63 @@ impl ImageMenu {
 
 impl Component for ImageMenu {
     fn on_key(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
-        match context.input_mode {
-            InputMode::Normal => match key.code {
-                KeyCode::Char('e') => Some(Action::SwitchInputMode(InputMode::Editing)),
-
-                KeyCode::Char('r') => {
-                    if let Ok((receiver, transcription)) =
-                        Transcription::new(None, context.ai_client?.clone())
-                    {
-                        self.receiver = Some(receiver);
-                        Some(Action::SwitchInputMode(InputMode::Recording(transcription)))
-                    } else {
-                        Some(Action::SwitchInputMode(InputMode::Editing))
+        match self.vim.transition(key.into(), &mut self.textarea) {
+            Transition::Mode(mode) if self.vim.mode != mode => {
+                self.textarea
+                    .set_block(mode.block().border_type(BorderType::Rounded));
+                self.textarea.set_cursor_style(mode.cursor_style());
+                self.vim.mode = mode;
+                match mode {
+                    Mode::Recording => {
+                        if let Ok((receiver, transcription)) =
+                            Transcription::new(None, context.ai_client?.clone())
+                        {
+                            self.receiver = Some(receiver);
+                            log::debug!("Sent the recording request");
+                            Some(Action::SwitchInputMode(InputMode::Recording(transcription)))
+                        } else {
+                            None
+                        }
                     }
+                    Mode::Normal => Some(Action::SwitchInputMode(InputMode::Normal)),
+                    Mode::Insert => Some(Action::SwitchInputMode(InputMode::Editing)),
+                    Mode::Visual => Some(Action::SwitchInputMode(InputMode::Normal)),
+                    Mode::Operator(_) => None,
                 }
-                KeyCode::Esc => Some(Action::SwitchComponent(ComponentEnum::from(
-                    MainMenu::default(),
-                ))),
-                KeyCode::Enter => self.request_image(context),
-                _ => None,
-            },
-            InputMode::Editing => match key.code {
-                KeyCode::Esc => Some(Action::SwitchInputMode(InputMode::Normal)),
-                KeyCode::Enter => self.request_image(context),
-                _ => {
-                    self.input.handle_event(&Event::Key(key));
+            }
+            Transition::Nop | Transition::Mode(_) => None,
+            Transition::Pending(input) => {
+                self.vim.pending = input;
+                None
+            }
+            Transition::Validation => {
+                if !self.textarea.lines().is_empty() {
+                    self.request_image(context)
+                } else {
                     None
                 }
-            },
-            InputMode::Recording(_) => Some(Action::EndRecording),
+            }
+            Transition::Exit => Some(Action::SwitchComponent(ComponentEnum::from(
+                MainMenu::default(),
+            ))),
+            Transition::Detail(_section_move) => None,
+            Transition::EndRecording => {
+                log::debug!("Transition::EndRecording");
+                self.vim.mode = Mode::Normal;
+                Some(Action::EndRecording)
+            }
+            Transition::ScrollTop => None,
+            Transition::ScrollBottom => None,
+            Transition::PageUp => None,
+            Transition::PageDown => None,
+            Transition::ScrollUp => None,
+            Transition::ScrollDown => None,
         }
     }
 
     // TODO: Implement an image viewer here.
     fn render(&mut self, area: Rect, buffer: &mut Buffer, context: &Context) {
+        self.textarea.set_block(self.vim.mode.block());
         self.check_transcription();
         let centered_area =
             center_rect(area, Constraint::Percentage(70), Constraint::Percentage(50));
@@ -134,24 +171,7 @@ impl Component for ImageMenu {
             .alignment(Alignment::Center);
         title.render(chunks[0], buffer);
 
-        let input = Paragraph::new(self.input.value())
-            .style(Style::default().fg(Color::White))
-            .block(
-                Block::default()
-                    .border_type(BorderType::Rounded)
-                    .borders(Borders::ALL)
-                    .title(match context.input_mode {
-                        InputMode::Normal => " Press 'e' to edit or 'r' to record",
-                        InputMode::Editing => " Editing ",
-                        InputMode::Recording(_) => " Recording… Press 'Esc' to stop",
-                    })
-                    .border_style(Style::default().fg(match context.input_mode {
-                        InputMode::Normal => Color::DarkGray,
-                        InputMode::Editing => Color::Yellow,
-                        InputMode::Recording(_) => Color::Red,
-                    })),
-            );
-        input.render(chunks[1], buffer);
+        self.textarea.render(chunks[1], buffer);
 
         let mode_indicator = match context.input_mode {
             InputMode::Normal => " NORMAL ",

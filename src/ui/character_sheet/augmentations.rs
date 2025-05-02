@@ -3,7 +3,6 @@
 use crate::character::CharacterSheet;
 use crate::ui::game::HighlightedSection;
 use ratatui::{
-    Frame,
     buffer::Buffer,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},

@@ -7,6 +7,15 @@ use tui_textarea::{CursorMove, Input, Key, Scrolling, TextArea};
 
 use super::game::SectionMove;
 
+pub fn new_textarea(placeholder: impl Into<String>) -> TextArea<'static> {
+    let mut textarea = TextArea::default();
+    textarea.set_placeholder_text(placeholder);
+    textarea.set_cursor_line_style(Style::default());
+    textarea.set_placeholder_style(Style::default().fg(Color::DarkGray));
+    textarea.set_selection_style(Style::new().bg(Color::LightCyan));
+    textarea
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
     Normal,
@@ -30,8 +39,8 @@ impl<'a> Mode {
         let title = format!(" {} MODE ({}) ", self, help);
         let border_style = Style::default().fg(match self {
             Mode::Normal => Color::default(),
-            Mode::Insert => Color::default(),
-            Mode::Visual => Color::LightCyan,
+            Mode::Insert => Color::LightCyan,
+            Mode::Visual => Color::LightBlue,
             Mode::Operator(_) => Color::LightYellow,
             Mode::Recording => Color::LightRed,
         });
@@ -71,10 +80,17 @@ impl fmt::Display for Mode {
 pub enum Transition {
     Nop,
     Validation,
+    EndRecording,
     Detail(SectionMove),
     Exit,
     Mode(Mode),
     Pending(Input),
+    ScrollTop,
+    ScrollBottom,
+    PageUp,
+    PageDown,
+    ScrollUp,
+    ScrollDown,
 }
 
 // State of Vim emulation
@@ -103,7 +119,7 @@ impl fmt::Debug for Vim {
 impl Clone for Vim {
     fn clone(&self) -> Self {
         Self {
-            mode: self.mode.clone(),
+            mode: self.mode,
             pending: self.pending.clone(),
             clipboard: ClipboardContext::new().expect("Expected a System ClipboardContext"),
         }
@@ -167,7 +183,7 @@ impl Vim {
                     Transition::Mode(Mode::Insert)
                 }
             },
-            Mode::Recording => Transition::Mode(Mode::Normal),
+            Mode::Recording => Transition::EndRecording,
         }
     }
 
@@ -453,6 +469,34 @@ impl Vim {
 
             // special normal-mode keys
             Input { key: Key::Esc, .. } if self.mode == Mode::Normal => Some(Transition::Exit),
+            Input {
+                key: Key::Char('['),
+                ..
+            } if self.mode == Mode::Normal => Some(Transition::ScrollUp),
+            Input {
+                key: Key::Char(']'),
+                ..
+            } if self.mode == Mode::Normal => Some(Transition::ScrollDown),
+            Input {
+                key: Key::Char('['),
+                shift: true,
+                ..
+            } if self.mode == Mode::Normal => Some(Transition::PageUp),
+            Input {
+                key: Key::Char(']'),
+                shift: true,
+                ..
+            } if self.mode == Mode::Normal => Some(Transition::PageDown),
+            Input {
+                key: Key::Char(']'),
+                ctrl: true,
+                ..
+            } if self.mode == Mode::Normal => Some(Transition::ScrollBottom),
+            Input {
+                key: Key::Char('['),
+                ctrl: true,
+                ..
+            } if self.mode == Mode::Normal => Some(Transition::ScrollTop),
             Input {
                 key: Key::Char('r'),
                 ..

@@ -14,7 +14,7 @@ use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
 use dir::home_dir;
-use futures::{StreamExt, channel::mpsc::Receiver, stream::FuturesOrdered};
+use futures::{StreamExt, stream::FuturesOrdered};
 use rodio::{Decoder, OutputStream, Sink};
 use std::{
     fs::{self, File, create_dir_all},
@@ -206,7 +206,7 @@ impl TryFrom<Option<PathBuf>> for AudioDir {
                 let save_path_parent = p.parent().expect("Expected a save_path");
                 let logs_path = save_path_parent.join("logs");
                 create_dir_all(&logs_path)?;
-                return Ok(AudioDir::GameDir(logs_path));
+                Ok(AudioDir::GameDir(logs_path))
             }
             None => match home_dir() {
                 Some(path) => {
