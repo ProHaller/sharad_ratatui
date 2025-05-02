@@ -4,7 +4,7 @@ use crate::{
     audio::Transcription,
     context::Context,
 };
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{Event, KeyCode, KeyEvent};
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Direction, Layout, Rect},
@@ -12,64 +12,68 @@ use ratatui::{
     style::{Color, Style},
     widgets::*,
 };
-use tokio::sync::mpsc::UnboundedReceiver;
-use tui_input::{Input, backend::crossterm::EventHandler};
+use tui_textarea::TextArea;
 
-use super::{Component, ComponentEnum, main_menu::MainMenu};
+use super::{Component, ComponentEnum, game::SectionMove, main_menu::MainMenu, textarea::*};
 
 #[derive(Default, Debug)]
 pub struct SaveName {
-    input: Input,
-    receiver: Option<UnboundedReceiver<String>>,
+    textarea: TextArea<'static>,
+    vim: Vim,
+}
+
+impl SaveName {
+    pub fn new() -> Self {
+        let mut save_name = SaveName::default();
+        save_name
+            .textarea
+            .set_placeholder_text("Input your Save Name");
+        save_name.textarea.set_cursor_line_style(Style::default());
+        save_name
+            .textarea
+            .set_placeholder_style(Style::default().fg(Color::DarkGray));
+        save_name
+    }
 }
 
 impl Component for SaveName {
     fn on_key(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
-        match context.input_mode {
-            InputMode::Normal => match key.code {
-                KeyCode::Char('e') => Some(Action::SwitchInputMode(InputMode::Editing)),
-                KeyCode::Char('r') => {
-                    if let Ok((receiver, transcription)) =
-                        Transcription::new(None, context.ai_client?.clone())
-                    {
-                        self.receiver = Some(receiver);
-                        Some(Action::SwitchInputMode(InputMode::Recording(transcription)))
-                    } else {
-                        Some(Action::SwitchInputMode(InputMode::Editing))
-                    }
+        match self.vim.transition(key.into(), &mut self.textarea) {
+            Transition::Mode(mode) if self.vim.mode != mode => {
+                self.textarea
+                    .set_block(mode.block().border_type(BorderType::Rounded));
+                self.textarea.set_cursor_style(mode.cursor_style());
+                self.vim.mode = mode;
+                match mode {
+                    Mode::Recording => Some(Action::SwitchInputMode(InputMode::Recording)),
+                    Mode::Normal => Some(Action::SwitchInputMode(InputMode::Normal)),
+                    Mode::Insert => Some(Action::SwitchInputMode(InputMode::Editing)),
+                    Mode::Visual => Some(Action::SwitchInputMode(InputMode::Normal)),
+                    Mode::Operator(_) => None,
                 }
-                KeyCode::Esc => Some(Action::SwitchComponent(ComponentEnum::from(
-                    MainMenu::default(),
-                ))),
-                KeyCode::Enter => {
-                    if !self.input.value().is_empty() {
-                        Some(Action::CreateNewGame(self.input.value().into()))
-                    } else {
-                        Some(Action::SwitchInputMode(InputMode::Editing))
-                    }
-                }
-                _ => None,
-            },
-            InputMode::Editing => match key.code {
-                KeyCode::Esc => Some(Action::SwitchInputMode(InputMode::Normal)),
-                KeyCode::Char('v') => {
-                    todo!("Centralize the text input handling for paste.")
-                }
-                KeyCode::Enter => Some(Action::SwitchInputMode(InputMode::Normal)),
-                _ => {
-                    self.input.handle_event(&crossterm::event::Event::Key(key));
+            }
+            Transition::Nop | Transition::Mode(_) => None,
+            Transition::Pending(input) => {
+                self.vim.pending = input;
+                None
+            }
+            Transition::Validation => {
+                if !self.textarea.lines().is_empty() {
+                    Some(Action::CreateNewGame(self.textarea.lines()[0].to_string()))
+                } else {
                     None
                 }
-            },
-            InputMode::Recording(_) if key.code == KeyCode::Esc => {
-                // TODO: Stop recording if not in InputMode::Recording
-                todo!("Need to implement the voice recording");
             }
-            _ => None,
+            Transition::Exit => Some(Action::SwitchComponent(ComponentEnum::from(
+                MainMenu::default(),
+            ))),
+            Transition::Detail(_section_move) => None,
         }
     }
     fn render(&mut self, area: Rect, buffer: &mut Buffer, context: &Context) {
-        self.check_transcription();
+        self.textarea.set_block(Mode::Normal.block());
+        self.textarea.set_cursor_style(Mode::Normal.cursor_style());
+
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .flex(ratatui::layout::Flex::Center)
@@ -89,25 +93,7 @@ impl Component for SaveName {
             .alignment(Alignment::Center);
         title.render(chunks[0], buffer);
 
-        let input = Paragraph::new(self.input.value())
-            .style(Style::default().fg(Color::White))
-            .block(
-                Block::default()
-                    .border_type(BorderType::Rounded)
-                    .borders(Borders::ALL)
-                    .title(match context.input_mode {
-                        // TODO: Make the key description dynamic based on a Config File.
-                        InputMode::Normal => " Press 'e' to edit or 'r' to record ",
-                        InputMode::Editing => " Editing ",
-                        InputMode::Recording(_) => " Recording… Press 'Esc' to stop ",
-                    })
-                    .border_style(Style::default().fg(match context.input_mode {
-                        InputMode::Normal => Color::DarkGray,
-                        InputMode::Editing => Color::Yellow,
-                        InputMode::Recording(_) => Color::Red,
-                    })),
-            );
-        input.render(chunks[1], buffer);
+        self.textarea.render(chunks[1], buffer);
 
         let mode_indicator = match context.input_mode {
             InputMode::Normal => " NORMAL ",

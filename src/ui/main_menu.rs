@@ -82,8 +82,8 @@ impl Component for MainMenu {
                     } else {
                         0
                     }),
-                    Constraint::Max(1),
-                    Constraint::Min(10),
+                    Constraint::Length(1),
+                    Constraint::Min(MAIN_MENU.len() as u16 + 2),
                 ]
                 .as_ref(),
             )
@@ -155,7 +155,7 @@ impl MainMenu {
         let centered_area = center_rect(
             area,
             Constraint::Length(max_width),
-            Constraint::Length(context.save_manager.available_saves.len() as u16 + 2),
+            Constraint::Length(MAIN_MENU.len() as u16 + 2),
         );
 
         let menu = Paragraph::new(menu_lines)
@@ -167,9 +167,9 @@ impl MainMenu {
 
     pub fn switch_component(&mut self, context: Context<'_>) -> Option<Action> {
         match self.state.state.selected() {
-            Some(0) => Some(Action::SwitchComponent(ComponentEnum::from(
-                SaveName::default(),
-            ))),
+            Some(0) => Some(Action::SwitchComponent(
+                ComponentEnum::from(SaveName::new()),
+            )),
             Some(1) => {
                 // Load Game
                 Some(Action::SwitchComponent(ComponentEnum::from(
