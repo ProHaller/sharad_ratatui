@@ -8,12 +8,33 @@ use std::{
     path::PathBuf,
 };
 
+pub fn get_game_data_dir() -> PathBuf {
+    let mut path = get_game_dir();
+    path.push("data");
+    if !&path.exists() {
+        if let Err(e) = create_dir_all(&path) {
+            log::error!("Could not create path: {e:#?}");
+        }
+    }
+    path
+}
 pub fn get_save_base_dir() -> PathBuf {
-    let mut path = dir::home_dir().expect("Failed to get home directory");
-    path.push("sharad");
+    let mut path = get_game_dir();
     path.push("save");
     if !&path.exists() {
-        let _ = create_dir_all(&path);
+        if let Err(e) = create_dir_all(&path) {
+            log::error!("Could not create path: {e:#?}");
+        }
+    }
+    path
+}
+pub fn get_game_dir() -> PathBuf {
+    let mut path = dir::home_dir().expect("Failed to get home directory");
+    path.push("sharad");
+    if !&path.exists() {
+        if let Err(e) = create_dir_all(&path) {
+            log::error!("Could not create path: {e:#?}");
+        }
     }
     path
 }

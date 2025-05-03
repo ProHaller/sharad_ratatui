@@ -2,14 +2,15 @@
 
 use crate::{
     app::{Action, InputMode},
-    context::Context,
+    context::{self, Context},
+    save::{get_game_data_dir, get_save_base_dir},
     settings::Settings,
 };
 use crossterm::event::KeyEvent;
 use ratatui::{
     layout::{Constraint, Direction, Layout},
     prelude::{Alignment, Buffer, Rect},
-    style::{Color, Style, Stylize},
+    style::{Color, Modifier, Style, Stylize},
     widgets::*,
 };
 use tokio::runtime::Handle;
@@ -17,7 +18,7 @@ use tui_textarea::TextArea;
 
 use super::{
     Component, ComponentEnum, MainMenu, SettingsMenu, center_rect,
-    textarea::{Mode, Transition, Vim},
+    textarea::{Mode, Transition, Vim, new_textarea},
 };
 
 #[derive(Debug)]
@@ -35,7 +36,10 @@ impl Component for ApiKeyInput {
                 self.textarea.set_cursor_style(mode.cursor_style());
                 self.vim.mode = mode;
                 match mode {
-                    Mode::Recording => None,
+                    Mode::Recording => {
+                        self.textarea.set_placeholder_text("Paste your Api Key with 'p' or ctrl-v, or insert 'reset' to reset your Key");
+                        None
+                    }
                     Mode::Normal => Some(Action::SwitchInputMode(InputMode::Normal)),
                     Mode::Insert => Some(Action::SwitchInputMode(InputMode::Editing)),
                     Mode::Visual => Some(Action::SwitchInputMode(InputMode::Normal)),
@@ -47,17 +51,9 @@ impl Component for ApiKeyInput {
                 self.vim.pending = input;
                 None
             }
-            Transition::Validation => {
-                if context.ai_client.is_none() {
-                    self.validate_key(&mut context)
-                } else {
-                    Some(Action::SwitchComponent(ComponentEnum::from(
-                        SettingsMenu::new(context),
-                    )))
-                }
-            }
+            Transition::Validation => self.validate_key(&mut context),
             Transition::Exit => Some(Action::SwitchComponent(ComponentEnum::from(
-                MainMenu::default(),
+                SettingsMenu::new(context),
             ))),
             Transition::Detail(_section_move) => None,
             Transition::EndRecording => {
@@ -85,84 +81,117 @@ impl Component for ApiKeyInput {
                     Constraint::Length(1),
                     Constraint::Length(3),
                     Constraint::Length(1),
-                    Constraint::Length(1),
                 ]
                 .as_ref(),
             )
             .split(centered_area);
 
-        let (title, normal_style) = match context.ai_client {
+        let title = match context.ai_client {
             Some(_) => {
-                let title = Paragraph::new(" Your API Key is valid ".bold())
+                let title = Paragraph::new(" Your Api Key is valid! ".bold())
                     .style(Style::default().fg(Color::Green))
                     .alignment(Alignment::Center);
-                let normal_style = Style::default().fg(Color::Green);
-                (title, normal_style)
+                title
             }
             None => {
-                let title = Paragraph::new(" Please input a Valid Api_key ")
+                let title = Paragraph::new(" Please input a Valid Api Key ")
                     .style(Style::default().fg(Color::Red))
                     .alignment(Alignment::Center);
-                let normal_style = Style::default().fg(Color::Red);
-                (title, normal_style)
+                title
             }
         };
-        let style = match context.input_mode {
-            InputMode::Normal => normal_style,
-            InputMode::Editing => Style::default().fg(Color::Yellow),
-            InputMode::Recording(_) => Style::default().bg(Color::Red),
-        };
 
-        self.textarea.set_block(Mode::Normal.block().style(style));
+        self.textarea.set_block(Mode::Normal.block());
         title.render(chunks[0], buffer);
         self.textarea.render(chunks[1], buffer);
 
-        let instructions = Paragraph::new(" Press e to edit, Enter to confirm, Esc to cancel ")
+        let paste_info = Paragraph::new(" Use Ctrl+v or 'p' to paste ")
             .style(Style::default().fg(Color::Gray))
             .alignment(Alignment::Center);
-        instructions.render(chunks[2], buffer);
-
-        let paste_info = Paragraph::new(" Use Ctrl+V to paste ")
-            .style(Style::default().fg(Color::Gray))
-            .alignment(Alignment::Center);
-        paste_info.render(chunks[3], buffer);
+        paste_info.render(chunks[2], buffer);
         // TODO: Make sure the cursor is properly set.
     }
 }
 
 impl ApiKeyInput {
     pub fn new(api_key: &Option<String>) -> Self {
-        let mut api_key_input = Self {
-            textarea: TextArea::default(),
+        let textarea = new_textarea_with_key(api_key);
+        Self {
+            textarea,
             vim: Vim::new(Mode::Normal),
-        };
-        if let Some(api_key) = api_key {
-            api_key_input.textarea.set_placeholder_text(api_key);
-            api_key_input.textarea.set_mask_char('*');
-            api_key_input
-                .textarea
-                .set_cursor_line_style(Style::default());
-            api_key_input
-                .textarea
-                .set_placeholder_style(Style::default().fg(Color::DarkGray));
         }
-        api_key_input
+    }
+
+    fn reset_key(&mut self, context: &mut Context<'_>) {
+        context.ai_client = None;
+        context.settings.openai_api_key = None;
+        if let Err(e) = context
+            .settings
+            .save_to_file(get_game_data_dir().join("settings.json"))
+        {
+            log::error!("Failed to save_to_file: {e:#?}");
+            self.textarea
+            .set_placeholder_text("The Api key Reset could not be saved to file. Please delete your settings file manually.");
+            self.textarea
+                .set_placeholder_style(Style::new().fg(Color::Red));
+        } else {
+            self.textarea
+                .set_placeholder_text("Your Api key has been reset.");
+        }
     }
 
     fn validate_key(&mut self, context: &mut Context<'_>) -> Option<Action> {
-        let api_key = self.textarea.lines()[0].to_string();
+        let Some(api_ref) = self.textarea.lines().first() else {
+            self.textarea =
+                new_textarea("Please input a valid Api Key (or 'reset' to reset you Api Key)");
+            return None;
+        };
+        let api_key = api_ref.to_string();
+        if api_ref.to_lowercase().starts_with("reset") {
+            self.reset_key(context);
+            return None;
+        }
+        self.textarea.select_all();
+        self.textarea.delete_newline();
+        self.textarea
+            .set_placeholder_text(" Please wait a moment while we verify the key");
+        self.textarea.set_block(
+            Mode::Normal
+                .block()
+                .style(Style::new().add_modifier(Modifier::SLOW_BLINK)),
+        );
 
-        context.ai_client = tokio::task::block_in_place(|| {
+        let new_ai_client = tokio::task::block_in_place(|| {
             Handle::current().block_on(Settings::validate_ai_client(&api_key))
         });
 
-        if context.ai_client.is_some() {
-            context.settings.openai_api_key = Some(api_key.clone());
+        if new_ai_client.is_some() {
+            context.ai_client = new_ai_client;
+            context.settings.openai_api_key = Some(api_key);
             Some(Action::SwitchInputMode(InputMode::Normal))
         } else {
-            self.textarea = TextArea::default();
-            self.textarea.set_placeholder_text("This key is invalid");
+            self.textarea = new_textarea("This key is invalid");
             None
         }
     }
+}
+
+pub fn new_textarea_with_key(api_key: &Option<String>) -> TextArea<'static> {
+    match api_key {
+        None => new_textarea("Please input a valid Api key"),
+        Some(api_key) => new_textarea(hide_api(api_key)),
+    }
+}
+fn hide_api(s: &str) -> String {
+    let head_len = 7;
+    let tail_len = 3;
+
+    if s.len() < head_len + tail_len + 3 {
+        return s.to_string();
+    }
+
+    let head = &s[..head_len];
+    let tail = &s[s.len() - tail_len..];
+
+    format!(" Valid Api Key: {}...{}", head, tail)
 }
