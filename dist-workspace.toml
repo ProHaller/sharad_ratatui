@@ -28,4 +28,4 @@ libssl-dev = '*'
 libasound2-dev = '*'
 
 [dist.github-custom-runners]
-x86_64-unknown-linux-gnu = "ubuntu-latest"
+x86_64-unknown-linux-gnu = "ubuntu-22.04"
