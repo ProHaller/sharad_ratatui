@@ -69,6 +69,7 @@
 
         <Package Id='*'
             Keywords='Installer'
+            Description='A terminal based Shadowrun RPG Using AI as a Game Master'
             Manufacturer='Roland Haller'
             InstallerVersion='450'
             Languages='1033'
