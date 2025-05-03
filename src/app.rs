@@ -3,7 +3,7 @@ use crate::{
     assistant::create_assistant,
     audio::{AudioNarration, Transcription},
     character::{CharacterSheet, CharacterSheetUpdate},
-    context::Context,
+    context::{self, Context},
     error::{Error, Result},
     game_state::GameState,
     imager::load_image_from_file,
@@ -45,7 +45,7 @@ pub enum TranscriptionTarget {
     ImagePrompt,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub enum InputMode {
     #[default]
     Normal,
@@ -113,7 +113,6 @@ impl App {
             messages: Vec::new(),
             ai_sender,
             ai_receiver,
-
             picker: None,
             image: None,
             image_sender,
@@ -135,20 +134,19 @@ impl App {
         self.picker = Some(picker);
         log::info!("Entered terminal");
 
+        let mut context = Context {
+            ai_client: &mut self.ai_client.clone(),
+            image_sender: self.image_sender.clone(),
+            save_manager: &mut self.save_manager.clone(),
+            settings: &mut self.settings.clone(),
+            messages: &mut self.messages.clone(),
+            input_mode: &mut self.input_mode.clone(),
+            audio_narration: &mut self.audio_narration.clone(),
+        };
         loop {
-            let context = Context {
-                ai_client: self.ai_client.clone(),
-                image_sender: self.image_sender.clone(),
-                save_manager: &mut self.save_manager,
-                settings: &mut self.settings,
-                messages: &self.messages,
-                input_mode: &self.input_mode,
-                audio_narration: &mut self.audio_narration,
-            };
-
             tui.draw(|frame| {
                 self.component
-                    .render(frame.area(), frame.buffer_mut(), &context)
+                    .render(frame.area(), frame.buffer_mut(), &mut context)
             })?;
 
             // TODO: improve input cursor position
@@ -328,7 +326,7 @@ impl App {
             key_event,
             // TODO: Should probably not construct a context here.
             Context {
-                ai_client: self.ai_client.clone(),
+                ai_client: &mut self.ai_client,
                 image_sender: self.image_sender.clone(),
                 save_manager: &mut self.save_manager,
                 settings: &mut self.settings,

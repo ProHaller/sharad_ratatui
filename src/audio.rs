@@ -21,16 +21,22 @@ use std::{
     io::{BufReader, BufWriter},
     path::{Path, PathBuf},
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, RwLock,
         atomic::{AtomicBool, Ordering},
     },
     thread,
     time::Duration,
 };
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+use tokio::{
+    sync::{
+        OnceCell,
+        mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
+    },
+    time::sleep,
+};
 use uuid::Uuid;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum AudioNarration {
     Generating(GameAI, Fluff, PathBuf),
     Playing(Fluff),
@@ -229,8 +235,22 @@ pub struct Transcription {
     dir: AudioDir,
     recording_path: Option<PathBuf>,
     sender: UnboundedSender<String>,
-    receiver: Option<UnboundedReceiver<PathBuf>>,
+    path: Arc<Mutex<Option<PathBuf>>>,
     pub transcription: String,
+}
+
+impl Clone for Transcription {
+    fn clone(&self) -> Self {
+        Self {
+            is_recording: self.is_recording.clone(),
+            client: self.client.clone(),
+            dir: self.dir.clone(),
+            recording_path: self.recording_path.clone(),
+            sender: self.sender.clone(),
+            path: self.path.clone(),
+            transcription: self.transcription.clone(),
+        }
+    }
 }
 
 impl Transcription {
@@ -245,7 +265,7 @@ impl Transcription {
             dir: AudioDir::try_from(path)?,
             recording_path: None,
             sender: t_sender,
-            receiver: None,
+            path: Arc::new(Mutex::new(None)),
             transcription: String::new(),
         };
 
@@ -256,18 +276,14 @@ impl Transcription {
     pub fn start_recording(&mut self) {
         let dir = self.dir.clone();
         let is_recording = self.is_recording.clone();
-        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<PathBuf>();
+        let future_path = Arc::clone(&self.path);
+
         thread::spawn(move || match record_audio(dir, is_recording) {
             Ok(path) => {
-                if let Err(e) = sender.send(path) {
-                    log::error!("Failed to send the transcription path: {e:#?}");
-                }
+                *future_path.lock().unwrap() = Some(path);
             }
-            Err(e) => {
-                log::error!("Error recording audio: {:?}", e);
-            }
+            Err(e) => log::error!("Error recording audio: {:?}", e),
         });
-        self.receiver = Some(receiver);
     }
 
     fn stop(&mut self) {
@@ -302,17 +318,23 @@ impl Transcription {
 
     pub async fn input(mut self) {
         self.stop();
-        if let Some(path) = self
-            .receiver
-            .as_mut()
-            .expect("Expected a receiver")
-            .recv()
-            .await
-        {
+
+        let maybe_path = loop {
+            {
+                let guard = self.path.lock().expect("Failed to lock path mutex");
+                if let Some(ref path) = *guard {
+                    break Some(path.clone());
+                }
+            }
+            sleep(Duration::from_millis(10)).await;
+        };
+
+        if let Some(path) = maybe_path {
             self.recording_path = Some(path);
         }
 
         self.transcribe_audio().await;
+
         if let Err(e) = self.sender.send(self.transcription) {
             log::error!("Failed to send the transcription: {e:#?}");
         }

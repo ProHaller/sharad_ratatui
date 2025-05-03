@@ -46,6 +46,7 @@ impl ImageMenu {
             if let Ok(transcription) = receiver.try_recv() {
                 self.textarea.set_yank_text(transcription);
                 self.textarea.paste();
+                self.textarea.set_cursor_style(self.vim.mode.cursor_style());
                 self.receiver = None;
             }
         }
@@ -58,7 +59,7 @@ impl ImageMenu {
         let prompt = self.textarea.lines().join("\n");
         let image_sender = self.image_sender.clone();
         log::info!("Requested image creation with context: {context:#?}");
-        if let Some(client) = context.ai_client {
+        if let Some(client) = context.ai_client.clone() {
             log::debug!("Spawning  the image generation");
             tokio::spawn(async move {
                 log::debug!("Spawned  the image generation");
@@ -94,14 +95,14 @@ impl Component for ImageMenu {
     fn on_key(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
         match self.vim.transition(key.into(), &mut self.textarea) {
             Transition::Mode(mode) if self.vim.mode != mode => {
+                self.vim.mode = mode;
                 self.textarea
                     .set_block(mode.block().border_type(BorderType::Rounded));
                 self.textarea.set_cursor_style(mode.cursor_style());
-                self.vim.mode = mode;
                 match mode {
                     Mode::Recording => {
                         if let Ok((receiver, transcription)) =
-                            Transcription::new(None, context.ai_client?.clone())
+                            Transcription::new(None, context.ai_client.clone().unwrap())
                         {
                             self.receiver = Some(receiver);
                             log::debug!("Sent the recording request");
@@ -110,7 +111,10 @@ impl Component for ImageMenu {
                             None
                         }
                     }
-                    Mode::Normal => Some(Action::SwitchInputMode(InputMode::Normal)),
+                    Mode::Normal => {
+                        self.vim.mode = Mode::Normal;
+                        Some(Action::SwitchInputMode(InputMode::Normal))
+                    }
                     Mode::Insert => Some(Action::SwitchInputMode(InputMode::Editing)),
                     Mode::Visual => Some(Action::SwitchInputMode(InputMode::Normal)),
                     Mode::Operator(_) => None,

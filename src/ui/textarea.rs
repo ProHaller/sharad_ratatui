@@ -54,7 +54,7 @@ impl<'a> Mode {
 
     pub fn cursor_style(&self) -> Style {
         let color = match self {
-            Self::Normal => Color::Reset,
+            Self::Normal => Color::default(),
             Self::Insert => Color::LightBlue,
             Self::Visual => Color::LightYellow,
             Self::Operator(_) => Color::LightGreen,

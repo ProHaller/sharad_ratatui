@@ -114,7 +114,7 @@ impl Component for InGame {
                     Mode::Recording => {
                         log::debug!("Strated the recording");
                         if let Ok((receiver, transcription)) =
-                            Transcription::new(None, context.ai_client?.clone())
+                            Transcription::new(None, context.ai_client.clone().unwrap())
                         {
                             self.receiver = Some(receiver);
                             Some(Action::SwitchInputMode(InputMode::Recording(transcription)))
@@ -294,6 +294,7 @@ impl InGame {
             if let Ok(transcription) = receiver.try_recv() {
                 self.textarea.set_yank_text(transcription);
                 self.textarea.paste();
+                self.textarea.set_cursor_style(self.vim.mode.cursor_style());
                 self.receiver = None;
             }
         }
