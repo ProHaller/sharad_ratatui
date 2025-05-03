@@ -91,7 +91,7 @@ impl App {
         let mut load_game_menu_state = ListState::default();
         load_game_menu_state.select(Some(0));
 
-        let settings = Settings::load().expect("Could not read settings");
+        let settings = Settings::try_load();
         let ai_client;
         let mut game_ai: Option<GameAI> = None;
         if let Some(api_key) = &settings.openai_api_key {

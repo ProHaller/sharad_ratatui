@@ -7,6 +7,8 @@ use std::{
 };
 use strum_macros::Display;
 
+use crate::save::get_game_data_dir;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Settings {
     pub language: Language,
@@ -52,10 +54,9 @@ impl Default for Settings {
 }
 
 impl Settings {
-    pub fn load() -> io::Result<Self> {
-        let home_dir = dir::home_dir().expect("Failed to get home directory");
-        let path = home_dir.join("sharad").join("data").join("settings.json");
-        Self::load_settings_from_file(path)
+    pub fn try_load() -> Self {
+        let path = get_game_data_dir().join("settings.json");
+        Self::load_settings_from_file(path).unwrap_or_default()
     }
 
     // Load settings from a specified file path.
@@ -79,10 +80,12 @@ impl Settings {
     // Asynchronously validate an API key with OpenAI's services.
     pub async fn validate_ai_client(api_key: &str) -> Option<Client<OpenAIConfig>> {
         let client = Client::with_config(OpenAIConfig::new().with_api_key(api_key)); // Configure the OpenAI client with the API key.
-        match client.models().list().await {
+        let maybe_client = match client.models().list().await {
             Ok(_) => Some(client),
             Err(OpenAIError::Reqwest(_)) => None,
             _ => None,
-        }
+        };
+        log::debug!("validate_ai_client: {maybe_client:#?}");
+        maybe_client
     }
 }

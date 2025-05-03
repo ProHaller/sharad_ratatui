@@ -2,22 +2,22 @@
 
 use crate::{
     app::{Action, InputMode},
-    context::{self, Context},
-    save::{get_game_data_dir, get_save_base_dir},
+    context::Context,
+    save::get_game_data_dir,
     settings::Settings,
 };
 use crossterm::event::KeyEvent;
 use ratatui::{
     layout::{Constraint, Direction, Layout},
     prelude::{Alignment, Buffer, Rect},
-    style::{Color, Modifier, Style, Stylize},
+    style::{Color, Style, Stylize},
     widgets::*,
 };
 use tokio::runtime::Handle;
 use tui_textarea::TextArea;
 
 use super::{
-    Component, ComponentEnum, MainMenu, SettingsMenu, center_rect,
+    Component, ComponentEnum, SettingsMenu, center_rect,
     textarea::{Mode, Transition, Vim, new_textarea},
 };
 
@@ -57,9 +57,8 @@ impl Component for ApiKeyInput {
             ))),
             Transition::Detail(_section_move) => None,
             Transition::EndRecording => {
-                log::debug!("Transition::EndRecording");
                 self.vim.mode = Mode::Normal;
-                Some(Action::EndRecording)
+                None
             }
             Transition::ScrollTop => None,
             Transition::ScrollBottom => None,
@@ -91,12 +90,14 @@ impl Component for ApiKeyInput {
                 let title = Paragraph::new(" Your Api Key is valid! ".bold())
                     .style(Style::default().fg(Color::Green))
                     .alignment(Alignment::Center);
+
                 title
             }
             None => {
                 let title = Paragraph::new(" Please input a Valid Api Key ")
                     .style(Style::default().fg(Color::Red))
                     .alignment(Alignment::Center);
+                log::debug!("Title set to red: {title:#?}");
                 title
             }
         };
@@ -105,9 +106,10 @@ impl Component for ApiKeyInput {
         title.render(chunks[0], buffer);
         self.textarea.render(chunks[1], buffer);
 
-        let paste_info = Paragraph::new(" Use Ctrl+v or 'p' to paste ")
-            .style(Style::default().fg(Color::Gray))
-            .alignment(Alignment::Center);
+        let paste_info =
+            Paragraph::new(" Use Ctrl+v or 'p' to paste, or insert 'reset' to reset your Api Key ")
+                .style(Style::default().fg(Color::Gray))
+                .alignment(Alignment::Center);
         paste_info.render(chunks[2], buffer);
         // TODO: Make sure the cursor is properly set.
     }
@@ -123,20 +125,21 @@ impl ApiKeyInput {
     }
 
     fn reset_key(&mut self, context: &mut Context<'_>) {
-        context.ai_client = None;
+        *context.ai_client = None;
         context.settings.openai_api_key = None;
+        log::info!("context reset: {:#?}", context);
         if let Err(e) = context
             .settings
             .save_to_file(get_game_data_dir().join("settings.json"))
         {
             log::error!("Failed to save_to_file: {e:#?}");
-            self.textarea
-            .set_placeholder_text("The Api key Reset could not be saved to file. Please delete your settings file manually.");
+            self.textarea = new_textarea(
+                "The Api key Reset could not be saved to file. Please delete your settings file manually.",
+            );
             self.textarea
                 .set_placeholder_style(Style::new().fg(Color::Red));
         } else {
-            self.textarea
-                .set_placeholder_text("Your Api key has been reset.");
+            self.textarea = new_textarea("Your Api key has been reset.");
         }
     }
 
@@ -149,25 +152,23 @@ impl ApiKeyInput {
         let api_key = api_ref.to_string();
         if api_ref.to_lowercase().starts_with("reset") {
             self.reset_key(context);
-            return None;
+            log::info!("Reset key done");
+            return Some(Action::SwitchComponent(ComponentEnum::ApiKeyInput(
+                ApiKeyInput::new(&context.settings.openai_api_key),
+            )));
         }
-        self.textarea.select_all();
-        self.textarea.delete_newline();
-        self.textarea
-            .set_placeholder_text(" Please wait a moment while we verify the key");
-        self.textarea.set_block(
-            Mode::Normal
-                .block()
-                .style(Style::new().add_modifier(Modifier::SLOW_BLINK)),
-        );
+        self.textarea = new_textarea(" Please wait a moment while we verify the key");
 
         let new_ai_client = tokio::task::block_in_place(|| {
             Handle::current().block_on(Settings::validate_ai_client(&api_key))
         });
 
+        log::debug!("new_ai_client: {new_ai_client:#?}");
         if new_ai_client.is_some() {
-            context.ai_client = new_ai_client;
+            *context.ai_client = new_ai_client;
             context.settings.openai_api_key = Some(api_key);
+            log::debug!("New context set: {context:#?}");
+            self.textarea = new_textarea(" Your Api Key is Valid!");
             Some(Action::SwitchInputMode(InputMode::Normal))
         } else {
             self.textarea = new_textarea("This key is invalid");
