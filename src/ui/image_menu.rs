@@ -52,7 +52,7 @@ impl ImageMenu {
         }
     }
 
-    fn request_image(&mut self, context: Context<'_>) -> Option<Action> {
+    fn request_image(&mut self, context: &mut Context<'_>) -> Option<Action> {
         if self.textarea.lines().concat().len() < 2 {
             return Some(Action::SwitchInputMode(InputMode::Editing));
         }
@@ -92,7 +92,7 @@ impl ImageMenu {
 }
 
 impl Component for ImageMenu {
-    fn on_key(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
+    fn on_key(&mut self, key: KeyEvent, context: &mut Context) -> Option<Action> {
         match self.vim.transition(key.into(), &mut self.textarea) {
             Transition::Mode(mode) if self.vim.mode != mode => {
                 self.vim.mode = mode;
@@ -101,6 +101,9 @@ impl Component for ImageMenu {
                 self.textarea.set_cursor_style(mode.cursor_style());
                 match mode {
                     Mode::Recording => {
+                        if !context.settings.audio_input_enabled {
+                            return None;
+                        };
                         if let Ok((receiver, transcription)) =
                             Transcription::new(None, context.ai_client.clone().unwrap())
                         {

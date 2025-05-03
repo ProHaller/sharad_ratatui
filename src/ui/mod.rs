@@ -11,7 +11,6 @@ mod image_menu;
 mod load_menu;
 pub mod main_menu;
 mod main_menu_fix;
-pub mod rain;
 mod save_name_input;
 mod settings_menu;
 pub mod spinner;

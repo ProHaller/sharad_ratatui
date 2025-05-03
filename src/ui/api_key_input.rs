@@ -28,7 +28,7 @@ pub struct ApiKeyInput {
 }
 
 impl Component for ApiKeyInput {
-    fn on_key(&mut self, key: KeyEvent, mut context: Context) -> Option<Action> {
+    fn on_key(&mut self, key: KeyEvent, context: &mut Context) -> Option<Action> {
         match self.vim.transition(key.into(), &mut self.textarea) {
             Transition::Mode(mode) if self.vim.mode != mode => {
                 self.textarea
@@ -51,7 +51,7 @@ impl Component for ApiKeyInput {
                 self.vim.pending = input;
                 None
             }
-            Transition::Validation => self.validate_key(&mut context),
+            Transition::Validation => self.validate_key(context),
             Transition::Exit => Some(Action::SwitchComponent(ComponentEnum::from(
                 SettingsMenu::new(context),
             ))),
@@ -97,14 +97,14 @@ impl Component for ApiKeyInput {
                 let title = Paragraph::new(" Please input a Valid Api Key ")
                     .style(Style::default().fg(Color::Red))
                     .alignment(Alignment::Center);
-                log::debug!("Title set to red: {title:#?}");
+                log::debug!("Title set to: {title:#?}");
                 title
             }
         };
 
         self.textarea.set_block(Mode::Normal.block());
-        title.render(chunks[0], buffer);
         self.textarea.render(chunks[1], buffer);
+        title.render(chunks[0], buffer);
 
         let paste_info =
             Paragraph::new(" Use Ctrl+v or 'p' to paste, or insert 'reset' to reset your Api Key ")

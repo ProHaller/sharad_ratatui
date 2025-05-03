@@ -40,7 +40,7 @@ impl Default for MainMenu {
 }
 
 impl Component for MainMenu {
-    fn on_key(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
+    fn on_key(&mut self, key: KeyEvent, context: &mut Context) -> Option<Action> {
         match key.code {
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => self.switch_component(context),
             KeyCode::Up | KeyCode::Char('k') => {
@@ -165,7 +165,7 @@ impl MainMenu {
         menu.render(centered_area, buffer);
     }
 
-    pub fn switch_component(&mut self, context: Context<'_>) -> Option<Action> {
+    pub fn switch_component(&mut self, context: &mut Context<'_>) -> Option<Action> {
         match self.state.state.selected() {
             Some(0) => Some(Action::SwitchComponent(
                 ComponentEnum::from(SaveName::new()),

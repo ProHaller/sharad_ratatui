@@ -15,7 +15,7 @@ use ratatui::{
 use tokio::sync::mpsc::UnboundedReceiver;
 use tui_textarea::TextArea;
 
-use super::{Component, ComponentEnum, main_menu::MainMenu, textarea::*};
+use super::{Component, ComponentEnum, center_rect, main_menu::MainMenu, textarea::*};
 
 #[derive(Default, Debug)]
 pub struct SaveName {
@@ -39,7 +39,7 @@ impl SaveName {
 }
 
 impl Component for SaveName {
-    fn on_key(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
+    fn on_key(&mut self, key: KeyEvent, context: &mut Context) -> Option<Action> {
         match self.vim.transition(key.into(), &mut self.textarea) {
             Transition::Mode(mode) if self.vim.mode != mode => {
                 self.textarea
@@ -48,6 +48,9 @@ impl Component for SaveName {
                 self.vim.mode = mode;
                 match mode {
                     Mode::Recording => {
+                        if !context.settings.audio_input_enabled {
+                            return None;
+                        };
                         if let Ok((receiver, transcription)) =
                             Transcription::new(None, context.ai_client.clone().unwrap())
                         {
@@ -92,43 +95,30 @@ impl Component for SaveName {
             Transition::ScrollDown => None,
         }
     }
-    fn render(&mut self, area: Rect, buffer: &mut Buffer, context: &Context) {
-        self.textarea.set_block(self.vim.mode.block());
-        self.check_transcription();
-
+    fn render(&mut self, area: Rect, buffer: &mut Buffer, _context: &Context) {
+        let centered_area =
+            center_rect(area, Constraint::Percentage(70), Constraint::Percentage(50));
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .flex(ratatui::layout::Flex::Center)
             .constraints(
                 [
+                    Constraint::Length(1),
                     Constraint::Length(3),
-                    Constraint::Length(3),
-                    Constraint::Length(3),
-                    Constraint::Min(1),
+                    Constraint::Length(1),
                 ]
                 .as_ref(),
             )
-            .split(area);
+            .split(centered_area);
 
         let title = Paragraph::new(" Enter Save Name ")
             .style(Style::default().fg(Color::Cyan))
             .alignment(Alignment::Center);
         title.render(chunks[0], buffer);
 
+        self.textarea.set_block(self.vim.mode.block());
+        self.check_transcription();
         self.textarea.render(chunks[1], buffer);
-
-        let mode_indicator = match context.input_mode {
-            InputMode::Normal => " NORMAL ",
-            InputMode::Editing => " EDITING ",
-            InputMode::Recording(_) => " RECORDING ",
-        };
-        let instructions = Paragraph::new(format!(
-            "Mode:{} | Enter: confirm | Esc: cancel",
-            mode_indicator
-        ))
-        .style(Style::default().fg(Color::Gray))
-        .alignment(Alignment::Center);
-        instructions.render(chunks[2], buffer);
     }
 }
 

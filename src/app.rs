@@ -3,7 +3,7 @@ use crate::{
     assistant::create_assistant,
     audio::{AudioNarration, Transcription},
     character::{CharacterSheet, CharacterSheetUpdate},
-    context::{self, Context},
+    context::Context,
     error::{Error, Result},
     game_state::GameState,
     imager::load_image_from_file,
@@ -31,18 +31,12 @@ pub enum Action {
     Quit,
     LoadSave(PathBuf),
     CreateNewGame(String),
-    ProcessMessage(String),
+    // ProcessMessage(String),
     // TODO: Probably don't need the transcription target anymore.
     SwitchComponent(ComponentEnum),
     SwitchInputMode(InputMode),
     EndRecording,
     AudioNarration(AudioNarration),
-}
-
-pub enum TranscriptionTarget {
-    UserInput,
-    SaveNameInput,
-    ImagePrompt,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -146,7 +140,7 @@ impl App {
         loop {
             tui.draw(|frame| {
                 self.component
-                    .render(frame.area(), frame.buffer_mut(), &mut context)
+                    .render(frame.area(), frame.buffer_mut(), &context)
             })?;
 
             // TODO: improve input cursor position
@@ -154,7 +148,7 @@ impl App {
             let image_receiver = &mut self.image_receiver;
             tokio::select! {
                 Some(event) = tui.next() => {
-                    self.handle_tui_event(event)?;
+                    self.handle_tui_event(event, &mut context)?;
                 },
                 Some(ai_message) = ai_receiver.recv() => {
                     log::info!("Received ai_message: {ai_message:#?}");
@@ -193,9 +187,9 @@ impl App {
                 log::info!("Action::CreateNewGame: {save_name:#?}");
                 self.ai_sender.send(AIMessage::StartGame(save_name))?;
             }
-            Action::ProcessMessage(message) => {
-                todo!("Need to ProcessMessage: {}", message)
-            }
+            // Action::ProcessMessage(message) => {
+            //     todo!("Need to ProcessMessage: {}", message)
+            // }
             Action::AudioNarration(audio_narration) => {
                 log::info!("Action::AudioNarration: {audio_narration:#?}");
                 self.audio_narration = audio_narration;
@@ -271,10 +265,10 @@ impl App {
         };
         Ok(result)
     }
-    fn handle_tui_event(&mut self, event: TuiEvent) -> Result<()> {
+    fn handle_tui_event(&mut self, event: TuiEvent, context: &mut Context) -> Result<()> {
         match event {
             TuiEvent::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                self.on_key(key_event)?
+                self.on_key(key_event, context)?
             }
             // TODO: Pass the pasted text to the Input
             // Maybe I don't need copypasta anymore?
@@ -282,9 +276,9 @@ impl App {
             TuiEvent::Mouse(_mouse_event) => {}
             TuiEvent::Key(_) => {}
             TuiEvent::Init => {}
-            TuiEvent::Quit => {}
+            // TuiEvent::Quit => {}
             TuiEvent::Error => {}
-            TuiEvent::Closed => {}
+            // TuiEvent::Closed => {}
             TuiEvent::Tick => {}
             TuiEvent::Render => {}
             TuiEvent::FocusGained => {}
@@ -321,19 +315,10 @@ impl App {
         Ok(())
     }
 
-    fn on_key(&mut self, key_event: KeyEvent) -> Result<()> {
+    fn on_key(&mut self, key_event: KeyEvent, context: &mut Context) -> Result<()> {
         if let Some(action) = self.component.on_key(
-            key_event,
-            // TODO: Should probably not construct a context here.
-            Context {
-                ai_client: &mut self.ai_client,
-                image_sender: self.image_sender.clone(),
-                save_manager: &mut self.save_manager,
-                settings: &mut self.settings,
-                messages: &self.messages,
-                input_mode: &self.input_mode,
-                audio_narration: &mut self.audio_narration,
-            },
+            key_event, // TODO: Should probably not construct a context here.
+            context,
         ) {
             self.handle_action(action)?
         };

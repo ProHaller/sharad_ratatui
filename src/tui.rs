@@ -8,16 +8,8 @@ use color_eyre::eyre::Result;
 use futures::{FutureExt, StreamExt};
 use ratatui::{
     DefaultTerminal,
-    crossterm::{
-        cursor,
-        event::{
-            DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
-            Event as CrosstermEvent, KeyEvent, KeyEventKind, MouseEvent,
-        },
-        terminal::{EnterAlternateScreen, LeaveAlternateScreen},
-    },
+    crossterm::event::{Event as CrosstermEvent, KeyEvent, KeyEventKind, MouseEvent},
 };
-use ratatui::{backend::CrosstermBackend as Backend, buffer::Buffer};
 use ratatui_image::picker::Picker;
 use tokio::{
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
@@ -30,9 +22,9 @@ use crate::{MIN_HEIGHT, MIN_WIDTH};
 #[derive(Clone, Debug)]
 pub enum TuiEvent {
     Init,
-    Quit,
+    // Quit,
     Error,
-    Closed,
+    // Closed,
     Tick,
     Render,
     FocusGained,
@@ -53,8 +45,8 @@ pub struct Tui {
     pub event_tx: UnboundedSender<TuiEvent>,
     pub frame_rate: f64,
     pub tick_rate: f64,
-    pub mouse: bool,
-    pub paste: bool,
+    // pub mouse: bool,
+    // pub paste: bool,
 }
 
 impl Tui {
@@ -66,8 +58,8 @@ impl Tui {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let cancellation_token = CancellationToken::new();
         let task = tokio::spawn(async {});
-        let mouse = false;
-        let paste = true;
+        // let mouse = false;
+        // let paste = true;
         Ok(Self {
             terminal,
             picker,
@@ -77,8 +69,8 @@ impl Tui {
             event_tx,
             frame_rate,
             tick_rate,
-            mouse,
-            paste,
+            // mouse,
+            // paste,
         })
     }
 
@@ -92,15 +84,15 @@ impl Tui {
         self
     }
 
-    pub fn mouse(mut self, mouse: bool) -> Self {
-        self.mouse = mouse;
-        self
-    }
+    // pub fn mouse(mut self, mouse: bool) -> Self {
+    //     self.mouse = mouse;
+    //     self
+    // }
 
-    pub fn paste(mut self, paste: bool) -> Self {
-        self.paste = paste;
-        self
-    }
+    // pub fn paste(mut self, paste: bool) -> Self {
+    //     self.paste = paste;
+    //     self
+    // }
 
     pub fn start(&mut self) {
         let tick_delay = std::time::Duration::from_secs_f64(1.0 / self.tick_rate);
@@ -183,14 +175,6 @@ impl Tui {
     }
 
     pub fn enter(&mut self) -> Result<()> {
-        crossterm::terminal::enable_raw_mode()?;
-        crossterm::execute!(std::io::stderr(), EnterAlternateScreen, cursor::Hide)?;
-        if self.mouse {
-            crossterm::execute!(std::io::stderr(), EnableMouseCapture)?;
-        }
-        if self.paste {
-            crossterm::execute!(std::io::stderr(), EnableBracketedPaste)?;
-        }
         self.ensure_minimum_terminal_size()?;
         self.start();
         Ok(())
@@ -207,17 +191,17 @@ impl Tui {
         self.cancellation_token.cancel();
     }
 
-    pub fn suspend(&mut self) -> Result<()> {
-        self.exit()?;
-        #[cfg(not(windows))]
-        signal_hook::low_level::raise(signal_hook::consts::signal::SIGTSTP)?;
-        Ok(())
-    }
+    // pub fn suspend(&mut self) -> Result<()> {
+    //     self.exit()?;
+    //     #[cfg(not(windows))]
+    //     signal_hook::low_level::raise(signal_hook::consts::signal::SIGTSTP)?;
+    //     Ok(())
+    // }
 
-    pub fn resume(&mut self) -> Result<()> {
-        self.enter()?;
-        Ok(())
-    }
+    // pub fn resume(&mut self) -> Result<()> {
+    //     self.enter()?;
+    //     Ok(())
+    // }
 
     pub async fn next(&mut self) -> Option<TuiEvent> {
         self.event_rx.recv().await

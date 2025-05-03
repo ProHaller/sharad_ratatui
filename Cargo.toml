@@ -1,6 +1,6 @@
 [package]
 name = "sharad_ratatui"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 repository = "https://github.com/prohaller/sharad_ratatui"
 authors = ["Roland Haller <haller.roland@gmail.com>"]
@@ -17,31 +17,24 @@ eula = false
 anyhow = "1.0.97"
 async-openai = "0.28.0"
 chrono = "0.4.40"
-cleanup = "0.1.1"
 color-eyre = "0.6.3"
 copypasta = "0.10.1"
 cpal = "0.15.3"
 crossterm = { version = "0.28.1", features = ["event-stream"] }
-ctrlc = "3.4.5"
 derive_more = { version = "2.0.1", features = ["full"] }
 dir = "0.1.2"
 enum_dispatch = "0.3.13"
 futures = "0.3.31"
 hound = "3.5.1"
-hyphenation = "0.8.4"
 image = "0.25.6"
 include_dir = "0.7.4"
-lame = "0.1.3"
-libc = "0.2.171"
 log = "0.4.27"
 once_cell = "1.21.3"
 rand = "0.9.0"
 ratatui = "0.29.0"
 ratatui-image = "5.0.0"
-rayon = "1.10.0"
 reqwest = { version = "0.12.15", features = ["json"] }
 rodio = "0.20.1"
-ropey = "1.6.1"
 self_update = "0.42.0"
 semver = "1.0.26"
 serde = { version = "1.0.219", features = ["derive"] }
@@ -54,11 +47,7 @@ textwrap = { version = "0.16.2", features = ["hyphenation"] }
 thiserror = "2.0.12"
 tokio = { version = "1.44.1", features = ["full"] }
 tokio-util = "0.7.14"
-tui-input = "0.11.1"
-tui-rain = "1.0.1"
 tui-textarea = "0.7.0"
-unicode-segmentation = "1.12.0"
-unicode-width = "0.2.0"
 uuid = { version = "1.16.0", features = ["v4"] }
 
 # The profile that 'dist' will build with

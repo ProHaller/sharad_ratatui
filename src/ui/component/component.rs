@@ -14,7 +14,7 @@ use crate::{
 
 #[enum_dispatch]
 pub trait Component: Debug {
-    fn on_key(&mut self, key: KeyEvent, context: Context) -> Option<Action>;
+    fn on_key(&mut self, key: KeyEvent, context: &mut Context) -> Option<Action>;
     // TODO: Implement KeyHints
     // fn key_hints(&mut self, key: KeyEvent, ) -> KeyHints
     // HACK: Could return a cursor postition?

@@ -103,7 +103,7 @@ pub enum HighlightedSection {
 }
 
 impl Component for InGame {
-    fn on_key(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
+    fn on_key(&mut self, key: KeyEvent, context: &mut Context) -> Option<Action> {
         match self.vim.transition(key.into(), &mut self.textarea) {
             Transition::Mode(mode) if self.vim.mode != mode => {
                 self.textarea
@@ -112,6 +112,9 @@ impl Component for InGame {
                 self.vim.mode = mode;
                 match mode {
                     Mode::Recording => {
+                        if !context.settings.audio_input_enabled {
+                            return None;
+                        };
                         log::debug!("Strated the recording");
                         if let Ok((receiver, transcription)) =
                             Transcription::new(None, context.ai_client.clone().unwrap())

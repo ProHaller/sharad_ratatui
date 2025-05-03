@@ -20,7 +20,7 @@ pub struct LoadMenu {
 }
 
 impl Component for LoadMenu {
-    fn on_key(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
+    fn on_key(&mut self, key: KeyEvent, context: &mut Context) -> Option<Action> {
         match key.code {
             KeyCode::Enter | KeyCode::Char('l') => self.state.state.selected().map(|selected| {
                 Action::LoadSave(context.save_manager.available_saves[selected].clone())
@@ -106,7 +106,7 @@ impl Component for LoadMenu {
 }
 
 impl LoadMenu {
-    pub fn default(context: Context) -> Self {
+    pub fn default(context: &mut Context) -> Self {
         let mut menu = Self {
             state: StatefulList::with_items(context.save_manager.available_saves.clone()),
             backspace_counter: false,

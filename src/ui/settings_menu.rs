@@ -1,8 +1,8 @@
 // ui/settings_menu.rs
 
 use crate::{
-    app::Action, context::Context, settings::Language, settings_state::SettingsState,
-    ui::draw::center_rect,
+    app::Action, context::Context, save::get_game_data_dir, settings::Language,
+    settings_state::SettingsState, ui::draw::center_rect,
 };
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
@@ -21,7 +21,7 @@ pub struct SettingsMenu {
 }
 
 impl Component for SettingsMenu {
-    fn on_key(&mut self, key: KeyEvent, context: Context) -> Option<Action> {
+    fn on_key(&mut self, key: KeyEvent, context: &mut Context) -> Option<Action> {
         let action: Option<Action> = match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
                 self.state.selected_setting = if self.state.selected_setting == 0 {
@@ -105,7 +105,7 @@ impl Component for SettingsMenu {
 }
 
 impl SettingsMenu {
-    pub fn new(context: Context) -> Self {
+    pub fn new(context: &mut Context) -> Self {
         Self {
             state: SettingsState::from_settings(context.settings),
         }
@@ -201,7 +201,10 @@ impl SettingsMenu {
     }
 
     fn render_console(&self, buffer: &mut Buffer, _context: &Context, area: Rect) {
-        let console_text = "This should be dynamically filled";
+        let console_text = format!(
+            "The Settings are saved at: {:#?}/settings.json",
+            get_game_data_dir()
+        );
 
         let console = Paragraph::new(console_text)
             .style(Style::default().fg(Color::Yellow))
@@ -215,7 +218,7 @@ impl SettingsMenu {
         console.render(area, buffer);
     }
 
-    pub fn apply_settings(&mut self, context: Context) {
+    pub fn apply_settings(&mut self, context: &mut Context) {
         // Apply changes from settings_state to settings
         context.settings.language = match self.state.selected_options[0] {
             0 => Language::English,

@@ -21,17 +21,14 @@ use std::{
     io::{BufReader, BufWriter},
     path::{Path, PathBuf},
     sync::{
-        Arc, Mutex, RwLock,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
     thread,
     time::Duration,
 };
 use tokio::{
-    sync::{
-        OnceCell,
-        mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
-    },
+    sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
     time::sleep,
 };
 use uuid::Uuid;
@@ -40,7 +37,7 @@ use uuid::Uuid;
 pub enum AudioNarration {
     Generating(GameAI, Fluff, PathBuf),
     Playing(Fluff),
-    Paused,
+    // Paused,
     Stopped,
 }
 
@@ -72,7 +69,7 @@ impl AudioNarration {
                     }
                 });
             }
-            AudioNarration::Paused => todo!("Need to handle the Paused AudioNarration"),
+            // AudioNarration::Paused => todo!("Need to handle the Paused AudioNarration"),
             AudioNarration::Stopped => {}
         }
         Ok(())
@@ -194,15 +191,6 @@ pub fn play_audio(file_path: PathBuf) -> Result<()> {
 pub enum AudioDir {
     GameDir(PathBuf),
     TempDir(PathBuf),
-}
-
-impl AudioDir {
-    fn path(&self) -> &PathBuf {
-        match self {
-            AudioDir::GameDir(path_buf) => path_buf,
-            AudioDir::TempDir(path_buf) => path_buf,
-        }
-    }
 }
 
 impl TryFrom<Option<PathBuf>> for AudioDir {

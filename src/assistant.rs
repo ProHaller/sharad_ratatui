@@ -1,8 +1,7 @@
 // /assistant.rs
-use crate::error::{AIError, Error, Result};
+use crate::error::{AIError, Result};
 use include_dir::{Dir, DirEntry, include_dir};
 use serde_json::Value;
-use std::{fs::File, io::Read, path::PathBuf};
 
 use async_openai::{
     Client,
@@ -127,27 +126,6 @@ pub async fn create_assistant(
         .await
         .map_err(AIError::OpenAI)?;
     Ok(assistant)
-}
-
-pub fn get_assistant_id(save_name: &PathBuf) -> Result<String> {
-    let mut file = File::open(save_name)?;
-
-    // Read the file content into a string
-    let mut content = String::new();
-    file.read_to_string(&mut content)?;
-
-    // Parse the JSON string into a serde_json::Value
-    let json: Value = serde_json::from_str(&content)?;
-
-    // Extract the "assistant_id" field
-    if let Some(assistant_id) = json["assistant_id"].as_str() {
-        Ok(assistant_id.to_string())
-    } else {
-        Err(Error::from(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "Couldn't find assistant_id in the file",
-        )))
-    }
 }
 
 pub async fn delete_assistant(client: &Client<OpenAIConfig>, assistant_id: &str) {
