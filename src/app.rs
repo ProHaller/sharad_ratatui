@@ -13,6 +13,7 @@ use crate::{
     save::{SaveManager, get_save_base_dir},
     settings::Settings,
     tui::{Tui, TuiEvent},
+    ui::api_key_input::ApiKeyInput,
     ui::{Component, ComponentEnum, game::InGame, main_menu::MainMenu},
 };
 
@@ -406,11 +407,12 @@ impl App {
         Ok(())
     }
 
-    pub fn start_new_game(&self, save_name: String) -> Result<()> {
-        let ai_client = self
-            .ai_client
-            .clone()
-            .ok_or_else(|| Error::from("Missing AI client".to_string()))?;
+    pub fn start_new_game(&mut self, save_name: String) -> Result<()> {
+        if self.ai_client.is_none() {
+            self.component = ComponentEnum::ApiKeyInput(ApiKeyInput::new(&None));
+            return Ok(());
+        }
+        let ai_client = self.ai_client.clone().unwrap();
         let settings = self.settings.clone();
         let game_ai = self.game_ai.clone();
         let ai_sender = self.ai_sender.clone();

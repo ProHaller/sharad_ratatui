@@ -3,7 +3,12 @@
 use std::path::PathBuf;
 
 use super::{Component, ComponentEnum, draw::center_rect, main_menu_fix::*, widgets::StatefulList};
-use crate::{app::Action, context::Context, save, ui::MainMenu};
+use crate::{
+    app::Action,
+    context::Context,
+    save::{self, get_save_base_dir},
+    ui::MainMenu,
+};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     buffer::Buffer,
@@ -116,10 +121,7 @@ impl LoadMenu {
     }
     fn render_console(&self, buffer: &mut Buffer, context: &Context, area: Rect) {
         let console_text = if context.save_manager.available_saves.is_empty() {
-            format!(
-                "No save files found in {}/sharad/data/save/",
-                dir::home_dir().unwrap().display()
-            )
+            format!("No save files found in {}", get_save_base_dir().display())
         } else {
             "Select a save file to load".to_string()
         };

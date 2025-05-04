@@ -172,6 +172,9 @@ impl ApiKeyInput {
         if new_ai_client.is_some() {
             *context.ai_client = new_ai_client;
             context.settings.openai_api_key = Some(api_key);
+            if let Err(e) = context.settings.save() {
+                log::error!("Failed to save to default path: {:#?}", e);
+            }
             log::debug!("New context set: {context:#?}");
             self.textarea = new_textarea(" Your Api Key is Valid!");
             Some(Action::SwitchInputMode(InputMode::Normal))

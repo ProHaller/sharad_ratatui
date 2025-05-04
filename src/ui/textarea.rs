@@ -34,12 +34,14 @@ pub fn new_textarea_with_lines(
 pub enum Warning {
     AudioInputDisabled,
     FailedNewTranscription,
+    InputTooShort,
 }
 impl Warning {
     fn color(&self) -> Color {
         match self {
             Warning::AudioInputDisabled => Color::Yellow,
             Warning::FailedNewTranscription => Color::Red,
+            Warning::InputTooShort => Color::Yellow,
         }
     }
     fn text(&self) -> String {
@@ -48,6 +50,7 @@ impl Warning {
                 " The audio Recording is disabled. Change your settings to record "
             }
             Warning::FailedNewTranscription => " Failed to create a new Transcription. ",
+            Warning::InputTooShort => " Input too Short. Write something before validation. ",
         };
         text.to_string()
     }
@@ -61,6 +64,18 @@ pub enum Mode {
     Operator(char),
     Recording,
     Warning(Warning),
+}
+impl Mode {
+    pub fn new_warning(warning: Warning) -> Mode {
+        if let Some(alert) = get_sound("warning") {
+            tokio::spawn(async move {
+                if let Err(e) = audio::play_audio(alert) {
+                    log::error!("Failed to play alert sound: {e:#?}");
+                }
+            });
+        }
+        Mode::Warning(warning)
+    }
 }
 
 impl<'a> Mode {
@@ -229,12 +244,7 @@ impl Vim {
                 }
             },
             Mode::Recording => Transition::EndRecording,
-            Mode::Warning(_) => {
-                if let Some(warning) = get_sound("warning") {
-                    audio::play_audio(warning);
-                }
-                Transition::Mode(Mode::Normal)
-            }
+            Mode::Warning(_) => Transition::Mode(Mode::Normal),
         }
     }
 
@@ -248,27 +258,33 @@ impl Vim {
             Input {
                 key: Key::Char('h'),
                 ..
-            } => {
+            }
+            | Input { key: Key::Left, .. } => {
                 textarea.move_cursor(CursorMove::Back);
                 None
             }
             Input {
                 key: Key::Char('j'),
                 ..
-            } => {
+            }
+            | Input { key: Key::Down, .. } => {
                 textarea.move_cursor(CursorMove::Down);
                 None
             }
             Input {
                 key: Key::Char('k'),
                 ..
-            } => {
+            }
+            | Input { key: Key::Up, .. } => {
                 textarea.move_cursor(CursorMove::Up);
                 None
             }
             Input {
                 key: Key::Char('l'),
                 ..
+            }
+            | Input {
+                key: Key::Right, ..
             } => {
                 textarea.move_cursor(CursorMove::Forward);
                 None
