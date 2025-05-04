@@ -201,10 +201,7 @@ impl SettingsMenu {
     }
 
     fn render_console(&self, buffer: &mut Buffer, _context: &Context, area: Rect) {
-        let console_text = format!(
-            "The Settings are saved at: {:#?}/settings.json",
-            get_game_data_dir()
-        );
+        let console_text = format!("The Settings are saved at: {:#?}", get_game_data_dir());
 
         let console = Paragraph::new(console_text)
             .style(Style::default().fg(Color::Yellow))

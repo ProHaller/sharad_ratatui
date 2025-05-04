@@ -167,9 +167,17 @@ impl MainMenu {
 
     pub fn switch_component(&mut self, context: &mut Context<'_>) -> Option<Action> {
         match self.state.state.selected() {
-            Some(0) => Some(Action::SwitchComponent(
-                ComponentEnum::from(SaveName::new()),
-            )),
+            Some(0) => {
+                if context.ai_client.is_some() {
+                    Some(Action::SwitchComponent(
+                        ComponentEnum::from(SaveName::new()),
+                    ))
+                } else {
+                    Some(Action::SwitchComponent(ComponentEnum::from(
+                        ApiKeyInput::new(&context.settings.openai_api_key),
+                    )))
+                }
+            }
             Some(1) => {
                 // Load Game
                 Some(Action::SwitchComponent(ComponentEnum::from(
