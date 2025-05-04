@@ -123,10 +123,13 @@ impl App {
             .tick_rate(4.0) // 4 ticks per second
             .frame_rate(30.0); // 30 frames per second
 
+        log::info!("New Tui successfull");
+
         tui.enter()?; // Starts event handler, enters raw mode, enters alternate screen
+        log::info!("Entered Tui");
         let picker = tui.picker;
         self.picker = Some(picker);
-        log::info!("Entered terminal");
+        log::info!("Entering run loop");
 
         let mut context = Context {
             ai_client: &mut self.ai_client.clone(),
