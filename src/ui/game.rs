@@ -114,7 +114,7 @@ impl Component for InGame {
                 match mode {
                     Mode::Recording => {
                         if !context.settings.audio_input_enabled {
-                            self.vim.mode = Mode::Warning(Warning::AudioInputDisabled);
+                            self.vim.mode = Mode::new_warning(Warning::AudioInputDisabled);
                             return None;
                         };
                         self.textarea.set_placeholder_text("Recording...");
@@ -144,7 +144,7 @@ impl Component for InGame {
                 let value = self.textarea.lines().join("\n");
                 self.spinner_active = true;
                 self.new_message(&Message::new(MessageType::User, value));
-                let message = self.build_user_completion_message(&context);
+                let message = self.build_user_completion_message(context);
                 let ai = self.ai.clone();
                 tokio::spawn(async move {
                     ai.send_message(message, ai.ai_sender.clone()).await?;
@@ -397,6 +397,7 @@ impl InGame {
             HighlightedSection::Attributes(_) => chunk_attributes(attributes, 2),
             HighlightedSection::Derived(0) => get_derived(&sheet.derived_attributes, 0),
             HighlightedSection::Derived(_) => get_derived(&sheet.derived_attributes, 1),
+            // FIX: Fill up the skills Section!
             HighlightedSection::Skills => vec![Line::from(vec![
                 Span::styled("Initiative: ", Style::default().fg(Color::Yellow)),
                 Span::styled(

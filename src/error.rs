@@ -191,6 +191,9 @@ pub enum AudioError {
 
     #[error("OpenAI Error: {:#}", 0)]
     OpenAI(#[from] async_openai::error::OpenAIError),
+
+    #[error("Decode Error: {:#}", 0)]
+    Decode(#[from] rodio::decoder::DecoderError),
 }
 
 impl From<String> for AudioError {

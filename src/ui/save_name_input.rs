@@ -51,7 +51,7 @@ impl Component for SaveName {
                 match mode {
                     Mode::Recording => {
                         if !context.settings.audio_input_enabled {
-                            self.vim.mode = Mode::Warning(Warning::AudioInputDisabled);
+                            self.vim.mode = Mode::new_warning(Warning::AudioInputDisabled);
                             return None;
                         };
                         self.textarea.set_placeholder_text("Recording...");
@@ -77,7 +77,7 @@ impl Component for SaveName {
                 None
             }
             Transition::Validation => {
-                if !self.textarea.lines().is_empty() {
+                if !self.textarea.lines().concat().len() < 1 {
                     Some(Action::CreateNewGame(self.textarea.lines()[0].to_string()))
                 } else {
                     None

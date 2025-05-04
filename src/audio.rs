@@ -16,12 +16,11 @@ use cpal::{
 };
 use dir::home_dir;
 use futures::{StreamExt, stream::FuturesOrdered};
-use include_dir::{Dir, DirEntry};
+use include_dir::{Dir, DirEntry, File as iFile};
 use rodio::{Decoder, OutputStream, Sink};
 use std::{
-    ffi::OsStr,
     fs::{self, File, create_dir_all},
-    io::{BufReader, BufWriter},
+    io::{BufReader, BufWriter, Cursor},
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
@@ -174,6 +173,10 @@ pub async fn generate_audio(
     Ok(file_path)
 }
 
+// pub fn play_alert(file: &iFile) -> Result<()> {
+//
+// }
+
 // HACK: Still need an interruption method
 pub fn play_audio(file_path: PathBuf) -> Result<()> {
     log::info!("Playing: {file_path:#?}");
@@ -181,12 +184,18 @@ pub fn play_audio(file_path: PathBuf) -> Result<()> {
         OutputStream::try_default().expect("Failed to get output stream");
     let sink = Sink::try_new(&stream_handle).expect("Failed to create audio sink");
 
-    let file = File::open(file_path).expect("Failed to open audio file");
-    let source = Decoder::new(BufReader::new(file)).expect("Failed to decode audio");
+    if let Ok(file) = File::open(&file_path) {
+        let source = Decoder::new(BufReader::new(file)).expect("Failed to decode audio");
+        sink.append(source);
+        sink.sleep_until_end();
+    };
+    if let Some(file) = ASSETS_DIR.get_file(&file_path) {
+        let cursor = Cursor::new(file.contents());
+        let source = Decoder::new(cursor).map_err(AudioError::Decode)?;
 
-    sink.append(source);
-    sink.sleep_until_end();
-
+        sink.append(source);
+        sink.sleep_until_end();
+    };
     Ok(())
 }
 
