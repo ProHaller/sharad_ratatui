@@ -77,6 +77,14 @@ impl Settings {
         Ok(())
     }
 
+    pub fn save(&self) -> io::Result<()> {
+        let data = serde_json::to_string_pretty(self)?; // Serialize settings into pretty JSON format.
+        let path = get_game_data_dir().join("settings.json");
+        let mut file = fs::File::create(path)?; // Create or overwrite the file.
+        file.write_all(data.as_bytes())?; // Write the serialized data to the file.
+        Ok(())
+    }
+
     // Asynchronously validate an API key with OpenAI's services.
     pub async fn validate_ai_client(api_key: &str) -> Option<Client<OpenAIConfig>> {
         let client = Client::with_config(OpenAIConfig::new().with_api_key(api_key)); // Configure the OpenAI client with the API key.
