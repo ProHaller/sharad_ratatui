@@ -37,7 +37,8 @@ impl Component for ApiKeyInput {
                 self.vim.mode = mode;
                 match mode {
                     Mode::Recording => {
-                        self.textarea.set_placeholder_text("Paste your Api Key with 'p' or ctrl-v, or insert 'reset' to reset your Key");
+                        self.textarea.set_placeholder_text(" Paste your Api Key with 'p' or ctrl-v, or insert 'reset' to reset your Key");
+                        self.textarea.set_cursor_style(mode.cursor_style());
                         None
                     }
                     Mode::Normal => Some(Action::SwitchInputMode(InputMode::Normal)),

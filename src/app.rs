@@ -298,20 +298,28 @@ impl App {
         self.image = Some(load_image_from_file(&picker, &path)?);
 
         // Handle game-specific image loading and saving
-        if let ComponentEnum::InGame(game) = &mut self.component {
-            if let Some(save_path) = &game.state.save_path {
-                if let Some(save_dir) = save_path.parent() {
-                    let images_dir = save_dir.join("images");
-                    create_dir_all(&images_dir)?;
+        match &mut self.component {
+            ComponentEnum::ImageMenu(image_menu) => {
+                image_menu.image = Some(load_image_from_file(&picker, &path)?);
+            }
+            ComponentEnum::InGame(game) => {
+                if let Some(save_path) = &game.state.save_path {
+                    if let Some(save_dir) = save_path.parent() {
+                        let images_dir = save_dir.join("images");
+                        create_dir_all(&images_dir)?;
 
-                    if let Some(file_name) = path.file_name() {
-                        let img_path = images_dir.join(file_name);
-                        fs::copy(&path, &img_path)?;
-                        game.image = Some(load_image_from_file(&picker, &img_path)?);
-                        game.state.image_path = Some(img_path);
-                        self.ai_sender.send(AIMessage::Save(game.state.clone()))?;
+                        if let Some(file_name) = path.file_name() {
+                            let img_path = images_dir.join(file_name);
+                            fs::copy(&path, &img_path)?;
+                            game.image = Some(load_image_from_file(&picker, &img_path)?);
+                            game.state.image_path = Some(img_path);
+                            self.ai_sender.send(AIMessage::Save(game.state.clone()))?;
+                        }
                     }
                 }
+            }
+            _ => {
+                unreachable!()
             }
         }
 

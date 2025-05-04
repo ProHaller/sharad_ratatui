@@ -8,12 +8,23 @@ use futures::TryFutureExt;
 use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
 use std::{path::PathBuf, process::Command};
 
+fn add_sharad_prepromt(prompt: &str) -> String {
+    let sharad_prompt = format!(
+        "Create a detailed character portrait in the gritty, high-tech noir style of Shadowrun. The artwork should evoke a dark cyberpunk atmosphere, with dramatic lighting, dystopian urban backgrounds, and a mix of futuristic tech and urban decay. The character should look like they belong in a world of shadowy megacorps, street samurai, deckers, and awakened magic. Use bold lines, strong contrasts, and realistic proportions. Clothing and gear should reflect their role—cybernetic implants, armor, magical auras, or hacker rigs—blending fantasy and cyberpunk elements in a grounded, worn world. Do not write text on the image. Use the full 9:16 ratio. Image prompt: {}",
+        prompt
+    );
+    sharad_prompt
+}
+
 // TODO: implement an image correction/edition method.
 pub async fn generate_and_save_image(
     client: Client<OpenAIConfig>,
     prompt: &str,
 ) -> Result<PathBuf> {
     log::debug!("generate_and_save_image: {prompt}");
+    let prompt = add_sharad_prepromt(prompt);
+    log::debug!("Arranged Prompt: {prompt}");
+
     let request = CreateImageRequestArgs::default()
         .prompt(prompt)
         .model(ImageModel::DallE3)
@@ -24,8 +35,14 @@ pub async fn generate_and_save_image(
         .map_err(|e| Error::AI(e.into()))?;
 
     let response: ImagesResponse = match client.images().create(request).await {
-        Ok(res) => res,
-        Err(e) => return Err(Error::AI(e.into())),
+        Ok(res) => {
+            log::debug!("generate_and_save_image response: {res:#?}");
+            res
+        }
+        Err(e) => {
+            log::error!("generate_and_save_image: {e:#?}");
+            return Err(Error::AI(e.into()));
+        }
     };
 
     if response.data.is_empty() {
