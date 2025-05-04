@@ -13,7 +13,7 @@ use async_openai::{
 };
 
 // TODO: Make sure the model is formating properly the dialogue responses in French and english.
-static ASSETS_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets");
+pub static ASSETS_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets");
 
 fn load_function_objects() -> Result<Vec<FunctionObject>> {
     let folder_dir = ASSETS_DIR

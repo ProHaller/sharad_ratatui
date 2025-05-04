@@ -1,4 +1,4 @@
-use std::{path::PathBuf, thread::sleep, time::Duration};
+use std::path::PathBuf;
 
 use crate::{
     app::{Action, InputMode},
@@ -10,7 +10,7 @@ use crossterm::event::KeyEvent;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Margin},
     prelude::{Alignment, Buffer, Rect},
-    style::{Color, Modifier, Style},
+    style::{Color, Style},
     widgets::*,
 };
 use ratatui_image::{StatefulImage, protocol::StatefulProtocol};
@@ -21,7 +21,7 @@ use super::{
     Component, ComponentEnum, MainMenu,
     api_key_input::ApiKeyInput,
     center_rect,
-    textarea::{Mode, Transition, Vim, new_textarea},
+    textarea::{Mode, Transition, Vim, Warning, new_textarea},
 };
 
 pub struct ImageMenu {
@@ -118,8 +118,10 @@ impl Component for ImageMenu {
                 match mode {
                     Mode::Recording => {
                         if !context.settings.audio_input_enabled {
+                            self.vim.mode = Mode::Warning(Warning::AudioInputDisabled);
                             return None;
                         };
+                        self.textarea.set_placeholder_text("   Recording...");
                         if let Ok((receiver, transcription)) =
                             Transcription::new(None, context.ai_client.clone().unwrap())
                         {
@@ -127,6 +129,7 @@ impl Component for ImageMenu {
                             log::debug!("Sent the recording request");
                             Some(Action::SwitchInputMode(InputMode::Recording(transcription)))
                         } else {
+                            self.vim.mode = Mode::Warning(Warning::FailedNewTranscription);
                             None
                         }
                     }
@@ -137,6 +140,7 @@ impl Component for ImageMenu {
                     Mode::Insert => Some(Action::SwitchInputMode(InputMode::Editing)),
                     Mode::Visual => Some(Action::SwitchInputMode(InputMode::Normal)),
                     Mode::Operator(_) => None,
+                    Mode::Warning(_) => None,
                 }
             }
             Transition::Nop | Transition::Mode(_) => None,

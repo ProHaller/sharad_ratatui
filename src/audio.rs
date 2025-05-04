@@ -1,5 +1,6 @@
 use crate::{
     ai::GameAI,
+    assistant::ASSETS_DIR,
     error::{AIError, AudioError, Error, Result},
     message::{AIMessage, Fluff},
 };
@@ -15,8 +16,10 @@ use cpal::{
 };
 use dir::home_dir;
 use futures::{StreamExt, stream::FuturesOrdered};
+use include_dir::{Dir, DirEntry};
 use rodio::{Decoder, OutputStream, Sink};
 use std::{
+    ffi::OsStr,
     fs::{self, File, create_dir_all},
     io::{BufReader, BufWriter},
     path::{Path, PathBuf},
@@ -309,6 +312,7 @@ impl Transcription {
 
         let maybe_path = loop {
             {
+                log::debug!("Transcription::input() Trying to get a lock on path");
                 let guard = self.path.lock().expect("Failed to lock path mutex");
                 if let Some(ref path) = *guard {
                     break Some(path.clone());
@@ -321,6 +325,7 @@ impl Transcription {
             self.recording_path = Some(path);
         }
 
+        log::debug!("Transcription.recording_path: {:#?}", self.recording_path);
         self.transcribe_audio().await;
 
         if let Err(e) = self.sender.send(self.transcription) {
@@ -445,4 +450,52 @@ where
             }
         }
     }
+}
+
+pub fn get_sound(file_name: &str) -> Option<PathBuf> {
+    log::debug!("Assets dir; {:#?}", ASSETS_DIR);
+    let sounds_dir = ASSETS_DIR
+        .get_dir("sounds")
+        .expect("Failed to get sounds directory");
+
+    sounds_dir
+        .entries()
+        .iter()
+        .filter_map(|entry| entry.as_file()) // Only keep files
+        .find(|file| {
+            file.path()
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .map_or(false, |stem_str| stem_str == file_name)
+        })
+        .map(|file| file.path().to_path_buf())
+}
+
+pub fn get_all_sounds() -> Vec<PathBuf> {
+    let sounds_dir = ASSETS_DIR
+        .get_dir("sounds")
+        .expect("Failed to get sounds directory");
+
+    let mut sounds = Vec::new();
+    fn get_sounds_paths(dir: &Dir) -> Vec<PathBuf> {
+        let mut sounds_paths = Vec::new();
+        for entry in dir.entries() {
+            match entry {
+                DirEntry::File(file) => {
+                    let path = file.path().to_path_buf();
+
+                    // Ensure the entry is a MP3 file
+                    if path.extension().and_then(|ext| ext.to_str()) == Some("mp3") {
+                        sounds_paths.push(path);
+                    }
+                }
+                DirEntry::Dir(dir) => sounds_paths.extend(get_sounds_paths(dir)),
+            }
+        }
+        sounds_paths
+    }
+    sounds.extend(get_sounds_paths(sounds_dir));
+    sounds
+
+    // Read the folder
 }

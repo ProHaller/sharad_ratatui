@@ -18,7 +18,7 @@ use tui_textarea::TextArea;
 
 use super::{
     Component, ComponentEnum, SettingsMenu, center_rect,
-    textarea::{Mode, Transition, Vim, new_textarea},
+    textarea::{Mode, Transition, Vim, Warning, new_textarea},
 };
 
 #[derive(Debug)]
@@ -37,7 +37,10 @@ impl Component for ApiKeyInput {
                 self.vim.mode = mode;
                 match mode {
                     Mode::Recording => {
-                        self.textarea.set_placeholder_text(" Paste your Api Key with 'p' or ctrl-v, or insert 'reset' to reset your Key");
+                        if !context.settings.audio_input_enabled {
+                            self.vim.mode = Mode::Warning(Warning::AudioInputDisabled);
+                            return None;
+                        };
                         self.textarea.set_cursor_style(mode.cursor_style());
                         None
                     }
@@ -45,6 +48,7 @@ impl Component for ApiKeyInput {
                     Mode::Insert => Some(Action::SwitchInputMode(InputMode::Editing)),
                     Mode::Visual => Some(Action::SwitchInputMode(InputMode::Normal)),
                     Mode::Operator(_) => None,
+                    Mode::Warning(warning) => None,
                 }
             }
             Transition::Nop | Transition::Mode(_) => None,

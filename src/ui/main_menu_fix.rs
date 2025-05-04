@@ -1,11 +1,21 @@
-use super::center_rect;
+use std::{
+    thread::sleep,
+    time::{Duration, Instant},
+};
+
+use super::{
+    center_rect,
+    textarea::{Mode, Vim, new_textarea},
+};
 use crate::ui::constants::{ART, TITLE};
 use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Constraint, Rect},
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     widgets::{Block, BorderType, Borders, Paragraph, Widget},
 };
+use serde_json::de;
+use tui_textarea::TextArea;
 
 pub fn render_header(buffer: &mut Buffer, area: Rect) {
     let header = Paragraph::new(format!("Sharad Ratatui v{}", env!("CARGO_PKG_VERSION")))

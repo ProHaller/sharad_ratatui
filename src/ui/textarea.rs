@@ -5,6 +5,8 @@ use ratatui::widgets::{Block, BorderType, Borders};
 use std::fmt::{self, Debug};
 use tui_textarea::{CursorMove, Input, Key, Scrolling, TextArea};
 
+use crate::audio::{self, get_sound};
+
 use super::game::SectionMove;
 
 pub fn new_textarea(placeholder: impl Into<String>) -> TextArea<'static> {
@@ -16,6 +18,41 @@ pub fn new_textarea(placeholder: impl Into<String>) -> TextArea<'static> {
     textarea
 }
 
+pub fn new_textarea_with_lines(
+    lines: Vec<String>,
+    placeholder: impl Into<String>,
+) -> TextArea<'static> {
+    let mut textarea = TextArea::new(lines);
+    textarea.set_placeholder_text(placeholder);
+    textarea.set_cursor_line_style(Style::default());
+    textarea.set_placeholder_style(Style::default().fg(Color::DarkGray));
+    textarea.set_selection_style(Style::new().bg(Color::LightCyan));
+    textarea
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Warning {
+    AudioInputDisabled,
+    FailedNewTranscription,
+}
+impl Warning {
+    fn color(&self) -> Color {
+        match self {
+            Warning::AudioInputDisabled => Color::Yellow,
+            Warning::FailedNewTranscription => Color::Red,
+        }
+    }
+    fn text(&self) -> String {
+        let text = match self {
+            Warning::AudioInputDisabled => {
+                " The audio Recording is disabled. Change your settings to record "
+            }
+            Warning::FailedNewTranscription => " Failed to create a new Transcription. ",
+        };
+        text.to_string()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
     Normal,
@@ -23,18 +60,20 @@ pub enum Mode {
     Visual,
     Operator(char),
     Recording,
+    Warning(Warning),
 }
 
 impl<'a> Mode {
     pub fn block(self) -> Block<'a> {
         let help = match self {
-            Self::Normal => " type i, or a to enter insert mode ",
-            Self::Insert => " type Esc to go back to normal mode ",
-            Self::Visual => {
+            Mode::Normal => " type i, or a to enter insert mode ",
+            Mode::Insert => " type Esc to go back to normal mode ",
+            Mode::Visual => {
                 " type y to yank, type d to delete, type Esc to go back to normal mode "
             }
-            Self::Operator(_) => " move cursor to apply operator ",
-            Self::Recording => " type any key to stop the recording ",
+            Mode::Operator(_) => " move cursor to apply operator ",
+            Mode::Recording => " type any key to stop the recording ",
+            Mode::Warning(warning) => &warning.text(),
         };
         let title = format!(" {} MODE ({}) ", self, help);
         let border_style = Style::default().fg(match self {
@@ -43,6 +82,7 @@ impl<'a> Mode {
             Mode::Visual => Color::LightBlue,
             Mode::Operator(_) => Color::LightYellow,
             Mode::Recording => Color::LightRed,
+            Mode::Warning(warning) => warning.color(),
         });
         Block::default()
             .borders(Borders::ALL)
@@ -59,6 +99,7 @@ impl<'a> Mode {
             Self::Visual => Color::LightYellow,
             Self::Operator(_) => Color::LightGreen,
             Self::Recording => Color::LightRed,
+            Self::Warning(warning) => warning.color(),
         };
         Style::default().fg(color).add_modifier(Modifier::REVERSED)
     }
@@ -72,6 +113,7 @@ impl fmt::Display for Mode {
             Self::Visual => write!(f, "VISUAL"),
             Self::Operator(c) => write!(f, "OPERATOR({})", c),
             Self::Recording => write!(f, "RECORDING"),
+            Self::Warning(_) => write!(f, "WARNING"),
         }
     }
 }
@@ -158,14 +200,17 @@ impl Vim {
                 match self.mode {
                     Mode::Operator('y') => {
                         textarea.copy();
+                        self.clipboard.set_contents(textarea.yank_text());
                         Transition::Mode(Mode::Normal)
                     }
                     Mode::Operator('d') => {
                         textarea.cut();
+                        self.clipboard.set_contents(textarea.yank_text());
                         Transition::Mode(Mode::Normal)
                     }
                     Mode::Operator('c') => {
                         textarea.cut();
+                        self.clipboard.set_contents(textarea.yank_text());
                         Transition::Mode(Mode::Insert)
                     }
                     _ => Transition::Nop,
@@ -184,6 +229,12 @@ impl Vim {
                 }
             },
             Mode::Recording => Transition::EndRecording,
+            Mode::Warning(_) => {
+                if let Some(warning) = get_sound("warning") {
+                    audio::play_audio(warning);
+                }
+                Transition::Mode(Mode::Normal)
+            }
         }
     }
 
@@ -438,6 +489,7 @@ impl Vim {
             } if self.mode == Mode::Visual => {
                 textarea.move_cursor(CursorMove::Forward);
                 textarea.copy();
+                self.clipboard.set_contents(textarea.yank_text());
                 Some(Transition::Mode(Mode::Normal))
             }
             Input {
@@ -447,6 +499,7 @@ impl Vim {
             } if self.mode == Mode::Visual => {
                 textarea.move_cursor(CursorMove::Forward);
                 textarea.cut();
+                self.clipboard.set_contents(textarea.yank_text());
                 Some(Transition::Mode(Mode::Normal))
             }
             Input {
@@ -456,6 +509,7 @@ impl Vim {
             } if self.mode == Mode::Visual => {
                 textarea.move_cursor(CursorMove::Forward);
                 textarea.cut();
+                self.clipboard.set_contents(textarea.yank_text());
                 Some(Transition::Mode(Mode::Insert))
             }
             Input { key: Key::Esc, .. }

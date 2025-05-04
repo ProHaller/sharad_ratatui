@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 // /ui/save_name_input.rs
 use crate::{
     app::{Action, InputMode},
@@ -49,8 +51,10 @@ impl Component for SaveName {
                 match mode {
                     Mode::Recording => {
                         if !context.settings.audio_input_enabled {
+                            self.vim.mode = Mode::Warning(Warning::AudioInputDisabled);
                             return None;
                         };
+                        self.textarea.set_placeholder_text("Recording...");
                         if let Ok((receiver, transcription)) =
                             Transcription::new(None, context.ai_client.clone().unwrap())
                         {
@@ -64,6 +68,7 @@ impl Component for SaveName {
                     Mode::Insert => Some(Action::SwitchInputMode(InputMode::Editing)),
                     Mode::Visual => Some(Action::SwitchInputMode(InputMode::Normal)),
                     Mode::Operator(_) => None,
+                    Mode::Warning(_) => None,
                 }
             }
             Transition::Nop | Transition::Mode(_) => None,

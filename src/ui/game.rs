@@ -16,6 +16,7 @@ use crate::{
     message::{
         GameMessage, Message, MessageType, UserCompletionRequest, UserMessage, create_user_message,
     },
+    ui::textarea::Warning,
 };
 
 use crossterm::event::KeyEvent;
@@ -113,8 +114,10 @@ impl Component for InGame {
                 match mode {
                     Mode::Recording => {
                         if !context.settings.audio_input_enabled {
+                            self.vim.mode = Mode::Warning(Warning::AudioInputDisabled);
                             return None;
                         };
+                        self.textarea.set_placeholder_text("Recording...");
                         log::debug!("Strated the recording");
                         if let Ok((receiver, transcription)) =
                             Transcription::new(None, context.ai_client.clone().unwrap())
@@ -129,6 +132,7 @@ impl Component for InGame {
                     Mode::Insert => Some(Action::SwitchInputMode(InputMode::Editing)),
                     Mode::Visual => Some(Action::SwitchInputMode(InputMode::Normal)),
                     Mode::Operator(_) => None,
+                    Mode::Warning(_) => None,
                 }
             }
             Transition::Nop | Transition::Mode(_) => None,
@@ -728,6 +732,9 @@ impl InGame {
         self.total_lines = self.all_lines.len();
         // HACK: This should be set to fluff_area max_height
         self.content_scroll = self.total_lines.saturating_sub(30);
+        if self.content.is_empty() {
+            self.spinner_active = true;
+        };
 
         self.scroll_to_bottom();
         // TODO: Maybe I could precompute the image here.
