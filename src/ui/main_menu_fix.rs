@@ -1,21 +1,11 @@
-use std::{
-    thread::sleep,
-    time::{Duration, Instant},
-};
-
-use super::{
-    center_rect,
-    textarea::{Mode, Vim, new_textarea},
-};
+use super::center_rect;
 use crate::ui::constants::{ART, TITLE};
 use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Constraint, Rect},
-    style::{Color, Modifier, Style},
+    style::{Color, Style},
     widgets::{Block, BorderType, Borders, Paragraph, Widget},
 };
-use serde_json::de;
-use tui_textarea::TextArea;
 
 pub fn render_header(buffer: &mut Buffer, area: Rect) {
     let header = Paragraph::new(format!("Sharad Ratatui v{}", env!("CARGO_PKG_VERSION")))
@@ -23,6 +13,16 @@ pub fn render_header(buffer: &mut Buffer, area: Rect) {
         .block(Block::default().border_type(BorderType::Rounded))
         .alignment(Alignment::Center);
     header.render(area, buffer);
+}
+pub trait Hints {
+    fn render_hints(&self, buffer: &mut Buffer, area: Rect) {
+        let hints = Paragraph::new(format!("{}: {}", self.display(), self.key_hints()))
+            .style(Style::default().fg(Color::DarkGray))
+            .alignment(Alignment::Center);
+        hints.render(area, buffer);
+    }
+    fn display(&self) -> String;
+    fn key_hints(&self) -> String;
 }
 pub fn render_art(buffer: &mut Buffer, area: Rect) {
     let outer_block = Block::default()

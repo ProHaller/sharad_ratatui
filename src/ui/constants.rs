@@ -30,3 +30,5 @@ pub const TITLE: &str = r#"_____ _                         _
  ____) | | | | (_| | | | (_| | (_| |
 |_____/|_| |_|\__,_|_|  \__,_|\__,_|
 "#;
+pub const BASIC_VIM: &str =
+    "Edit text with vim bindings: move with ←↓↑→ or hjkl. Validate with Enter. Go Back with Esc.";

@@ -54,7 +54,7 @@ impl Tui {
         let tick_rate = 4.0;
         let frame_rate = 60.0;
         let terminal = ratatui::init();
-        let picker = Picker::from_query_stdio().unwrap_or(Picker::from_fontsize((10, 20)));
+        let picker = Picker::from_query_stdio().unwrap_or(Picker::from_fontsize((18, 42)));
         log::debug!("Picker has been set to: {picker:#?}");
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let cancellation_token = CancellationToken::new();

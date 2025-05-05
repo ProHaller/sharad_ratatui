@@ -2,7 +2,10 @@
 
 use std::path::PathBuf;
 
-use super::{Component, ComponentEnum, draw::center_rect, main_menu_fix::*, widgets::StatefulList};
+use super::{
+    Component, ComponentEnum, SaveName, api_key_input::ApiKeyInput, draw::center_rect,
+    main_menu_fix::*, widgets::StatefulList,
+};
 use crate::{
     app::Action,
     context::Context,
@@ -27,9 +30,22 @@ pub struct LoadMenu {
 impl Component for LoadMenu {
     fn on_key(&mut self, key: KeyEvent, context: &mut Context) -> Option<Action> {
         match key.code {
-            KeyCode::Enter | KeyCode::Char('l') => self.state.state.selected().map(|selected| {
-                Action::LoadSave(context.save_manager.available_saves[selected].clone())
-            }),
+            KeyCode::Enter if context.save_manager.available_saves.is_empty() => {
+                match context.ai_client {
+                    Some(_) => Some(Action::SwitchComponent(ComponentEnum::SaveName(
+                        SaveName::default(),
+                    ))),
+                    None => Some(Action::SwitchComponent(ComponentEnum::ApiKeyInput(
+                        ApiKeyInput::new(&None),
+                    ))),
+                }
+            }
+            KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
+                self.state.state.selected().map(|selected| {
+                    Action::LoadSave(context.save_manager.available_saves[selected].clone())
+                })
+            }
+
             KeyCode::Esc | KeyCode::Char('h') => Some(Action::SwitchComponent(
                 ComponentEnum::from(MainMenu::default()),
             )),
@@ -95,8 +111,9 @@ impl Component for LoadMenu {
                     } else {
                         0
                     }),
-                    Constraint::Max(1),
+                    Constraint::Length(1),
                     Constraint::Min(saves_length + 2),
+                    Constraint::Length(1),
                 ]
                 .as_ref(),
             )
@@ -107,6 +124,16 @@ impl Component for LoadMenu {
         render_title(buffer, chunks[2]);
         self.render_console(buffer, context, chunks[3]);
         self.render_load_menu(buffer, context, chunks[4]);
+        self.render_hints(buffer, chunks[5]);
+    }
+}
+impl Hints for LoadMenu {
+    fn display(&self) -> String {
+        "Main Menu -> Load Menu:".to_string()
+    }
+
+    fn key_hints(&self) -> String {
+        "Navigate: ←↓↑→ or hjkl. Go Back to Main Manu: Esc".to_string()
     }
 }
 
@@ -121,7 +148,7 @@ impl LoadMenu {
     }
     fn render_console(&self, buffer: &mut Buffer, context: &Context, area: Rect) {
         let console_text = if context.save_manager.available_saves.is_empty() {
-            format!("No save files found in {}", get_save_base_dir().display())
+            format!("No save files found in {}.", get_save_base_dir().display())
         } else {
             "Select a save file to load".to_string()
         };
@@ -140,7 +167,10 @@ impl LoadMenu {
 
     fn render_load_menu(&self, buffer: &mut Buffer, context: &Context, area: Rect) {
         let text: Vec<Line> = if context.save_manager.available_saves.is_empty() {
-            vec![Line::from(Span::raw("No save files available"))]
+            vec![
+                Line::from(Span::raw("No save files available")),
+                Line::from(Span::raw("Press Enter to Start a new game")),
+            ]
         } else {
             context
                 .save_manager
@@ -189,89 +219,4 @@ impl LoadMenu {
         // HACK: This should be a stateful widget.
         menu.render(centered_area, buffer);
     }
-
-    // TODO: Adapt these save management functions to the component architecture
-
-    // fn delete_selected_save(&mut self) -> Result<()> {
-    //     if let Some(selected) = self.state.selected() {
-    //         let save_name = self.save_manager.available_saves[selected].clone();
-    //         let ai_client = self
-    //             .ai_client
-    //             .clone()
-    //             .ok_or(Error::from("AI client not found".to_string()))?;
-    //         let save_2 = save_name.clone();
-    //         let assistant_id = get_assistant_id(&save_name)?;
-    //         tokio::spawn(async move {
-    //             delete_assistant(&ai_client.client, &assistant_id).await;
-    //         });
-    //         self.save_manager.available_saves.remove(selected);
-    //         self.save_manager.clone().delete_save(&save_2)?;
-    //
-    //         // Update the selected state to ensure it remains within bounds
-    //         let new_selected = if selected >= self.save_manager.available_saves.len() {
-    //             self.save_manager.available_saves.len().saturating_sub(1)
-    //         } else {
-    //             selected
-    //         };
-    //         self.load_game_menu_state.select(Some(new_selected));
-    //         Ok(())
-    //     } else {
-    //         Err("No save selected".to_string().into())
-    //     }
-    // }
-    //
-    //
-    // pub async fn load_game(&self, save_path: &PathBuf) -> Result<GameState> {
-    //     self.save_manager = self.save_manager.clone().load_from_file(save_path)?;
-    //
-    //     let game_state = self
-    //         .save_manager
-    //         .current_save
-    //         .clone()
-    //         .ok_or(Error::from("No current game".to_string()))?;
-    //     if let Some(image_path) = game_state.image_path.clone() {
-    //         self.load_image_from_file(image_path)?;
-    //     }
-    //
-    //     self.update_save_name(game_state.save_name.clone()).await;
-    //     if self.ai_client.is_none() {
-    //         self.initialize_ai_client().await?;
-    //     }
-    //
-    //     let conversation_state = GameConversationState {
-    //         assistant_id: game_state.assistant_id.clone(),
-    //         thread_id: game_state.thread_id.clone(),
-    //         character_sheet: game_state.main_character_sheet.clone(),
-    //     };
-    //
-    //     // Clone the Arc to get a new reference to the AI client
-    //     let ai_client = self.ai_client.as_mut().unwrap().borrow_mut();
-    //
-    //     // Use the cloned Arc to call load_conversation
-    //     ai_client.load_conversation(conversation_state).await;
-    //
-    //     // Fetch all messages from the thread
-    //     let all_messages = ai_client.fetch_all_messages(&game_state.thread_id).await?;
-    //
-    //     // Load message history
-    //     *self.game_content.borrow_mut() = all_messages;
-    //
-    //     // Add a system message indicating the game was loaded
-    //     self.add_message(message::Message::new(
-    //         message::MessageType::System,
-    //         format!("Game '{}' loaded successfully!", game_state.save_name),
-    //     ));
-    //
-    //     // Store the game state
-    //     self.current_game = Some(Arc::new(Mutex::new(game_state)));
-    //
-    //     self.component = AppState::InGame;
-    //
-    //     // Calculate total lines after loading the game content
-    //     self.total_lines = self.calculate_total_lines();
-    //     // Scroll to the bottom after updating the scroll
-    //     self.scroll_to_bottom();
-    //
-    //     Ok(())
-    // }
 }

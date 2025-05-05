@@ -9,7 +9,7 @@ use strum_macros::Display;
 
 use crate::save::get_game_data_dir;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct Settings {
     pub language: Language,
     pub openai_api_key: Option<String>,
@@ -21,7 +21,7 @@ pub struct Settings {
     pub debug_mode: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default, Display)]
+#[derive(PartialEq, Eq, Debug, Serialize, Deserialize, Clone, Default, Display)]
 pub enum Language {
     #[default]
     English,

@@ -16,8 +16,8 @@ use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
 use futures::{StreamExt, stream::FuturesOrdered};
-use include_dir::{Dir, DirEntry};
-use rodio::{Decoder, OutputStream, Sink};
+use include_dir::{Dir, DirEntry, File as iFile};
+use rodio::{Decoder, OutputStream, Sink, Source};
 use std::{
     fs::{self, File, create_dir_all},
     io::{BufReader, BufWriter, Cursor},
@@ -455,7 +455,7 @@ fn wav_spec_from_config(config: &cpal::SupportedStreamConfig) -> hound::WavSpec 
     }
 }
 
-type WavWriterHandle = Arc<Mutex<Option<hound::WavWriter<BufWriter<File>>>>>;
+type WavWriterHandle = Arc<Mutex<Option<hound::WavWriter<BufWriter<fs::File>>>>>;
 
 fn write_input_data<T, U>(input: &[T], writer: &WavWriterHandle)
 where
@@ -491,31 +491,38 @@ pub fn get_sound(file_name: &str) -> Option<PathBuf> {
         .map(|file| file.path().to_path_buf())
 }
 
-pub fn get_all_sounds() -> Vec<PathBuf> {
+pub fn get_all_sounds<'a>() -> Vec<&'a iFile<'a>> {
     let sounds_dir = ASSETS_DIR
         .get_dir("sounds")
         .expect("Failed to get sounds directory");
 
-    let mut sounds = Vec::new();
-    fn get_sounds_paths(dir: &Dir) -> Vec<PathBuf> {
-        let mut sounds_paths = Vec::new();
+    fn get_sounds_file<'a>(dir: &'a Dir<'a>) -> Vec<&'a iFile<'a>> {
+        let mut sound_files = Vec::new();
         for entry in dir.entries() {
             match entry {
                 DirEntry::File(file) => {
-                    let path = file.path().to_path_buf();
-
-                    // Ensure the entry is a MP3 file
-                    if path.extension().and_then(|ext| ext.to_str()) == Some("mp3") {
-                        sounds_paths.push(path);
+                    if file.path().extension().and_then(|ext| ext.to_str()) == Some("mp3") {
+                        sound_files.push(file);
                     }
                 }
-                DirEntry::Dir(dir) => sounds_paths.extend(get_sounds_paths(dir)),
+                DirEntry::Dir(subdir) => {
+                    sound_files.extend(get_sounds_file(subdir));
+                }
             }
         }
-        sounds_paths
+        sound_files
     }
-    sounds.extend(get_sounds_paths(sounds_dir));
-    sounds
 
-    // Read the folder
+    get_sounds_file(sounds_dir)
+}
+
+pub fn warm_up_audio() {
+    if let Ok((_stream, stream_handle)) = OutputStream::try_default() {
+        if let Ok(sink) = Sink::try_new(&stream_handle) {
+            // Play 0.1s of silence
+            use rodio::source::SineWave;
+            sink.append(SineWave::new(0.1).take_duration(std::time::Duration::from_millis(100)));
+            sink.detach(); // Don't wait for it
+        }
+    }
 }

@@ -91,6 +91,7 @@ impl Component for SettingsMenu {
                     Constraint::Length(if area.height - 7 > 7 { 7 } else { 0 }),
                     Constraint::Max(1),
                     Constraint::Min(10),
+                    Constraint::Length(1),
                 ]
                 .as_ref(),
             )
@@ -101,6 +102,17 @@ impl Component for SettingsMenu {
         render_title(buffer, chunks[2]);
         self.render_console(buffer, context, chunks[3]);
         self.render_settings(buffer, context, chunks[4]);
+        self.render_hints(buffer, chunks[5]);
+    }
+}
+
+impl Hints for SettingsMenu {
+    fn display(&self) -> String {
+        "Main Menu -> Settings Menu".to_string()
+    }
+
+    fn key_hints(&self) -> String {
+        "Navigate: ←↓↑→ or hjkl. Go back with Esc".to_string()
     }
 }
 
@@ -235,9 +247,8 @@ impl SettingsMenu {
         context.settings.debug_mode = self.state.selected_options[5] == 1;
 
         // Save settings to file
-        let path = get_game_data_dir().join("settings.json");
-        if let Err(e) = context.settings.save_to_file(path) {
-            eprintln!("Failed to save settings: {:#?}", e);
+        if let Err(e) = context.settings.save() {
+            log::error!("Failed to save settings: {e}")
         }
     }
 

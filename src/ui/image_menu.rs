@@ -21,6 +21,8 @@ use super::{
     Component, ComponentEnum, MainMenu,
     api_key_input::ApiKeyInput,
     center_rect,
+    constants::BASIC_VIM,
+    main_menu_fix::Hints,
     textarea::{Mode, Transition, Vim, Warning, new_textarea},
 };
 
@@ -106,6 +108,15 @@ impl ImageMenu {
         }
     }
 }
+impl Hints for ImageMenu {
+    fn display(&self) -> String {
+        "Main Menu -> Image Menu:".to_string()
+    }
+
+    fn key_hints(&self) -> String {
+        BASIC_VIM.to_string()
+    }
+}
 
 impl Component for ImageMenu {
     fn on_key(&mut self, key: KeyEvent, context: &mut Context) -> Option<Action> {
@@ -183,10 +194,15 @@ impl Component for ImageMenu {
         if self.image.is_some() {
             self.textarea.set_placeholder_text("");
         }
+        let [main_area, hints_area] =
+            Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(area);
         let horizontal_split =
-            Layout::horizontal([Constraint::Ratio(1, 3), Constraint::Ratio(2, 3)]).split(area);
-        let centered_area =
-            center_rect(area, Constraint::Percentage(70), Constraint::Percentage(50));
+            Layout::horizontal([Constraint::Ratio(1, 3), Constraint::Ratio(2, 3)]).split(main_area);
+        let centered_area = center_rect(
+            main_area,
+            Constraint::Percentage(70),
+            Constraint::Percentage(50),
+        );
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .flex(ratatui::layout::Flex::Center)
@@ -194,7 +210,7 @@ impl Component for ImageMenu {
                 [
                     Constraint::Length(1),
                     Constraint::Length(3),
-                    Constraint::Length(1),
+                    Constraint::Min(1),
                 ]
                 .as_ref(),
             )
@@ -226,6 +242,7 @@ impl Component for ImageMenu {
                 image,
             );
         }
+        self.render_hints(buffer, hints_area);
     }
 }
 

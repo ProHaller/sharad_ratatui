@@ -1,6 +1,7 @@
 use copypasta::{ClipboardContext, ClipboardProvider};
 use ratatui::layout::Alignment;
 use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::Line;
 use ratatui::widgets::{Block, BorderType, Borders};
 use std::fmt::{self, Debug};
 use tui_textarea::{CursorMove, Input, Key, Scrolling, TextArea};
@@ -81,16 +82,15 @@ impl Mode {
 impl<'a> Mode {
     pub fn block(self) -> Block<'a> {
         let help = match self {
-            Mode::Normal => " type i, or a to enter insert mode ",
-            Mode::Insert => " type Esc to go back to normal mode ",
-            Mode::Visual => {
-                " type y to yank, type d to delete, type Esc to go back to normal mode "
-            }
-            Mode::Operator(_) => " move cursor to apply operator ",
-            Mode::Recording => " type any key to stop the recording ",
+            Mode::Normal => "type i, or a to enter insert mode",
+            Mode::Insert => "Esc to go back to normal mode",
+            Mode::Visual => "y to yank, d to delete, Esc to cancel",
+            Mode::Operator(_) => "move cursor to apply, or repeat for full-line",
+            Mode::Recording => "type any key to stop the recording",
             Mode::Warning(warning) => &warning.text(),
         };
-        let title = format!(" {} MODE ({}) ", self, help);
+        let mode = format!(" {} ", self);
+        let help = format!(" {} ", help);
         let border_style = Style::default().fg(match self {
             Mode::Normal => Color::default(),
             Mode::Insert => Color::LightCyan,
@@ -103,8 +103,9 @@ impl<'a> Mode {
             .borders(Borders::ALL)
             .border_style(border_style)
             .border_type(BorderType::Rounded)
+            .title_bottom(Line::from(mode).left_aligned())
+            .title_bottom(Line::from(help).right_aligned())
             .title_alignment(Alignment::Center)
-            .title_bottom(title)
     }
 
     pub fn cursor_style(&self) -> Style {
@@ -126,7 +127,16 @@ impl fmt::Display for Mode {
             Self::Normal => write!(f, "NORMAL"),
             Self::Insert => write!(f, "INSERT"),
             Self::Visual => write!(f, "VISUAL"),
-            Self::Operator(c) => write!(f, "OPERATOR({})", c),
+            Self::Operator(c) => write!(
+                f,
+                "OPERATOR({})",
+                match c {
+                    'y' => "Yank".to_string(),
+                    'd' => "Delete".to_string(),
+                    'c' => "Cut".to_string(),
+                    c => c.to_string(),
+                }
+            ),
             Self::Recording => write!(f, "RECORDING"),
             Self::Warning(_) => write!(f, "WARNING"),
         }
@@ -505,7 +515,7 @@ impl Vim {
             } if self.mode == Mode::Visual => {
                 textarea.move_cursor(CursorMove::Forward);
                 textarea.copy();
-                self.clipboard.set_contents(textarea.yank_text());
+                let _ = self.clipboard.set_contents(textarea.yank_text());
                 Some(Transition::Mode(Mode::Normal))
             }
             Input {
@@ -515,7 +525,7 @@ impl Vim {
             } if self.mode == Mode::Visual => {
                 textarea.move_cursor(CursorMove::Forward);
                 textarea.cut();
-                self.clipboard.set_contents(textarea.yank_text());
+                let _ = self.clipboard.set_contents(textarea.yank_text());
                 Some(Transition::Mode(Mode::Normal))
             }
             Input {
@@ -525,7 +535,7 @@ impl Vim {
             } if self.mode == Mode::Visual => {
                 textarea.move_cursor(CursorMove::Forward);
                 textarea.cut();
-                self.clipboard.set_contents(textarea.yank_text());
+                let _ = self.clipboard.set_contents(textarea.yank_text());
                 Some(Transition::Mode(Mode::Insert))
             }
             Input { key: Key::Esc, .. }
@@ -534,6 +544,9 @@ impl Vim {
                 ..
             } if self.mode == Mode::Visual => {
                 textarea.cancel_selection();
+                Some(Transition::Mode(Mode::Normal))
+            }
+            Input { key: Key::Esc, .. } if matches!(self.mode, Mode::Operator(_)) => {
                 Some(Transition::Mode(Mode::Normal))
             }
 

@@ -38,6 +38,15 @@ impl Default for MainMenu {
         menu
     }
 }
+impl Hints for MainMenu {
+    fn display(&self) -> String {
+        "Main Menu".to_string()
+    }
+
+    fn key_hints(&self) -> String {
+        "Navigate: ←↓↑→ or hjkl. Quit: q".to_string()
+    }
+}
 
 impl Component for MainMenu {
     fn on_key(&mut self, key: KeyEvent, context: &mut Context) -> Option<Action> {
@@ -84,6 +93,7 @@ impl Component for MainMenu {
                     }),
                     Constraint::Length(1),
                     Constraint::Min(MAIN_MENU.len() as u16 + 2),
+                    Constraint::Length(1),
                 ]
                 .as_ref(),
             )
@@ -95,6 +105,7 @@ impl Component for MainMenu {
         render_title(buffer, chunks[2]);
         self.render_console(buffer, context, chunks[3]);
         self.render_menu(buffer, context, chunks[4]);
+        self.render_hints(buffer, chunks[5]);
     }
 }
 
