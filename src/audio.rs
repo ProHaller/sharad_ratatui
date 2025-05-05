@@ -3,6 +3,7 @@ use crate::{
     assistant::ASSETS_DIR,
     error::{AIError, AudioError, Error, Result},
     message::{AIMessage, Fluff},
+    save::get_game_data_dir,
 };
 use async_openai::{
     Audio, Client,
@@ -14,9 +15,8 @@ use cpal::{
     FromSample, Sample,
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
-use dir::home_dir;
 use futures::{StreamExt, stream::FuturesOrdered};
-use include_dir::{Dir, DirEntry, File as iFile};
+use include_dir::{Dir, DirEntry};
 use rodio::{Decoder, OutputStream, Sink};
 use std::{
     fs::{self, File, create_dir_all},
@@ -173,9 +173,23 @@ pub async fn generate_audio(
     Ok(file_path)
 }
 
-// pub fn play_alert(file: &iFile) -> Result<()> {
-//
-// }
+pub fn try_play_sound(sound_name: &str) -> Result<()> {
+    if let Some(path) = get_sound(sound_name) {
+        tokio::spawn(async move {
+            if let Err(e) = play_audio(path) {
+                log::error!("Failed to play alert sound: {e:#?}");
+            }
+        });
+        Ok(())
+    } else {
+        let e = format!(
+            "Sound {sound_name} not found in {:#?}",
+            ASSETS_DIR.entries()
+        );
+        log::error!("{e}");
+        Err(e.into())
+    }
+}
 
 // HACK: Still need an interruption method
 pub fn play_audio(file_path: PathBuf) -> Result<()> {
@@ -214,14 +228,11 @@ impl TryFrom<Option<PathBuf>> for AudioDir {
                 create_dir_all(&logs_path)?;
                 Ok(AudioDir::GameDir(logs_path))
             }
-            None => match home_dir() {
-                Some(path) => {
-                    let logs_path = path.join("sharad").join("data").join("temp_logs");
-                    create_dir_all(&logs_path)?;
-                    Ok(AudioDir::TempDir(logs_path))
-                }
-                None => Err("Couldn't get a home_dir".into()),
-            },
+            None => {
+                let logs_path = get_game_data_dir().join("temp_logs");
+                create_dir_all(&logs_path)?;
+                Ok(AudioDir::TempDir(logs_path))
+            }
         }
     }
 

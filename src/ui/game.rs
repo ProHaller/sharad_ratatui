@@ -8,7 +8,7 @@ use super::{
 use crate::{
     ai::GameAI,
     app::{Action, InputMode},
-    audio::Transcription,
+    audio::{Transcription, try_play_sound},
     context::Context,
     error::Error,
     game_state::GameState,
@@ -117,6 +117,7 @@ impl Component for InGame {
                             self.vim.mode = Mode::new_warning(Warning::AudioInputDisabled);
                             return None;
                         };
+                        try_play_sound("end");
                         self.textarea.set_placeholder_text("Recording...");
                         log::debug!("Strated the recording");
                         if let Ok((receiver, transcription)) =
@@ -176,6 +177,7 @@ impl Component for InGame {
                 None
             }
             Transition::EndRecording => {
+                try_play_sound("end");
                 log::debug!("Transition::EndRecording");
                 self.vim.mode = Mode::Normal;
                 Some(Action::EndRecording)
