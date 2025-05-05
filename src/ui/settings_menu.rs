@@ -235,8 +235,7 @@ impl SettingsMenu {
         context.settings.debug_mode = self.state.selected_options[5] == 1;
 
         // Save settings to file
-        let home_dir = dir::home_dir().expect("Failed to get home directory");
-        let path = home_dir.join("sharad").join("data").join("settings.json");
+        let path = get_game_data_dir().join("settings.json");
         if let Err(e) = context.settings.save_to_file(path) {
             eprintln!("Failed to save settings: {:#?}", e);
         }

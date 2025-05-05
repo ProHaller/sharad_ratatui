@@ -4,6 +4,8 @@ use std::fs::{OpenOptions, create_dir_all};
 use std::io::Write;
 use std::path::PathBuf;
 
+use crate::save::get_game_data_dir;
+
 #[derive(Debug)]
 struct SimpleLogger {
     log_path: PathBuf,
@@ -31,10 +33,7 @@ impl log::Log for SimpleLogger {
 }
 
 pub fn init() -> Result<(), SetLoggerError> {
-    let log_path = dir::home_dir()
-        .expect("Failed to get home directory")
-        .join("sharad")
-        .join("data");
+    let log_path = get_game_data_dir();
 
     create_dir_all(&log_path).expect("Could not create log path");
 
@@ -44,4 +43,3 @@ pub fn init() -> Result<(), SetLoggerError> {
 
     log::set_logger(LOGGER.get().unwrap()).map(|()| log::set_max_level(LevelFilter::Debug))
 }
-

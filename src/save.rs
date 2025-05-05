@@ -26,7 +26,7 @@ pub fn get_save_base_dir() -> PathBuf {
     }
     path
 }
-pub fn get_game_dir() -> PathBuf {
+fn get_game_dir() -> PathBuf {
     let path = dir::home_dir()
         .expect("Failed to get home directory")
         .join("sharad");

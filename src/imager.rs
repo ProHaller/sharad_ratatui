@@ -1,4 +1,7 @@
-use crate::error::{Error, Result};
+use crate::{
+    error::{Error, Result},
+    save::get_game_data_dir,
+};
 use async_openai::{
     Client,
     config::OpenAIConfig,
@@ -50,8 +53,7 @@ pub async fn generate_and_save_image(
         return Err("No image URLs received.".into());
     }
 
-    let home_dir = dir::home_dir().expect("Failed to get home directory");
-    let path = home_dir.join("sharad").join("data");
+    let path = get_game_data_dir();
     log::debug!("Saving the image here: {path:#?}");
     let paths: Vec<PathBuf> = response.save(path).map_err(|e| Error::AI(e.into())).await?;
     if let Some(path) = paths.first() {
