@@ -1,7 +1,7 @@
 use crate::{
     ai::GameAI,
     assistant::create_assistant,
-    audio::{AudioNarration, Transcription},
+    audio::{self, AudioNarration, Transcription},
     character::{CharacterSheet, CharacterSheetUpdate},
     context::Context,
     error::{Error, Result},
@@ -13,8 +13,7 @@ use crate::{
     save::{SaveManager, get_save_base_dir},
     settings::Settings,
     tui::{Tui, TuiEvent},
-    ui::api_key_input::ApiKeyInput,
-    ui::{Component, ComponentEnum, game::InGame, main_menu::MainMenu},
+    ui::{Component, ComponentEnum, api_key_input::ApiKeyInput, game::InGame, main_menu::MainMenu},
 };
 
 use async_openai::{Client, config::OpenAIConfig};
@@ -120,6 +119,11 @@ impl App {
     // Asynchronous function to continuously run and update the application.
     pub async fn run(&mut self) -> Result<()> {
         log::info!("Started the app");
+
+        tokio::spawn(async move {
+            audio::warm_up_audio();
+        });
+
         let mut tui = Tui::new()?
             .tick_rate(4.0) // 4 ticks per second
             .frame_rate(30.0); // 30 frames per second

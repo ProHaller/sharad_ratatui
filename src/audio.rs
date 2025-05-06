@@ -482,12 +482,7 @@ pub fn get_sound(file_name: &str) -> Option<PathBuf> {
         .entries()
         .iter()
         .filter_map(|entry| entry.as_file()) // Only keep files
-        .find(|file| {
-            file.path()
-                .file_stem()
-                .and_then(|stem| stem.to_str())
-                .map_or(false, |stem_str| stem_str == file_name)
-        })
+        .find(|file| (file.path().file_stem().and_then(|stem| stem.to_str()) == Some(file_name)))
         .map(|file| file.path().to_path_buf())
 }
 
