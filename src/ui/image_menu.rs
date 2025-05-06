@@ -141,7 +141,7 @@ impl Component for ImageMenu {
                             log::debug!("Sent the recording request");
                             Some(Action::SwitchInputMode(InputMode::Recording(transcription)))
                         } else {
-                            self.vim.mode = Mode::Warning(Warning::FailedNewTranscription);
+                            self.vim.mode = Mode::new_warning(Warning::FailedNewTranscription);
                             None
                         }
                     }
@@ -235,7 +235,7 @@ impl Component for ImageMenu {
                 .border_style(Style::default().fg(Color::White));
 
             image_block.render(horizontal_split[0], buffer);
-            // FIX: How to make the first rendering faster? Pre-rendering?
+            // FIX: How to make the first rendering faster? Pre-rendering? cf async-image branch
             StatefulImage::new().render(
                 horizontal_split[0].inner(Margin::new(1, 1)),
                 buffer,

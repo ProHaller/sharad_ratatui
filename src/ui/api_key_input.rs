@@ -6,7 +6,7 @@ use crate::{
     save::get_game_data_dir,
     settings::Settings,
 };
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::{Constraint, Direction, Layout},
     prelude::{Alignment, Buffer, Rect},
@@ -29,6 +29,23 @@ pub struct ApiKeyInput {
 
 impl Component for ApiKeyInput {
     fn on_key(&mut self, key: KeyEvent, context: &mut Context) -> Option<Action> {
+        // match guard for validation of single lines.
+        let key = match self.vim.mode {
+            Mode::Normal => {
+                if matches!(key.code, KeyCode::Char('o' | 'O')) {
+                    return None;
+                } else {
+                    key
+                }
+            }
+            Mode::Insert => {
+                if matches!(key.code, KeyCode::Enter) {
+                    self.vim.mode = Mode::Normal;
+                }
+                key
+            }
+            _ => key,
+        };
         match self.vim.transition(key.into(), &mut self.textarea) {
             Transition::Mode(mode) if self.vim.mode != mode => {
                 self.textarea
@@ -38,7 +55,7 @@ impl Component for ApiKeyInput {
                 match mode {
                     Mode::Recording => {
                         if !context.settings.audio_input_enabled {
-                            self.vim.mode = Mode::Warning(Warning::AudioInputDisabled);
+                            self.vim.mode = Mode::new_warning(Warning::AudioInputDisabled);
                             return None;
                         };
                         self.textarea.set_cursor_style(mode.cursor_style());
@@ -48,7 +65,7 @@ impl Component for ApiKeyInput {
                     Mode::Insert => Some(Action::SwitchInputMode(InputMode::Editing)),
                     Mode::Visual => Some(Action::SwitchInputMode(InputMode::Normal)),
                     Mode::Operator(_) => None,
-                    Mode::Warning(warning) => None,
+                    Mode::Warning(_) => None,
                 }
             }
             Transition::Nop | Transition::Mode(_) => None,
@@ -56,7 +73,13 @@ impl Component for ApiKeyInput {
                 self.vim.pending = input;
                 None
             }
-            Transition::Validation => self.validate_key(context),
+            Transition::Validation => {
+                if self.textarea.lines().first().unwrap().is_empty() {
+                    self.vim.mode = Mode::new_warning(Warning::InputTooShort);
+                    return None;
+                };
+                self.validate_key(context)
+            }
             Transition::Exit => Some(Action::SwitchComponent(ComponentEnum::from(
                 SettingsMenu::new(context),
             ))),

@@ -55,6 +55,13 @@ impl Warning {
         };
         text.to_string()
     }
+    fn sound(&self) -> &str {
+        match self {
+            Warning::AudioInputDisabled => "alert",
+            Warning::FailedNewTranscription => "oops",
+            Warning::InputTooShort => "alert",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,7 +75,7 @@ pub enum Mode {
 }
 impl Mode {
     pub fn new_warning(warning: Warning) -> Mode {
-        if let Some(alert) = get_sound("warning") {
+        if let Some(alert) = get_sound(warning.sound()) {
             tokio::spawn(async move {
                 if let Err(e) = audio::play_audio(alert) {
                     log::error!("Failed to play alert sound: {e:#?}");
