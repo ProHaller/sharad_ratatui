@@ -3,7 +3,7 @@ use std::time::Instant;
 // /ui/save_name_input.rs
 use crate::{
     app::{Action, InputMode},
-    audio::{Transcription, try_play_sound},
+    audio::{Transcription, try_play_asset},
     context::Context,
 };
 use crossterm::event::KeyEvent;
@@ -52,10 +52,11 @@ impl Component for SaveName {
                     Mode::Recording => {
                         if !context.settings.audio_input_enabled {
                             self.vim.mode = Mode::new_warning(Warning::AudioInputDisabled);
+                            log::info!("Played Warning {:#?}", self.vim.mode);
                             return None;
                         };
 
-                        try_play_sound("start");
+                        try_play_asset("start");
                         self.textarea.set_placeholder_text("Recording...");
                         if let Ok((receiver, transcription)) =
                             Transcription::new(None, context.ai_client.clone().unwrap())
@@ -90,7 +91,7 @@ impl Component for SaveName {
             ))),
             Transition::Detail(_section_move) => None,
             Transition::EndRecording => {
-                try_play_sound("end");
+                try_play_asset("end");
                 log::debug!("Transition::EndRecording");
                 self.vim.mode = Mode::Normal;
                 Some(Action::EndRecording)

@@ -173,10 +173,10 @@ pub async fn generate_audio(
     Ok(file_path)
 }
 
-pub fn try_play_sound(sound_name: &str) -> Result<()> {
-    if let Some(path) = get_sound(sound_name) {
+pub fn try_play_asset(sound_name: &str) -> Result<()> {
+    if let Some(path) = get_sound_asset_path(sound_name) {
         tokio::spawn(async move {
-            if let Err(e) = play_audio(path) {
+            if let Err(e) = play_asset(path) {
                 log::error!("Failed to play alert sound: {e:#?}");
             }
         });
@@ -191,9 +191,26 @@ pub fn try_play_sound(sound_name: &str) -> Result<()> {
     }
 }
 
+pub fn play_asset(file_path: PathBuf) -> Result<()> {
+    log::info!("Playing asset: {file_path:#?}");
+    let (_stream, stream_handle) =
+        OutputStream::try_default().expect("Failed to get output stream");
+    let sink = Sink::try_new(&stream_handle).expect("Failed to create audio sink");
+
+    if let Some(file) = ASSETS_DIR.get_file(&file_path) {
+        let cursor = Cursor::new(file.contents());
+        let source = Decoder::new(cursor).map_err(AudioError::Decode)?;
+
+        sink.append(source);
+        sink.sleep_until_end();
+    };
+    log::info!("End of play_asset");
+    Ok(())
+}
+
 // HACK: Still need an interruption method
 pub fn play_audio(file_path: PathBuf) -> Result<()> {
-    log::info!("Playing: {file_path:#?}");
+    log::info!("Playing audio: {file_path:#?}");
     let (_stream, stream_handle) =
         OutputStream::try_default().expect("Failed to get output stream");
     let sink = Sink::try_new(&stream_handle).expect("Failed to create audio sink");
@@ -203,13 +220,7 @@ pub fn play_audio(file_path: PathBuf) -> Result<()> {
         sink.append(source);
         sink.sleep_until_end();
     };
-    if let Some(file) = ASSETS_DIR.get_file(&file_path) {
-        let cursor = Cursor::new(file.contents());
-        let source = Decoder::new(cursor).map_err(AudioError::Decode)?;
-
-        sink.append(source);
-        sink.sleep_until_end();
-    };
+    log::info!("End of play_audio");
     Ok(())
 }
 
@@ -472,7 +483,7 @@ where
     }
 }
 
-pub fn get_sound(file_name: &str) -> Option<PathBuf> {
+pub fn get_sound_asset_path(file_name: &str) -> Option<PathBuf> {
     log::debug!("Assets dir; {:#?}", ASSETS_DIR);
     let sounds_dir = ASSETS_DIR
         .get_dir("sounds")

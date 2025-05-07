@@ -47,10 +47,13 @@ textwrap = { version = "0.16.2", features = ["hyphenation"] }
 thiserror = "2.0.12"
 tokio = { version = "1.44.1", features = ["full"] }
 tokio-util = "0.7.14"
-tui-textarea = "0.7.0"
+# tui-textarea = "0.7.0"
+tui-textarea = { git = "https://github.com/ProHaller/tui-textarea" }
 uuid = { version = "1.16.0", features = ["v4"] }
 
 # The profile that 'dist' will build with
 [profile.dist]
 inherits = "release"
 lto = "thin"
+
+[patch]

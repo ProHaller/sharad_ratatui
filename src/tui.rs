@@ -45,7 +45,7 @@ pub struct Tui {
     pub event_tx: UnboundedSender<TuiEvent>,
     pub frame_rate: f64,
     pub tick_rate: f64,
-    // pub mouse: bool,
+    pub mouse: bool,
     // pub paste: bool,
 }
 
@@ -54,12 +54,14 @@ impl Tui {
         let tick_rate = 4.0;
         let frame_rate = 60.0;
         let terminal = ratatui::init();
+
         let picker = Picker::from_query_stdio().unwrap_or(Picker::from_fontsize((18, 42)));
         log::debug!("Picker has been set to: {picker:#?}");
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let cancellation_token = CancellationToken::new();
         let task = tokio::spawn(async {});
-        // let mouse = false;
+        // TODO:  Enable the mouse : https://docs.rs/crossterm/latest/crossterm/event/struct.EnableMouseCapture.html
+        let mouse = true;
         // let paste = true;
         Ok(Self {
             terminal,
@@ -70,7 +72,7 @@ impl Tui {
             event_tx,
             frame_rate,
             tick_rate,
-            // mouse,
+            mouse,
             // paste,
         })
     }
@@ -85,10 +87,10 @@ impl Tui {
         self
     }
 
-    // pub fn mouse(mut self, mouse: bool) -> Self {
-    //     self.mouse = mouse;
-    //     self
-    // }
+    pub fn mouse(mut self, mouse: bool) -> Self {
+        self.mouse = mouse;
+        self
+    }
 
     // pub fn paste(mut self, paste: bool) -> Self {
     //     self.paste = paste;

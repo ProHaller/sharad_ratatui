@@ -8,7 +8,7 @@ use super::{
 use crate::{
     ai::GameAI,
     app::{Action, InputMode},
-    audio::{Transcription, try_play_sound},
+    audio::{Transcription, try_play_asset},
     context::Context,
     error::Error,
     game_state::GameState,
@@ -115,9 +115,10 @@ impl Component for InGame {
                     Mode::Recording => {
                         if !context.settings.audio_input_enabled {
                             self.vim.mode = Mode::new_warning(Warning::AudioInputDisabled);
+                            log::info!("Played Warning {:#?}", self.vim.mode);
                             return None;
                         };
-                        try_play_sound("end");
+                        try_play_asset("end");
                         self.textarea.set_placeholder_text("Recording...");
                         log::debug!("Strated the recording");
                         if let Ok((receiver, transcription)) =
@@ -177,7 +178,7 @@ impl Component for InGame {
                 None
             }
             Transition::EndRecording => {
-                try_play_sound("end");
+                try_play_asset("end");
                 log::debug!("Transition::EndRecording");
                 self.vim.mode = Mode::Normal;
                 Some(Action::EndRecording)
@@ -643,7 +644,7 @@ impl InGame {
         self.content_scroll = self.total_lines.saturating_sub(self.max_height);
     }
 
-    fn handle_section_move(&mut self, _section_move: SectionMove) {
+    fn handle_section_move(&mut self, section_move: SectionMove) {
         use HighlightedSection as HS;
         let Some(character_sheet) = &self.state.main_character_sheet else {
             return;
@@ -710,24 +711,30 @@ impl InGame {
         .flatten()
         .collect::<Vec<_>>();
 
-        if available_sections.is_empty() {
-            self.highlighted_section = HS::None;
-            return;
-        }
-
         let current_index = available_sections
             .iter()
             .position(|s| s == &self.highlighted_section)
             .unwrap_or(usize::MAX);
 
-        let next_index =
-            (current_index.wrapping_add(1)) % (available_sections.len().wrapping_add(1));
-
-        self.highlighted_section = if next_index < available_sections.len() {
-            available_sections[next_index].clone()
-        } else {
-            HS::None
+        let next_section = match section_move {
+            SectionMove::Next | SectionMove::Right | SectionMove::Down => {
+                let next_index =
+                    (current_index.wrapping_add(1)) % (available_sections.len().wrapping_add(1));
+                if next_index < available_sections.len() {
+                    available_sections[next_index].clone()
+                } else {
+                    HS::None
+                }
+            }
+            SectionMove::Previous | SectionMove::Left | SectionMove::Up if current_index == 0 => {
+                HS::None
+            }
+            SectionMove::Previous | SectionMove::Left | SectionMove::Up => available_sections
+                [(current_index.saturating_sub(1)) % (available_sections.len().wrapping_add(1))]
+            .clone(),
+            SectionMove::Section(target_section) => target_section,
         };
+        self.highlighted_section = next_section;
     }
 
     fn on_creation(&mut self) {

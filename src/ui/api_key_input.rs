@@ -56,6 +56,7 @@ impl Component for ApiKeyInput {
                     Mode::Recording => {
                         if !context.settings.audio_input_enabled {
                             self.vim.mode = Mode::new_warning(Warning::AudioInputDisabled);
+                            log::info!("Played Warning {:#?}", self.vim.mode);
                             return None;
                         };
                         self.textarea.set_cursor_style(mode.cursor_style());
@@ -76,6 +77,7 @@ impl Component for ApiKeyInput {
             Transition::Validation => {
                 if self.textarea.lines().first().unwrap().is_empty() {
                     self.vim.mode = Mode::new_warning(Warning::InputTooShort);
+                    log::info!("Played Warning {:#?}", self.vim.mode);
                     return None;
                 };
                 self.validate_key(context)

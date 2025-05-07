@@ -6,7 +6,7 @@ use ratatui::widgets::{Block, BorderType, Borders};
 use std::fmt::{self, Debug};
 use tui_textarea::{CursorMove, Input, Key, Scrolling, TextArea};
 
-use crate::audio::{self, get_sound};
+use crate::audio::{self, get_sound_asset_path};
 
 use super::game::SectionMove;
 
@@ -75,9 +75,9 @@ pub enum Mode {
 }
 impl Mode {
     pub fn new_warning(warning: Warning) -> Mode {
-        if let Some(alert) = get_sound(warning.sound()) {
+        if let Some(alert) = get_sound_asset_path(warning.sound()) {
             tokio::spawn(async move {
-                if let Err(e) = audio::play_audio(alert) {
+                if let Err(e) = audio::play_asset(alert) {
                     log::error!("Failed to play alert sound: {e:#?}");
                 }
             });
@@ -607,14 +607,14 @@ impl Vim {
                 textarea.paste();
                 Some(Transition::Mode(Mode::Normal))
             }
-            Input { key: Key::Tab, .. } if self.mode == Mode::Normal => {
-                Some(Transition::Detail(SectionMove::Next))
-            }
             Input {
                 key: Key::Tab,
                 shift: true,
                 ..
             } if self.mode == Mode::Normal => Some(Transition::Detail(SectionMove::Previous)),
+            Input { key: Key::Tab, .. } if self.mode == Mode::Normal => {
+                Some(Transition::Detail(SectionMove::Next))
+            }
 
             // gg / G
             Input {
