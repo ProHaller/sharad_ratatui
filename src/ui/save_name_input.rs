@@ -80,7 +80,7 @@ impl Component for SaveName {
                 None
             }
             Transition::Validation => {
-                if !self.textarea.lines().concat().len() < 1 {
+                if self.textarea.lines().concat().len() > 1 {
                     Some(Action::CreateNewGame(self.textarea.lines()[0].to_string()))
                 } else {
                     None
