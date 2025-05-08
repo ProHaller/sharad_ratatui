@@ -29,7 +29,9 @@ use ratatui::{
     text::{Line, Span},
     widgets::*,
 };
-use ratatui_image::{StatefulImage, picker::Picker, protocol::StatefulProtocol};
+use ratatui_image::{
+    CropOptions, FilterType, Resize, StatefulImage, picker::Picker, protocol::StatefulProtocol,
+};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tui_textarea::TextArea;
@@ -401,7 +403,7 @@ impl InGame {
             HighlightedSection::Attributes(_) => chunk_attributes(attributes, 2),
             HighlightedSection::Derived(0) => get_derived(&sheet.derived_attributes, 0),
             HighlightedSection::Derived(_) => get_derived(&sheet.derived_attributes, 1),
-            // FIX: Fill up the skills Section!
+            // TODO: Improve the display of Skills
             HighlightedSection::Skills => get_skills(sheet),
             HighlightedSection::Qualities => {
                 let mut qualities = vec![Line::from(vec![Span::styled(
@@ -470,7 +472,9 @@ impl InGame {
             detail_paragraph.render(detail_area[1], buffer);
             image_block.render(detail_area[0], buffer);
             // FIX: How to make the first rendering faster? Pre-rendering?
-            StatefulImage::new().render(detail_area[0].inner(Margin::new(1, 1)), buffer, image);
+            let mut stateful_image = StatefulImage::default();
+            stateful_image = stateful_image.resize(Resize::Scale(None));
+            stateful_image.render(detail_area[0].inner(Margin::new(1, 1)), buffer, image);
         } else {
             detail_paragraph.render(area, buffer);
         }
