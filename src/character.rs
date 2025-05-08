@@ -1,8 +1,9 @@
 // /character.rs
 
+use derive_more::IntoIterator;
 // Import necessary modules from external crates.
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Display};
 
 use crate::{
     error::{Error, Result},
@@ -102,7 +103,7 @@ pub struct CharacterSheet {
 
     // Skills and Knowledge
     pub skills: Skills,
-    pub knowledge_skills: HashMap<String, u8>,
+    pub knowledge_skills: Skill,
 
     // Economic and Social Information
     #[serde(default)]
@@ -118,13 +119,28 @@ pub struct CharacterSheet {
     pub matrix_attributes: Option<MatrixAttributes>,
 }
 
-// Define a structure for categorizing different skills a character may have.
+pub type Skill = HashMap<String, u8>;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Skills {
-    pub combat: HashMap<String, u8>,
-    pub physical: HashMap<String, u8>,
-    pub social: HashMap<String, u8>,
-    pub technical: HashMap<String, u8>,
+    pub combat: Skill,
+    pub physical: Skill,
+    pub social: Skill,
+    pub technical: Skill,
+}
+
+impl IntoIterator for Skills {
+    type Item = (String, u8);
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let mut combined: Vec<(String, u8)> = Vec::new();
+        combined.extend(self.combat);
+        combined.extend(self.physical);
+        combined.extend(self.social);
+        combined.extend(self.technical);
+        combined.into_iter()
+    }
 }
 
 // Define a structure for items that can be part of a character's inventory.
@@ -284,7 +300,7 @@ impl CharacterSheet {
     }
 
     // Retrieve all active skills combined from different skill categories.
-    pub fn get_all_active_skills(&self) -> HashMap<String, u8> {
+    pub fn get_all_active_skills(&self) -> Skill {
         let mut all_skills = HashMap::new();
         all_skills.extend(self.skills.combat.clone());
         all_skills.extend(self.skills.physical.clone());
@@ -347,7 +363,7 @@ pub struct CharacterSheetBuilder {
     magic: u8,
     resonance: u8,
     skills: Skills,
-    knowledge_skills: HashMap<String, u8>,
+    knowledge_skills: Skill,
     qualities: Vec<Quality>,
     nuyen: u32,
     inventory: HashMap<String, Item>,
@@ -447,7 +463,7 @@ impl CharacterSheetBuilder {
         self
     }
 
-    pub fn knowledge_skills(mut self, knowledge_skills: HashMap<String, u8>) -> Self {
+    pub fn knowledge_skills(mut self, knowledge_skills: Skill) -> Self {
         self.knowledge_skills = knowledge_skills;
         self
     }
@@ -500,7 +516,7 @@ pub enum CharacterValue {
     String(String),
     Race(Race),
     Skills(Skills),
-    HashMapStringU8(HashMap<String, u8>),
+    HashMapStringU8(Skill),
     VecQuality(Vec<Quality>),
     VecString(Vec<String>),
     HashMapStringItem(HashMap<String, Item>),

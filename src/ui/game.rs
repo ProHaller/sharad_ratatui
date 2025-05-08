@@ -9,6 +9,7 @@ use crate::{
     ai::GameAI,
     app::{Action, InputMode},
     audio::{Transcription, try_play_asset},
+    character::Skills,
     context::Context,
     error::Error,
     game_state::GameState,
@@ -401,32 +402,47 @@ impl InGame {
             HighlightedSection::Derived(0) => get_derived(&sheet.derived_attributes, 0),
             HighlightedSection::Derived(_) => get_derived(&sheet.derived_attributes, 1),
             // FIX: Fill up the skills Section!
-            HighlightedSection::Skills => vec![Line::from(vec![
-                Span::styled("Initiative: ", Style::default().fg(Color::Yellow)),
-                Span::styled(
-                    sheet.derived_attributes.initiative.0.to_string(),
-                    Style::default().fg(Color::White),
-                ),
-                Span::styled("+", Style::default().fg(Color::White)),
-                Span::styled(
-                    sheet.derived_attributes.initiative.1.to_string(),
-                    Style::default().fg(Color::White),
-                ),
-                Span::styled("D6", Style::default().fg(Color::White)),
-            ])],
-            HighlightedSection::Qualities => vec![Line::from(vec![
-                Span::styled("Initiative: ", Style::default().fg(Color::Yellow)),
-                Span::styled(
-                    sheet.derived_attributes.initiative.0.to_string(),
-                    Style::default().fg(Color::White),
-                ),
-                Span::styled("+", Style::default().fg(Color::White)),
-                Span::styled(
-                    sheet.derived_attributes.initiative.1.to_string(),
-                    Style::default().fg(Color::White),
-                ),
-                Span::styled("D6", Style::default().fg(Color::White)),
-            ])],
+            HighlightedSection::Skills => {
+                let mut skills = Vec::new();
+                for (category_name, skill_map) in sheet.skills {
+                    skills.push(Line::from(vec![Span::styled(
+                        format!("\n{}:", category_name),
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
+                    )]));
+
+                    for (skill, level) in skill_map {
+                        skills.push(Line::from(vec![
+                            Span::styled(
+                                format!("  {}: ", skill),
+                                Style::default().fg(Color::White),
+                            ),
+                            Span::styled(format!("{}", level), Style::default().fg(Color::Yellow)),
+                        ]));
+                    }
+                }
+
+                skills
+            }
+            HighlightedSection::Qualities => {
+                let mut qualities = vec![Line::from(vec![Span::styled(
+                    "Qualities: ",
+                    Style::default().fg(Color::Yellow),
+                )])];
+                sheet.qualities.iter().for_each(|q| match q {
+                    q if q.positive => qualities.push(Line::from(vec![Span::styled(
+                        format!("+ {}", q.name),
+                        Style::default().fg(Color::Green),
+                    )])),
+                    q if !q.positive => qualities.push(Line::from(vec![Span::styled(
+                        format!("- {}", q.name),
+                        Style::default().fg(Color::Red),
+                    )])),
+                    &_ => {}
+                });
+                qualities
+            }
 
             HighlightedSection::None => unreachable!(),
         };
