@@ -1,9 +1,8 @@
 // /character.rs
 
-use derive_more::IntoIterator;
 // Import necessary modules from external crates.
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fmt::Display};
+use std::collections::HashMap;
 
 use crate::{
     error::{Error, Result},
@@ -127,20 +126,6 @@ pub struct Skills {
     pub physical: Skill,
     pub social: Skill,
     pub technical: Skill,
-}
-
-impl IntoIterator for Skills {
-    type Item = (String, u8);
-    type IntoIter = std::vec::IntoIter<Self::Item>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        let mut combined: Vec<(String, u8)> = Vec::new();
-        combined.extend(self.combat);
-        combined.extend(self.physical);
-        combined.extend(self.social);
-        combined.extend(self.technical);
-        combined.into_iter()
-    }
 }
 
 // Define a structure for items that can be part of a character's inventory.

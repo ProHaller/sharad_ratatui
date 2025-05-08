@@ -9,7 +9,7 @@ use crate::{
     ai::GameAI,
     app::{Action, InputMode},
     audio::{Transcription, try_play_asset},
-    character::Skills,
+    character::{CharacterSheet, Skills},
     context::Context,
     error::Error,
     game_state::GameState,
@@ -402,29 +402,7 @@ impl InGame {
             HighlightedSection::Derived(0) => get_derived(&sheet.derived_attributes, 0),
             HighlightedSection::Derived(_) => get_derived(&sheet.derived_attributes, 1),
             // FIX: Fill up the skills Section!
-            HighlightedSection::Skills => {
-                let mut skills = Vec::new();
-                for (category_name, skill_map) in sheet.skills {
-                    skills.push(Line::from(vec![Span::styled(
-                        format!("\n{}:", category_name),
-                        Style::default()
-                            .fg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD),
-                    )]));
-
-                    for (skill, level) in skill_map {
-                        skills.push(Line::from(vec![
-                            Span::styled(
-                                format!("  {}: ", skill),
-                                Style::default().fg(Color::White),
-                            ),
-                            Span::styled(format!("{}", level), Style::default().fg(Color::Yellow)),
-                        ]));
-                    }
-                }
-
-                skills
-            }
+            HighlightedSection::Skills => get_skills(sheet),
             HighlightedSection::Qualities => {
                 let mut qualities = vec![Line::from(vec![Span::styled(
                     "Qualities: ",
@@ -878,4 +856,42 @@ pub fn parse_markdown(line: String, base_style: Style) -> Line<'static> {
     }
 
     Line::from(spans)
+}
+
+fn get_skills(sheet: &CharacterSheet) -> Vec<Line<'_>> {
+    let mut skills = Vec::new();
+    let (
+        Skills {
+            combat,
+            technical,
+            social,
+            physical,
+        },
+        knowledge,
+    ) = (&sheet.skills, &sheet.knowledge_skills);
+    skills_category_to_lines(&mut skills, combat, "Combat".into());
+    skills_category_to_lines(&mut skills, physical, "Physical".into());
+    skills_category_to_lines(&mut skills, social, "Social".into());
+    skills_category_to_lines(&mut skills, technical, "Technical".into());
+    skills_category_to_lines(&mut skills, knowledge, "Knowledge".into());
+
+    skills
+}
+
+fn skills_category_to_lines(
+    skills: &mut Vec<Line<'_>>,
+    category: &std::collections::HashMap<String, u8>,
+    name: String,
+) {
+    skills.push(Line::raw(""));
+    skills.push(Line::from(vec![Span::styled(
+        format!("\n{name} Skills: "),
+        Style::default().fg(Color::Yellow),
+    )]));
+    for (skill, level) in category {
+        skills.push(Line::from(vec![
+            Span::styled(format!("\n{}: ", skill), Style::default().fg(Color::White)),
+            Span::styled(format!("{}", level), Style::default().fg(Color::Green)),
+        ]));
+    }
 }
