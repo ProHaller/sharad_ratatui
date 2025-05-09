@@ -29,9 +29,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::*,
 };
-use ratatui_image::{
-    CropOptions, FilterType, Resize, StatefulImage, picker::Picker, protocol::StatefulProtocol,
-};
+use ratatui_image::{Resize, StatefulImage, picker::Picker, protocol::StatefulProtocol};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tui_textarea::TextArea;
@@ -451,6 +449,7 @@ impl InGame {
                 HighlightedSection::Resources => " Resources ",
                 HighlightedSection::None => unreachable!(),
             })
+            .title_bottom(" Esc to go back ")
             .style(Style::default()); // Make the block opaque
 
         let detail_paragraph = Paragraph::new(detail_text) // Use
@@ -712,24 +711,24 @@ impl InGame {
         let current_index = available_sections
             .iter()
             .position(|s| s == &self.highlighted_section)
-            .unwrap_or(usize::MAX);
+            .unwrap_or(0);
 
         let next_section = match section_move {
             SectionMove::Next | SectionMove::Right | SectionMove::Down => {
-                let next_index =
-                    (current_index.wrapping_add(1)) % (available_sections.len().wrapping_add(1));
-                if next_index < available_sections.len() {
-                    available_sections[next_index].clone()
-                } else {
-                    HS::None
-                }
+                let next_index = match self.highlighted_section {
+                    HS::None => 0,
+                    _ => (current_index + 1) % available_sections.len(),
+                };
+                available_sections[next_index].clone()
             }
-            SectionMove::Previous | SectionMove::Left | SectionMove::Up if current_index == 0 => {
-                HS::None
+            SectionMove::Previous | SectionMove::Left | SectionMove::Up => {
+                let prev_index = match self.highlighted_section {
+                    HS::None => available_sections.len() - 1,
+                    _ if current_index == 0 => available_sections.len() - 1,
+                    _ => current_index - 1,
+                };
+                available_sections[prev_index].clone()
             }
-            SectionMove::Previous | SectionMove::Left | SectionMove::Up => available_sections
-                [(current_index.saturating_sub(1)) % (available_sections.len().wrapping_add(1))]
-            .clone(),
             SectionMove::Section(target_section) => target_section,
         };
         self.highlighted_section = next_section;
@@ -867,9 +866,9 @@ fn get_skills(sheet: &CharacterSheet) -> Vec<Line<'_>> {
     let (
         Skills {
             combat,
-            technical,
-            social,
             physical,
+            social,
+            technical,
         },
         knowledge,
     ) = (&sheet.skills, &sheet.knowledge_skills);
@@ -889,12 +888,17 @@ fn skills_category_to_lines(
 ) {
     skills.push(Line::raw(""));
     skills.push(Line::from(vec![Span::styled(
-        format!("\n{name} Skills: "),
+        format!("{name} Skills: "),
         Style::default().fg(Color::Yellow),
     )]));
+    let max_width = category
+        .keys()
+        .map(|k| k.len())
+        .max()
+        .expect("Expected at least one skill");
     for (skill, level) in category {
         skills.push(Line::from(vec![
-            Span::styled(format!("\n{}: ", skill), Style::default().fg(Color::White)),
+            Span::raw(format!("{:width$} ", skill, width = max_width)),
             Span::styled(format!("{}", level), Style::default().fg(Color::Green)),
         ]));
     }

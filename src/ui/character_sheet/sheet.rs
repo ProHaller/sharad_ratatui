@@ -273,6 +273,7 @@ fn draw_skills(
         ("Technical", &sheet.skills.technical),
         ("Knowledge", &sheet.knowledge_skills),
     ];
+    let column_max_width = area.as_size().width / categories.len() as u16;
 
     // Header row
     let header = Row::new(
@@ -280,7 +281,14 @@ fn draw_skills(
             .iter()
             .map(|(category, _)| {
                 Cell::from(Span::styled(
-                    *category,
+                    format!(
+                        "{:width$}",
+                        category
+                            .chars()
+                            .take(column_max_width as usize - 2)
+                            .collect::<String>(),
+                        width = column_max_width as usize - 2
+                    ),
                     Style::default()
                         .fg(Color::Yellow)
                         .add_modifier(Modifier::BOLD),
@@ -295,24 +303,41 @@ fn draw_skills(
         .map(|(_, skills)| {
             skills
                 .iter()
-                .map(|(s, r)| (s.to_string(), *r))
+                .map(|(name, level)| (name.to_string(), *level))
                 .collect::<Vec<_>>()
         })
         .collect();
 
     // Find max number of skill rows
     let max_rows = skill_columns.iter().map(|col| col.len()).max().unwrap_or(0);
-
     // Build rows row-by-row across columns
     let rows: Vec<Row> = (0..max_rows)
-        .map(|i| {
+        .map(|row| {
             let cells = skill_columns
                 .iter()
                 .map(|col| {
-                    if let Some((skill, rating)) = col.get(i) {
-                        Cell::from(format!("{}:{}", skill, rating))
+                    if let Some((skill, level)) = col.get(row) {
+                        // Build an abbreviation for each word in the name and available space
+                        let abbrev = {
+                            let words: Vec<&str> = skill.split_whitespace().collect();
+                            let max_word_len = (column_max_width as usize - 3) / words.len().max(1);
+                            words
+                                .iter()
+                                .map(|word| &word[..std::cmp::min(max_word_len, word.len())])
+                                .collect::<Vec<&str>>()
+                                .join(" ")
+                        };
+                        // Build table cells with regular width
+                        Cell::from(Line::from(vec![
+                            Span::raw(format!(
+                                "{:width$} ",
+                                abbrev,
+                                width = column_max_width as usize - 3
+                            )),
+                            Span::styled(level.to_string(), Style::default().fg(Color::Yellow)),
+                        ]))
                     } else {
-                        Cell::from("") // Empty cell if no skill at this row
+                        Cell::from("")
                     }
                 })
                 .collect::<Vec<Cell>>();
