@@ -6,7 +6,7 @@ use crate::{
     audio::{Transcription, try_play_asset},
     context::Context,
 };
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Direction, Layout, Rect},
@@ -42,6 +42,23 @@ impl SaveName {
 
 impl Component for SaveName {
     fn on_key(&mut self, key: KeyEvent, context: &mut Context) -> Option<Action> {
+        // match guard for validation of single lines.
+        let key = match self.vim.mode {
+            Mode::Normal => {
+                if matches!(key.code, KeyCode::Char('o' | 'O')) {
+                    return None;
+                } else {
+                    key
+                }
+            }
+            Mode::Insert => {
+                if matches!(key.code, KeyCode::Enter) {
+                    self.vim.mode = Mode::Normal;
+                }
+                key
+            }
+            _ => key,
+        };
         match self.vim.transition(key.into(), &mut self.textarea) {
             Transition::Mode(mode) if self.vim.mode != mode => {
                 self.textarea
