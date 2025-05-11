@@ -10,7 +10,7 @@ use crate::{
     app::{Action, InputMode},
     audio::{Transcription, try_play_asset},
     character::{CharacterSheet, Skills},
-    context::Context,
+    context::{self, Context},
     error::Error,
     game_state::GameState,
     imager::load_image_from_file,
@@ -24,7 +24,7 @@ use crossterm::event::KeyEvent;
 use derive_more::Debug;
 use ratatui::{
     buffer::Buffer,
-    layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Margin, Rect, Size},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::*,
@@ -39,6 +39,7 @@ pub struct InGame {
     pub state: GameState,
     pub content: Vec<Message>,
     pub image: Option<StatefulProtocol>,
+    pub size: Size,
 
     //AI
     pub ai: GameAI,
@@ -211,6 +212,10 @@ impl Component for InGame {
     }
 
     fn render(&mut self, area: Rect, buffer: &mut Buffer, context: &Context) {
+        if self.size != *context.size {
+            self.size = *context.size;
+            self.size_game_content();
+        }
         let screen_split_layout = Layout::default()
             .direction(Direction::Horizontal)
             .flex(ratatui::layout::Flex::Center)
@@ -262,7 +267,13 @@ impl Component for InGame {
 }
 
 impl InGame {
-    pub fn new(state: GameState, picker: &Picker, game_ai: GameAI, content: Vec<Message>) -> Self {
+    pub fn new(
+        size: Size,
+        state: GameState,
+        picker: &Picker,
+        game_ai: GameAI,
+        content: Vec<Message>,
+    ) -> Self {
         // TODO: Propagate the error
         let image = match &state.image_path {
             Some(image_path) => match load_image_from_file(picker, image_path) {
@@ -281,6 +292,7 @@ impl InGame {
             state,
             content,
             image,
+            size,
             textarea,
             vim: Vim::new(Mode::Normal),
             receiver: None,
@@ -290,8 +302,8 @@ impl InGame {
             spinner_active: false,
             all_lines: Vec::new(),
             total_lines: 0,
-            max_height: 30,
-            max_width: 90,
+            max_height: size.height as usize,
+            max_width: size.width as usize,
             content_scroll: 0,
         };
         new_self.on_creation();
@@ -509,9 +521,6 @@ impl InGame {
 
         fluff_block.render(area, buffer);
 
-        self.max_width = fluff_area.width.saturating_sub(2) as usize;
-        self.max_height = fluff_area.height.saturating_sub(2) as usize;
-
         let visible_lines: Vec<Line> = self
             .all_lines
             .iter()
@@ -523,6 +532,7 @@ impl InGame {
                 new_line
             })
             .collect();
+        log::debug!("visible_lines: {:#?}", &visible_lines);
 
         let content = Paragraph::new(visible_lines)
             .block(
@@ -530,7 +540,7 @@ impl InGame {
                     .border_type(BorderType::Rounded)
                     .borders(Borders::NONE),
             )
-            .wrap(Wrap { trim: true });
+            .wrap(Wrap { trim: false });
 
         content.render(fluff_area, buffer);
 
@@ -643,10 +653,10 @@ impl InGame {
         }
     }
     pub fn page_up(&mut self) {
-        self.content_scroll.saturating_sub(self.max_height - 3);
+        self.content_scroll = self.content_scroll.saturating_sub(self.max_height);
     }
     pub fn page_down(&mut self) {
-        self.content_scroll.saturating_add(self.max_height - 3);
+        self.content_scroll = self.content_scroll.saturating_add(self.max_height);
     }
 
     pub fn scroll_to_top(&mut self) {
@@ -657,6 +667,7 @@ impl InGame {
     pub fn scroll_to_bottom(&mut self) {
         // Update the scroll position
         self.content_scroll = self.total_lines.saturating_sub(self.max_height);
+        log::debug!("scroll_to_bottom: {:#?}", self.content_scroll);
     }
 
     fn handle_section_move(&mut self, section_move: SectionMove) {
@@ -711,16 +722,31 @@ impl InGame {
     }
 
     fn on_creation(&mut self) {
-        self.all_lines = self.parse_full_game_content();
-        self.total_lines = self.all_lines.len();
-        // HACK: This should be set to fluff_area max_height
-        self.content_scroll = self.total_lines.saturating_sub(30);
+        self.size_game_content();
         if self.content.is_empty() {
             self.spinner_active = true;
         };
 
         self.scroll_to_bottom();
-        // TODO: Maybe I could precompute the image here.
+        log::debug!("InGame: size: {:#?}", &self.size);
+        log::debug!("InGame: max_width: {:#?}", &self.max_width);
+        log::debug!("InGame: max_height: {:#?}", &self.max_height);
+        log::debug!("InGame: total_lines: {:#?}", &self.total_lines);
+        log::debug!("InGame: content_scroll: {:#?}", &self.content_scroll);
+    }
+
+    fn size_game_content(&mut self) {
+        let initial_layout =
+            game_horinzontal_layout(Rect::new(0, 0, self.size.width, self.size.height));
+        let left_screen = game_vertical_layout(initial_layout[0]);
+        // Use a block to get inner area accurately
+        let fluff_block = Block::default();
+        let fluff_area = fluff_block.inner(left_screen[0]);
+        self.max_height = fluff_area.height.saturating_sub(2) as usize;
+        self.max_width = fluff_area.width.saturating_sub(3) as usize;
+        self.content_scroll = self.total_lines.saturating_sub(self.max_height);
+        self.all_lines = self.parse_full_game_content();
+        self.total_lines = self.all_lines.len();
     }
 
     fn draw_spinner(&mut self, buffer: &mut Buffer, left_screen: Rect) {
@@ -878,4 +904,22 @@ fn skills_category_to_lines(
             Span::styled(format!("{}", level), Style::default().fg(Color::Green)),
         ]));
     }
+}
+
+pub fn game_vertical_layout(screen_split_layout: Rect) -> std::rc::Rc<[Rect]> {
+    let left_screen = Layout::default()
+        .direction(Direction::Vertical)
+        .flex(ratatui::layout::Flex::Center)
+        .constraints([Constraint::Percentage(80), Constraint::Percentage(20)].as_ref())
+        .split(screen_split_layout);
+    left_screen
+}
+
+pub fn game_horinzontal_layout(area: Rect) -> std::rc::Rc<[Rect]> {
+    let screen_split_layout = Layout::default()
+        .direction(Direction::Horizontal)
+        .flex(ratatui::layout::Flex::Center)
+        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)].as_ref())
+        .split(area);
+    screen_split_layout
 }

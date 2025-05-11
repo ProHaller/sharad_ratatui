@@ -560,6 +560,33 @@ impl Vim {
             // special normal-mode keys
             Input { key: Key::Esc, .. } if self.mode == Mode::Normal => Some(Transition::Exit),
             Input {
+                key: Key::Char('{'),
+                ..
+            } if self.mode == Mode::Normal => Some(Transition::PageUp),
+            Input {
+                key: Key::Char('}'),
+                ..
+            } if self.mode == Mode::Normal => Some(Transition::PageDown),
+            Input {
+                key: Key::Char(']'),
+                ctrl: true,
+                ..
+            }
+            // HACK: ctrl + ] is read as ctrl + 5, don't know why. might not work on all keyboards.
+            | Input {
+                key: Key::Char('5'),
+                ctrl: true,
+                ..
+            } if self.mode == Mode::Normal => {
+                log::debug!("Received Input: {:#?}", input);
+                Some(Transition::ScrollBottom)
+            },
+            Input {
+                key: Key::Char('['),
+                ctrl: true,
+                ..
+            } if self.mode == Mode::Normal => Some(Transition::ScrollTop),
+            Input {
                 key: Key::Char('['),
                 ..
             } if self.mode == Mode::Normal => Some(Transition::ScrollUp),
@@ -567,26 +594,6 @@ impl Vim {
                 key: Key::Char(']'),
                 ..
             } if self.mode == Mode::Normal => Some(Transition::ScrollDown),
-            Input {
-                key: Key::Char('['),
-                shift: true,
-                ..
-            } if self.mode == Mode::Normal => Some(Transition::PageUp),
-            Input {
-                key: Key::Char(']'),
-                shift: true,
-                ..
-            } if self.mode == Mode::Normal => Some(Transition::PageDown),
-            Input {
-                key: Key::Char(']'),
-                ctrl: true,
-                ..
-            } if self.mode == Mode::Normal => Some(Transition::ScrollBottom),
-            Input {
-                key: Key::Char('['),
-                ctrl: true,
-                ..
-            } if self.mode == Mode::Normal => Some(Transition::ScrollTop),
             Input {
                 key: Key::Char('r'),
                 ..

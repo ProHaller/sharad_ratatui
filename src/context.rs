@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use async_openai::{Client, config::OpenAIConfig};
+use ratatui::layout::Size;
 use tokio::sync::mpsc;
 
 use crate::{
@@ -12,6 +13,7 @@ use crate::{
 pub struct Context<'a> {
     // TODO: Make the openai_api_key_valid a date
     pub ai_client: &'a mut Option<Client<OpenAIConfig>>,
+    pub size: &'a mut Size,
     pub image_sender: mpsc::UnboundedSender<PathBuf>,
     pub save_manager: &'a mut SaveManager,
     pub settings: &'a mut Settings,

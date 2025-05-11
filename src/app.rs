@@ -3,8 +3,8 @@ use crate::{
     assistant::create_assistant,
     audio::{self, AudioNarration, Transcription},
     character::{CharacterSheet, CharacterSheetUpdate},
-    context::Context,
-    error::{Error, Result},
+    context::{self, Context},
+    error::Result,
     game_state::GameState,
     imager::load_image_from_file,
     message::{
@@ -18,7 +18,7 @@ use crate::{
 
 use async_openai::{Client, config::OpenAIConfig};
 use crossterm::event::{KeyEvent, KeyEventKind};
-use ratatui::widgets::ListState;
+use ratatui::{layout::Size, widgets::ListState};
 use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
 use std::{
     fs::{self, create_dir_all},
@@ -69,6 +69,7 @@ pub struct App {
     image: Option<StatefulProtocol>,
     image_sender: mpsc::UnboundedSender<PathBuf>,
     image_receiver: mpsc::UnboundedReceiver<PathBuf>,
+    size: Size,
 }
 
 impl App {
@@ -107,6 +108,11 @@ impl App {
             image: None,
             image_sender,
             image_receiver,
+            // HACK: Set dummy value waiting for terminal
+            size: Size {
+                width: 18,
+                height: 42,
+            },
             settings,
             save_manager: SaveManager::new(),
             audio_narration: AudioNarration::Stopped,
@@ -125,6 +131,7 @@ impl App {
             .frame_rate(30.0); // 30 frames per second
 
         log::info!("New Tui successfull");
+        self.size = tui.terminal.size()?;
 
         tui.enter()?; // Starts event handler, enters raw mode, enters alternate screen
         log::info!("Entered Tui");
@@ -134,6 +141,7 @@ impl App {
 
         let mut context = Context {
             ai_client: &mut self.ai_client.clone(),
+            size: &mut self.size.clone(),
             image_sender: self.image_sender.clone(),
             save_manager: &mut self.save_manager.clone(),
             settings: &mut self.settings.clone(),
@@ -218,6 +226,7 @@ impl App {
         let result: Option<Action> = match ai_message {
             AIMessage::Game((messages, ai, state)) => {
                 self.component = ComponentEnum::from(InGame::new(
+                    self.size,
                     state,
                     &self.picker.expect("Expected a Picker from app"),
                     ai,
@@ -286,7 +295,16 @@ impl App {
             TuiEvent::Render => {}
             TuiEvent::FocusGained => {}
             TuiEvent::FocusLost => {}
-            TuiEvent::Resize(_, _) => {}
+            TuiEvent::Resize(w, h) => {
+                self.size = Size {
+                    width: w,
+                    height: h,
+                };
+                context.size.width = w;
+                context.size.height = h;
+                log::debug!("Resized: app: {:#?}", self.size);
+                log::debug!("Resized: context: {:#?}", context.size);
+            }
         }
         Ok(())
     }
