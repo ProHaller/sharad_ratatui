@@ -3,7 +3,7 @@ use crate::{
     assistant::create_assistant,
     audio::{self, AudioNarration, Transcription},
     character::{CharacterSheet, CharacterSheetUpdate},
-    context::{self, Context},
+    context::Context,
     error::Result,
     game_state::GameState,
     imager::load_image_from_file,
@@ -12,18 +12,14 @@ use crate::{
     },
     save::{SaveManager, get_save_base_dir},
     settings::Settings,
-    tui::{self, Tui, TuiEvent},
+    tui::{Tui, TuiEvent},
     ui::{Component, ComponentEnum, api_key_input::ApiKeyInput, game::InGame, main_menu::MainMenu},
 };
 
 use async_openai::{Client, config::OpenAIConfig};
 use crossterm::event::{KeyEvent, KeyEventKind};
-use log::info;
 use ratatui::{layout::Size, widgets::ListState};
-use ratatui_image::{
-    picker::{self, Picker},
-    protocol::StatefulProtocol,
-};
+use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
 use std::{
     fs::{self, create_dir_all},
     mem,

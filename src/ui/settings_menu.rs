@@ -252,6 +252,7 @@ impl SettingsMenu {
         }
     }
 
+    // TODO: Add an opt-out for terminals that do not support images.
     fn change_settings(&mut self, change: isize) {
         let current_setting = self.state.selected_setting;
         match (current_setting, change) {

@@ -13,7 +13,7 @@ use ratatui::{
     style::{Color, Style},
     widgets::*,
 };
-use ratatui_image::{CropOptions, Resize, StatefulImage, protocol::StatefulProtocol};
+use ratatui_image::{Resize, StatefulImage, protocol::StatefulProtocol};
 use tokio::sync::mpsc::{self, UnboundedReceiver};
 use tui_textarea::TextArea;
 
@@ -195,10 +195,19 @@ impl Component for ImageMenu {
         }
         let [main_area, hints_area] =
             Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(area);
-        let horizontal_split =
-            Layout::horizontal([Constraint::Ratio(1, 3), Constraint::Ratio(2, 3)]).split(main_area);
+        let nine_by_sixteen_width = (main_area.height as f32 * (53.0 / 40.0)) as u16;
+
+        let horizontal_split = Layout::horizontal([
+            Constraint::Length(nine_by_sixteen_width),
+            Constraint::Fill(0),
+        ])
+        .split(main_area);
         let centered_area = center_rect(
-            main_area,
+            if self.image.is_none() {
+                main_area
+            } else {
+                horizontal_split[1]
+            },
             Constraint::Percentage(70),
             Constraint::Percentage(50),
         );
@@ -213,11 +222,7 @@ impl Component for ImageMenu {
                 ]
                 .as_ref(),
             )
-            .split(if self.image.is_none() {
-                centered_area
-            } else {
-                horizontal_split[1]
-            });
+            .split(centered_area);
 
         let title = Paragraph::new(" Enter an image prompt ")
             .style(Style::default().fg(Color::Cyan))
@@ -233,11 +238,7 @@ impl Component for ImageMenu {
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::White));
 
-            let mut stateful_image = StatefulImage::default();
-            stateful_image = stateful_image.resize(Resize::Crop(Some(CropOptions {
-                clip_top: false,
-                clip_left: true,
-            })));
+            let stateful_image = StatefulImage::default();
             image_block.render(horizontal_split[0], buffer);
             stateful_image.render(horizontal_split[0].inner(Margin::new(1, 1)), buffer, image);
         }
