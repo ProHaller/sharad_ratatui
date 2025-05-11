@@ -184,7 +184,7 @@ impl Tui {
     }
 
     pub fn exit(&mut self) -> Result<()> {
-        log::info!("Sharad exit: {}", chrono::Local::now());
+        log::info!("Sharad exit");
         self.stop()?;
         ratatui::restore();
         Ok(())

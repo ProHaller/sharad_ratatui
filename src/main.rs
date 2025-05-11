@@ -39,12 +39,12 @@ async fn main() -> io::Result<()> {
     if let Err(log_error) = logging::init() {
         println!("{log_error:#?}");
     }
-    log::info!("Sharad started: {}", chrono::Local::now());
+    init_panic_hook();
+    log::info!("Sharad started");
     let update_result = tokio::task::spawn_blocking(check_for_updates).await?;
     if let Err(e) = update_result {
         eprintln!("Failed to check for updates: {}", e);
     }
-    init_panic_hook();
 
     // Run the application and handle errors.
     if let Err(err) = App::new().await.run().await {
