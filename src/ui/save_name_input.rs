@@ -83,6 +83,8 @@ impl Component for SaveName {
                 if self.textarea.lines().concat().len() > 1 {
                     Some(Action::CreateNewGame(self.textarea.lines()[0].to_string()))
                 } else {
+                    self.vim.mode = Mode::new_warning(Warning::InputTooShort);
+                    log::info!("Played Warning {:#?}", self.vim.mode);
                     None
                 }
             }

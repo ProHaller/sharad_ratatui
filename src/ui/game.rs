@@ -29,7 +29,9 @@ use ratatui::{
     text::{Line, Span},
     widgets::*,
 };
-use ratatui_image::{Resize, StatefulImage, picker::Picker, protocol::StatefulProtocol};
+use ratatui_image::{
+    CropOptions, Resize, StatefulImage, picker::Picker, protocol::StatefulProtocol,
+};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tui_textarea::TextArea;
@@ -221,6 +223,7 @@ impl Component for InGame {
             .flex(ratatui::layout::Flex::Center)
             .constraints([Constraint::Percentage(60), Constraint::Percentage(40)].as_ref())
             .split(area);
+
         let left_screen = Layout::default()
             .direction(Direction::Vertical)
             .flex(ratatui::layout::Flex::Center)
@@ -228,7 +231,6 @@ impl Component for InGame {
             .split(screen_split_layout[0]);
 
         self.draw_game_content(buffer, context, left_screen[0]);
-
         self.draw_spinner(buffer, left_screen[0]);
         self.draw_user_input(buffer, context, left_screen[1]);
 
@@ -500,11 +502,20 @@ impl InGame {
                 .title(" Portrait ");
 
             detail_paragraph.render(detail_area[1], buffer);
-            image_block.render(detail_area[0], buffer);
             // FIX: How to make the first rendering faster? Pre-rendering?
+            // FIX: The image is not using the full available height
             let mut stateful_image = StatefulImage::default();
-            stateful_image = stateful_image.resize(Resize::Scale(None));
+            stateful_image = stateful_image.resize(Resize::Crop(Some(CropOptions {
+                clip_top: false,
+                clip_left: true,
+            })));
+            image_block.render(detail_area[0], buffer);
             stateful_image.render(detail_area[0].inner(Margin::new(1, 1)), buffer, image);
+            log::debug!(
+                "Image area size: Width:{:#?}, Height:{:#?}",
+                detail_area[0].width,
+                detail_area[0].height
+            );
         } else {
             detail_paragraph.render(area, buffer);
         }

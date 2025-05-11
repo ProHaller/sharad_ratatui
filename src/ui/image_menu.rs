@@ -13,7 +13,7 @@ use ratatui::{
     style::{Color, Style},
     widgets::*,
 };
-use ratatui_image::{StatefulImage, protocol::StatefulProtocol};
+use ratatui_image::{CropOptions, Resize, StatefulImage, protocol::StatefulProtocol};
 use tokio::sync::mpsc::{self, UnboundedReceiver};
 use tui_textarea::TextArea;
 
@@ -76,9 +76,6 @@ impl ImageMenu {
     }
 
     fn request_image(&mut self, context: &mut Context<'_>) -> Option<Action> {
-        if self.textarea.lines().concat().len() < 2 {
-            return Some(Action::SwitchInputMode(InputMode::Editing));
-        }
         let prompt = self.textarea.lines().join("\n");
         let image_sender = self.image_sender.clone();
         log::info!("Requested image creation with context: {context:#?}");
@@ -162,7 +159,7 @@ impl Component for ImageMenu {
                 None
             }
             Transition::Validation => {
-                if !self.textarea.lines().concat().len() < 1 {
+                if self.textarea.lines().concat().len() > 1 {
                     self.request_image(context)
                 } else {
                     self.vim.mode = Mode::new_warning(Warning::InputTooShort);
@@ -236,13 +233,13 @@ impl Component for ImageMenu {
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::White));
 
+            let mut stateful_image = StatefulImage::default();
+            stateful_image = stateful_image.resize(Resize::Crop(Some(CropOptions {
+                clip_top: false,
+                clip_left: true,
+            })));
             image_block.render(horizontal_split[0], buffer);
-            // FIX: How to make the first rendering faster? Pre-rendering? cf async-image branch
-            StatefulImage::new().render(
-                horizontal_split[0].inner(Margin::new(1, 1)),
-                buffer,
-                image,
-            );
+            stateful_image.render(horizontal_split[0].inner(Margin::new(1, 1)), buffer, image);
         }
         self.render_hints(buffer, hints_area);
     }

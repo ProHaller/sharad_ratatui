@@ -75,7 +75,7 @@ impl Component for ApiKeyInput {
                 None
             }
             Transition::Validation => {
-                if self.textarea.lines().first().unwrap().is_empty() {
+                if self.textarea.lines().concat().len() > 1 {
                     self.vim.mode = Mode::new_warning(Warning::InputTooShort);
                     log::info!("Played Warning {:#?}", self.vim.mode);
                     return None;
