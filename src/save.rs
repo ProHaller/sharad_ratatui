@@ -4,7 +4,7 @@ use crate::{assistant::delete_assistant, error::Result, game_state::GameState};
 use async_openai::{Client, config::OpenAIConfig};
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::{File, create_dir_all, read_dir, remove_dir_all, remove_file, write},
+    fs::{self, File, create_dir_all, read_dir, remove_dir_all, remove_file, write},
     path::PathBuf,
 };
 
@@ -17,6 +17,14 @@ pub fn get_game_data_dir() -> PathBuf {
     }
     path
 }
+
+pub fn clean_recording_temp_dir() {
+    let path = get_game_data_dir().join("temp_logs");
+    if let Err(e) = fs::remove_dir_all(path) {
+        log::error!("Failed to delete temp_logs: {e:#?}");
+    }
+}
+
 pub fn get_save_base_dir() -> PathBuf {
     let path = get_game_dir().join("save");
     if !&path.exists() {

@@ -216,7 +216,8 @@ impl LoadMenu {
             .alignment(Alignment::Left)
             .style(Style::default().fg(Color::White));
 
-        // HACK: This should be a stateful widget.
+        // HACK: This should probably be a stateful widget if I can have th two step validation for
+        // deletion
         menu.render(centered_area, buffer);
     }
 }

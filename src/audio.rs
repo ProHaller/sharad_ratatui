@@ -219,8 +219,10 @@ pub fn play_audio(file_path: PathBuf) -> Result<()> {
         let source = Decoder::new(BufReader::new(file)).expect("Failed to decode audio");
         sink.append(source);
         sink.sleep_until_end();
+        sleep(Duration::from_millis(100));
+        log::info!("End of play_audio");
     };
-    log::info!("End of play_audio");
+
     Ok(())
 }
 
@@ -362,6 +364,7 @@ impl Transcription {
         if let Err(e) = self.sender.send(self.transcription) {
             log::error!("Failed to send the transcription: {e:#?}");
         }
+        crate::save::clean_recording_temp_dir();
     }
 }
 

@@ -10,7 +10,7 @@
       },
       "fluff": {
         "type": "object",
-        "description": "This section describes the world and all actions within to the player. The content is structured into two arrays: speakers and dialogue. IMPORTANT: The Narrator (index 0) must only be used for narration and direct interraction with the player, never for speaker speech. The player character must have their own named speaker entry and only use it for direct or reported speech. All other speaking characters should be listed. Must at have a line from the Narrator if no dialogue is provided.",
+        "description": "This section describes the world and all actions within to the player. The content is structured into two arrays: speakers and dialogue. IMPORTANT: The Narrator (index 0) must only be used for narration and direct interraction with the player, never for speaker quotes. The player character must have their own named speaker entry and only use it for direct or reported speech. All other speaking characters should be listed. Must at have a line from the Narrator if no dialogue is provided.",
         "properties": {
           "speakers": {
             "type": "array",
@@ -42,11 +42,11 @@
               "properties": {
                 "speaker_index": {
                   "type": "integer",
-                  "description": "Index of the speaker in the 'speakers' array. 0 for Narrator, 1 for player character, 2+ for other characters."
+                  "description": "Index of the speaker in the 'speakers' array. 0 for the Narrator's narration, 1 for the player character, 2+ for any other character quotes."
                 },
                 "text": {
                   "type": "string",
-                  "description": "Must contain at least one line. For Game master narration: Narrator's text, including interracting with the player, dialogue tags, action breaks, and general narration but never direct speaker speech. For speech: Direct dialogue of a character but only direct speech."
+                  "description": "Must contain at least one line. For Game master narration: Narrator's text, including interracting with the player, dialogue tags, action breaks, and general narration but never direct character quote. For speech: Direct dialogue of a character but only direct speech."
                 }
               },
               "required": ["speaker_index", "text"],

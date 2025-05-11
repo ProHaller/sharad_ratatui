@@ -1,9 +1,22 @@
-use ratatui::widgets::ListState;
+use ratatui::widgets::{ListState, StatefulWidget};
 
 #[derive(Debug, Default)]
 pub struct StatefulList<T> {
     pub state: ListState,
     pub items: Vec<T>,
+}
+
+impl<T> StatefulWidget for StatefulList<T> {
+    type State = ListState;
+
+    fn render(
+        self,
+        area: ratatui::prelude::Rect,
+        buf: &mut ratatui::prelude::Buffer,
+        state: &mut Self::State,
+    ) {
+        StatefulWidget::render(self, area, buf, state)
+    }
 }
 
 impl<T> StatefulList<T> {
