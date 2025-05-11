@@ -84,7 +84,7 @@ fn draw_basic_info(
                 .border_type(BorderType::Rounded)
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(
-                    if matches!(highlighted, HighlightedSection::Backstory) {
+                    if matches!(highlighted, HighlightedSection::BasicInfo) {
                         Color::Yellow
                     } else {
                         Color::White
@@ -379,8 +379,8 @@ fn draw_other_info(
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(40), // Left column: Resources and Augmentations
-            Constraint::Percentage(60), // Right column: Contacts and Inventory
+            Constraint::Percentage(40), // Left column: Resources and qualities
+            Constraint::Percentage(60), // Right column: Augmentations and Inventory
         ])
         .split(area);
 

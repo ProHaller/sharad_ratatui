@@ -31,8 +31,6 @@ pub enum Action {
     Quit,
     LoadSave(PathBuf),
     CreateNewGame(String),
-    // ProcessMessage(String),
-    // TODO: Probably don't need the transcription target anymore.
     SwitchComponent(ComponentEnum),
     SwitchInputMode(InputMode),
     EndRecording,
@@ -47,8 +45,6 @@ pub enum InputMode {
     Recording(Transcription),
 }
 
-// TODO: Verify that there is a valid connection internet, else request the user to take action
-// after conecting.
 pub struct App {
     // Application state and control flow
     running: bool,
@@ -278,7 +274,6 @@ impl App {
             TuiEvent::Key(key_event) if key_event.kind == KeyEventKind::Press => {
                 self.on_key(key_event, context)?
             }
-            // TODO: Pass the pasted text to the Input
             // Maybe I don't need copypasta anymore?
             TuiEvent::Paste(_pasted_text) => {}
             TuiEvent::Mouse(_mouse_event) => {}
@@ -332,10 +327,7 @@ impl App {
     }
 
     fn on_key(&mut self, key_event: KeyEvent, context: &mut Context) -> Result<()> {
-        if let Some(action) = self.component.on_key(
-            key_event, // TODO: Should probably not construct a context here.
-            context,
-        ) {
+        if let Some(action) = self.component.on_key(key_event, context) {
             self.handle_action(action)?
         };
         Ok(())

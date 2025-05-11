@@ -50,7 +50,6 @@ pub struct InGame {
     pub highlighted_section: HighlightedSection,
 
     // UI state:
-    // TODO: implement the spinner in a seprarte struct and thread
     pub spinner: Spinner,
     pub last_spinner_update: Instant,
     pub spinner_active: bool,
@@ -92,7 +91,7 @@ pub enum SectionMove {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HighlightedSection {
     None,
-    Backstory,
+    BasicInfo,
     Attributes(usize),
     Derived(usize),
     Skills,
@@ -282,7 +281,6 @@ impl InGame {
             state,
             content,
             image,
-            // TODO: Input should be autonomous with info about its size and scroll
             textarea,
             vim: Vim::new(Mode::Normal),
             receiver: None,
@@ -326,7 +324,29 @@ impl InGame {
             .expect("Expected a character sheet");
         let attributes = get_attributes(sheet);
         let detail_text = match self.highlighted_section {
-            HighlightedSection::Backstory => vec![Line::from(vec![Span::raw(&sheet.backstory)])],
+            HighlightedSection::BasicInfo => vec![
+                Line::from(vec![
+                    Span::styled("Name: ", Style::default().fg(Color::Yellow)),
+                    Span::raw(&sheet.name),
+                ]),
+                Line::from(vec![
+                    Span::styled("Race: ", Style::default().fg(Color::Yellow)),
+                    Span::raw(sheet.race.to_string()),
+                ]),
+                Line::from(vec![
+                    Span::styled(
+                        format!("{}: ", sheet.race),
+                        Style::default().fg(Color::Yellow),
+                    ),
+                    Span::raw(sheet.race.description()),
+                ]),
+                Line::default(),
+                Line::from(vec![Span::styled(
+                    "Backstory: ",
+                    Style::default().fg(Color::Yellow),
+                )]),
+                Line::from(vec![Span::raw(&sheet.backstory)]),
+            ],
             HighlightedSection::Inventory => sheet
                 .inventory
                 .values()
@@ -401,7 +421,6 @@ impl InGame {
             HighlightedSection::Attributes(_) => chunk_attributes(attributes, 2),
             HighlightedSection::Derived(0) => get_derived(&sheet.derived_attributes, 0),
             HighlightedSection::Derived(_) => get_derived(&sheet.derived_attributes, 1),
-            // TODO: Improve the display of Skills
             HighlightedSection::Skills => get_skills(sheet),
             HighlightedSection::Qualities => {
                 let mut qualities = vec![Line::from(vec![Span::styled(
@@ -434,7 +453,7 @@ impl InGame {
             .border_style(Style::default().fg(Color::White))
             // TODO: Make this automatic with strum
             .title(match self.highlighted_section {
-                HighlightedSection::Backstory => " Backstory ",
+                HighlightedSection::BasicInfo => " Basic Information ",
                 HighlightedSection::Inventory => " Inventory ",
                 HighlightedSection::Contact => " Contact ",
                 HighlightedSection::Cyberware => " Cyberware ",
@@ -612,7 +631,6 @@ impl InGame {
         self.content_scroll = self.content_scroll.min(max_scroll);
     }
 
-    // TODO: implement scrolling controls
     pub fn scroll_up(&mut self) {
         if self.content_scroll > 0 {
             self.content_scroll -= 1;
@@ -647,50 +665,8 @@ impl InGame {
             return;
         };
 
-        // TODO: implement a 2d navigation
-
-        // let mut sections: Vec<Vec<HS>> = vec![
-        //     vec![HS::Backstory],                                           // line 1
-        //     vec![HS::Attributes(1), HS::Attributes(2), HS::Attributes(3)], // line 2
-        //     vec![HS::Derived(1), HS::Derived(2)],                          // line 3
-        //     vec![HS::Skills],                                              // line 4
-        // ];
-        //
-        // // line 5
-        // sections.push({
-        //     let mut line = vec![HS::Qualities];
-        //     if !character_sheet.cyberware.is_empty() {
-        //         line.push(HS::Cyberware);
-        //     }
-        //     if !character_sheet.bioware.is_empty() {
-        //         line.push(HS::Bioware);
-        //     }
-        //     if line.len() == 1 {
-        //         line.push(HS::Inventory);
-        //     }
-        //     line
-        // });
-        //
-        // // line 6
-        // sections.push({
-        //     let mut line = vec![HS::Resources];
-        //     if !character_sheet.cyberware.is_empty() {
-        //         line.push(HS::Cyberware);
-        //     }
-        //     if !character_sheet.bioware.is_empty() {
-        //         line.push(HS::Bioware);
-        //     }
-        //     if line.len() == 1 {
-        //         line.push(HS::Inventory);
-        //     }
-        //     line
-        // });
-        //
-        // // line 7
-        // sections.push(vec![HS::Contact]);
-
         let available_sections = [
-            Some(HS::Backstory),
+            Some(HS::BasicInfo),
             Some(HS::Attributes(0)),
             Some(HS::Attributes(1)),
             Some(HS::Attributes(2)),
