@@ -186,7 +186,10 @@ impl App {
 
     fn handle_action(&mut self, action: Action) -> Result<()> {
         match action {
-            Action::SwitchComponent(component) => self.component = component,
+            Action::SwitchComponent(component) => {
+                self.settings = Settings::try_load();
+                self.component = component
+            }
             Action::SwitchInputMode(input_mode) => {
                 self.input_mode = input_mode;
             }

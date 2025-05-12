@@ -317,12 +317,17 @@ impl GameAI {
         let client = self.client.clone();
         log::info!("handle_generate_character_image: {tool_call:#?}");
         tokio::spawn(async move {
-            let path =
-                generate_and_save_image(client, &args["image_generation_prompt"].to_string())
-                    .await
-                    .expect("Something went wrong generating image");
-            if let Err(e) = image_sender.send(path) {
-                log::error!("Failed to send the Image path: {e:#?}");
+            match generate_and_save_image(client, &args["image_generation_prompt"].to_string())
+                .await
+            {
+                Ok(path) => {
+                    if let Err(e) = image_sender.send(path) {
+                        log::error!("Failed to send the Image path: {e:#?}");
+                    }
+                }
+                Err(e) => {
+                    log::error!("Failed to generate_and_save_image: {e:#?}");
+                }
             }
         });
 

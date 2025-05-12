@@ -156,6 +156,10 @@ impl Component for InGame {
                     Ok::<(), Error>(())
                 });
                 self.textarea = new_textarea("Input text to play");
+                context
+                    .save_manager
+                    .save(&self.state)
+                    .expect("Should have saved from the game");
                 None
             }
             Transition::Validation => {
