@@ -910,9 +910,10 @@ fn skills_category_to_lines(
     )]));
     let max_width = category
         .keys()
-        .map(|k| k.len())
+        .map(|k| k.chars().count())
         .max()
-        .expect("Expected at least one skill");
+        .unwrap_or(6);
+
     for (skill, level) in category {
         skills.push(Line::from(vec![
             Span::raw(format!("{:width$} ", skill, width = max_width)),

@@ -323,7 +323,9 @@ fn draw_skills(
                             let max_word_len = (column_max_width as usize - 3) / words.len().max(1);
                             words
                                 .iter()
-                                .map(|word| &word[..std::cmp::min(max_word_len, word.len())])
+                                .map(|word| {
+                                    &word[..std::cmp::min(max_word_len, word.chars().count())]
+                                })
                                 .collect::<Vec<&str>>()
                                 .join(" ")
                         };

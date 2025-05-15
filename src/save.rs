@@ -103,8 +103,7 @@ impl SaveManager {
     pub fn save(&self, current_save: &GameState) -> Result<()> {
         if let Some(save_path) = current_save.save_path.clone() {
             create_dir_all(save_path.parent().expect("Expected a parent path"))?;
-            let serialized = serde_json::to_string_pretty(&current_save)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            let serialized = serialize_save(current_save)?;
             write(save_path, serialized)?;
         } else {
             let save_dir = get_save_base_dir();
@@ -113,8 +112,7 @@ impl SaveManager {
             let mut current_save = current_save.clone();
             current_save.save_path =
                 Some(game_save_dir.join(format!("{}.json", current_save.save_name)));
-            let serialized = serde_json::to_string_pretty(&current_save)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            let serialized = serialize_save(&current_save)?;
             write(
                 current_save.save_path.expect("Expected Valide save_path"),
                 serialized,
@@ -144,6 +142,12 @@ impl SaveManager {
             panic!("This save should not be here! {}", save_path.display());
         }
     }
+}
+
+fn serialize_save(current_save: &GameState) -> Result<String> {
+    let serialized = serde_json::to_string_pretty(&current_save)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+    Ok(serialized)
 }
 
 #[test]

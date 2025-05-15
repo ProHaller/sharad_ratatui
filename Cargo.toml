@@ -1,6 +1,6 @@
 [package]
 name = "sharad_ratatui"
-version = "0.2.7"
+version = "0.2.8"
 edition = "2024"
 repository = "https://github.com/prohaller/sharad_ratatui"
 authors = ["Roland Haller <haller.roland@gmail.com>"]
