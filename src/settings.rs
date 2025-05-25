@@ -1,7 +1,7 @@
 use async_openai::{Client, config::OpenAIConfig, error::OpenAIError};
 use serde::{Deserialize, Serialize};
 use std::{
-    fs,
+    env, fs,
     io::{self, Write},
     path::PathBuf,
 };
@@ -54,9 +54,27 @@ impl Default for Settings {
 }
 
 impl Settings {
+    /// Load settings from the default location, with environment variable override support.
+    ///
+    /// This method first loads settings from the settings.json file, then checks for the
+    /// OPENAI_API_KEY environment variable. If the environment variable is set and non-empty,
+    /// it will override any API key found in the settings file.
+    ///
+    /// Environment variable precedence:
+    /// 1. OPENAI_API_KEY environment variable (highest priority)
+    /// 2. openai_api_key from settings.json file
+    /// 3. Default settings (no API key)
     pub fn try_load() -> Self {
         let path = get_game_data_dir().join("settings.json");
-        Self::load_settings_from_file(path).unwrap_or_default()
+        let mut settings = Self::load_settings_from_file(path).unwrap_or_default();
+        if let Ok(env_api_key) = env::var("OPENAI_API_KEY") {
+            if !env_api_key.is_empty() {
+                settings.openai_api_key = Some(env_api_key);
+                log::info!("Using OpenAI API key from environment variable");
+            }
+        }
+
+        settings
     }
 
     // Load settings from a specified file path.

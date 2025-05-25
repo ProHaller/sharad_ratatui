@@ -57,3 +57,6 @@ inherits = "release"
 lto = "thin"
 
 [patch]
+
+[dev-dependencies]
+tempfile = "3.8"
