@@ -1,7 +1,10 @@
 // ../tests/tests.rs
+use sharad_ratatui::settings::Settings;
 use sharad_ratatui::*;
 use std::collections::HashMap;
+use std::env;
 use std::fs;
+use tempfile::tempdir;
 
 #[test]
 fn test_character_sheet_creation_from_json() {
@@ -244,4 +247,43 @@ fn test_character_sheet_update_from_json() {
     );
 
     println!("Updated Character Sheet: {:?}", character_sheet);
+}
+
+#[test]
+fn test_settings_env_var_precedence() {
+    let temp_dir = tempdir().expect("Failed to create temp dir");
+    let settings_path = temp_dir.path().join("settings.json");
+
+    let file_settings = r#"{
+        "language": "English",
+        "openai_api_key": "file_api_key_123",
+        "model": "gpt-4o-mini",
+        "audio_output_enabled": false,
+        "audio_input_enabled": false,
+        "debug_mode": true
+    }"#;
+
+    fs::write(&settings_path, file_settings).expect("Failed to write settings file");
+
+    unsafe {
+        env::remove_var("OPENAI_API_KEY");
+    }
+    let settings = Settings::load_settings_from_file(settings_path.clone()).unwrap();
+    assert_eq!(
+        settings.openai_api_key,
+        Some("file_api_key_123".to_string())
+    );
+    unsafe {
+        env::set_var("OPENAI_API_KEY", "env_api_key_456");
+    }
+    let settings = Settings::try_load();
+    assert_eq!(settings.openai_api_key, Some("env_api_key_456".to_string()));
+
+    unsafe {
+        env::set_var("OPENAI_API_KEY", "");
+    }
+    let _settings = Settings::try_load();
+    unsafe {
+        env::remove_var("OPENAI_API_KEY");
+    }
 }
