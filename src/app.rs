@@ -87,10 +87,9 @@ impl App {
         let mut game_ai: Option<GameAI> = None;
         if let Some(api_key) = &settings.openai_api_key {
             ai_client = Settings::validate_ai_client(api_key).await;
-            game_ai = match GameAI::new(api_key, ai_sender.clone(), image_sender.clone()).await {
-                Ok(game_ai) => Some(game_ai),
-                Err(_) => None,
-            }
+            game_ai = GameAI::new(api_key, ai_sender.clone(), image_sender.clone())
+                .await
+                .ok()
         } else {
             ai_client = None
         };

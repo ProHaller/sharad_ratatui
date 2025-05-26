@@ -15,3 +15,5 @@ hello.py
 pyproject.toml
 uv.lock
 .bacon-locations
+assets/docs/rules_5.pdf
+assets/docs/rules_5_lite.pdf
