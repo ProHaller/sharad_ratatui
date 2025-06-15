@@ -20,6 +20,7 @@ use async_openai::{
         ToolsOutputs,
     },
 };
+
 use serde_json::Value;
 use std::{collections::HashMap, path::PathBuf};
 use tokio::{

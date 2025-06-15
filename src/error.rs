@@ -26,6 +26,11 @@ pub enum Error {
     Audio(AudioError),
     AISend(SendError<AIMessage>),
     ImageSend(SendError<PathBuf>),
+    TokioRusqlite(tokio_rusqlite::Error),
+    RigEmbed(rig::embeddings::EmbedError),
+    RigEmbedding(rig::embeddings::EmbeddingError),
+    RigVector(rig::vector_store::VectorStoreError),
+    Pdfium(pdfium_render::prelude::PdfiumError),
 }
 
 impl From<&str> for Error {
@@ -40,8 +45,6 @@ pub enum ShadowrunError {
     AI(String),
     #[error("Game error: {0}")]
     Game(String),
-    #[error("Network error: {0}")]
-    Network(String),
     #[error("Audio error: {0}")]
     Audio(String),
     #[error("Serialization error: {0}")]
@@ -61,15 +64,6 @@ pub enum AppError {
     #[error("Shadowrun error: {0}")]
     Shadowrun(#[from] ShadowrunError),
 
-    #[error("AI client not initialized")]
-    AIClientNotInitialized,
-
-    #[error("No current game")]
-    NoCurrentGame,
-
-    #[error("Conversation not initialized")]
-    ConversationNotInitialized,
-
     #[error("Timeout occurred")]
     Timeout,
 }
@@ -84,13 +78,6 @@ impl From<AppError> for ShadowrunError {
     fn from(error: AppError) -> Self {
         match error {
             AppError::Shadowrun(e) => e,
-            AppError::AIClientNotInitialized => {
-                ShadowrunError::AI("AI client not initialized".to_string())
-            }
-            AppError::NoCurrentGame => ShadowrunError::Game("No current game".to_string()),
-            AppError::ConversationNotInitialized => {
-                ShadowrunError::AI("Conversation not initialized".to_string())
-            }
             AppError::Timeout => ShadowrunError::Unknown("Timeout occurred".to_string()),
         }
     }

@@ -1,7 +1,5 @@
 // ui/constants.rs
 
-use include_dir::{Dir, include_dir};
-
 pub const ART: &str = r#"
     _____   .                 A            .              .   .       .      
    /o o o\            .     _/_\_                                  |\        
