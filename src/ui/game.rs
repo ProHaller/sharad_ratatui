@@ -916,26 +916,24 @@ fn skills_category_to_lines(
 
     for (skill, level) in category {
         skills.push(Line::from(vec![
-            Span::raw(format!("{:width$} ", skill, width = max_width)),
+            Span::raw(format!("{:max_width$} ", skill)),
             Span::styled(format!("{}", level), Style::default().fg(Color::Green)),
         ]));
     }
 }
 
 pub fn game_vertical_layout(screen_split_layout: Rect) -> std::rc::Rc<[Rect]> {
-    let left_screen = Layout::default()
+    Layout::default()
         .direction(Direction::Vertical)
         .flex(ratatui::layout::Flex::Center)
         .constraints([Constraint::Percentage(80), Constraint::Percentage(20)].as_ref())
-        .split(screen_split_layout);
-    left_screen
+        .split(screen_split_layout)
 }
 
 pub fn game_horinzontal_layout(area: Rect) -> std::rc::Rc<[Rect]> {
-    let screen_split_layout = Layout::default()
+    Layout::default()
         .direction(Direction::Horizontal)
         .flex(ratatui::layout::Flex::Center)
         .constraints([Constraint::Percentage(60), Constraint::Percentage(40)].as_ref())
-        .split(area);
-    screen_split_layout
+        .split(area)
 }

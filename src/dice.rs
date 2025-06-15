@@ -18,12 +18,12 @@ pub struct DiceRollRequest {
 // Structure to encapsulate the response after a dice roll.
 #[derive(Debug, Serialize)]
 pub struct DiceRollResponse {
+    pub dice_results: Vec<u8>,  // Results of each die rolled.
     pub hits: u8,               // Number of successful hits.
+    pub success: bool,          // Whether the roll was overall a success.
     pub glitch: bool,           // Whether a glitch occurred.
     pub critical_glitch: bool,  // Whether a critical glitch occurred.
     pub critical_success: bool, // Whether a critical success was achieved.
-    pub dice_results: Vec<u8>,  // Results of each die rolled.
-    pub success: bool,          // Whether the roll was overall a success.
 }
 
 // Function to perform a dice roll based on a request and game state.

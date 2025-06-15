@@ -84,6 +84,9 @@ impl Component for LoadMenu {
             }
 
             KeyCode::Char(c) => {
+                if self.state.items.is_empty() {
+                    return None;
+                };
                 if let Some(digit) = c.to_digit(10) {
                     let selected = ((digit as usize).saturating_sub(1)) % self.state.items.len();
                     self.state.state.select(Some(selected));

@@ -1,6 +1,6 @@
 {
   "name": "create_character_sheet",
-  "description": "Create a character sheet for a Shadowrun main character, including personal details, attributes, skills, inventory, and contacts.",
+  "description": "Create a character sheet for a Shadowrun main character, including personal details, attributes, skills, and contacts.",
   "strict": true,
   "parameters": {
     "type": "object",
@@ -102,22 +102,13 @@
               "type": "boolean"
             }
           },
-          "required": [
-            "name",
-            "positive"
-          ]
+          "required": ["name", "positive"]
         }
       },
       "race": {
         "description": "The character's race, such as Human, Elf, Dwarf, Ork, or Troll.",
         "type": "string",
-        "enum": [
-          "Human",
-          "Elf",
-          "Dwarf",
-          "Ork",
-          "Troll"
-        ]
+        "enum": ["Human", "Elf", "Dwarf", "Ork", "Troll"]
       },
       "skills": {
         "description": "Collection of skills categorized into combat, physical, social, technical skills and knowledge skills.",
@@ -140,10 +131,7 @@
                   "type": "integer"
                 }
               },
-              "required": [
-                "name",
-                "rating"
-              ]
+              "required": ["name", "rating"]
             }
           },
           "physical": {
@@ -162,10 +150,7 @@
                   "type": "integer"
                 }
               },
-              "required": [
-                "name",
-                "rating"
-              ]
+              "required": ["name", "rating"]
             }
           },
           "social": {
@@ -184,10 +169,7 @@
                   "type": "integer"
                 }
               },
-              "required": [
-                "name",
-                "rating"
-              ]
+              "required": ["name", "rating"]
             }
           },
           "technical": {
@@ -206,10 +188,7 @@
                   "type": "integer"
                 }
               },
-              "required": [
-                "name",
-                "rating"
-              ]
+              "required": ["name", "rating"]
             }
           },
           "knowledge": {
@@ -228,20 +207,11 @@
                   "type": "integer"
                 }
               },
-              "required": [
-                "name",
-                "rating"
-              ]
+              "required": ["name", "rating"]
             }
           }
         },
-        "required": [
-          "combat",
-          "physical",
-          "social",
-          "technical",
-          "knowledge"
-        ]
+        "required": ["combat", "physical", "social", "technical", "knowledge"]
       },
       "nuyen": {
         "description": "Amount of nuyen (money) the character starts with. Valid range: 6000-450000.",
@@ -271,12 +241,7 @@
               "description": "Connection level of the contact, indicating the influence or resource level of the contact. Valid range: 1-6."
             }
           },
-          "required": [
-            "name",
-            "description",
-            "loyalty",
-            "connection"
-          ]
+          "required": ["name", "description", "loyalty", "connection"]
         }
       }
     },
